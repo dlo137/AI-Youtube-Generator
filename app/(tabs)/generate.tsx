@@ -8,11 +8,15 @@ export default function GenerateScreen() {
   const [style, setStyle] = useState('educational'); // kept for existing logic
 
   // kept from original for backwards-compat; do not change functionality
-  const videoStyles = [
-    { id: 'educational', label: 'Educational' },
-    { id: 'entertaining', label: 'Entertaining' },
-    { id: 'promotional', label: 'Promotional' },
-    { id: 'tutorial', label: 'Tutorial' },
+  const thumbnailStyles = [
+    { id: 'minimal', label: 'Minimal' },
+    { id: 'bold', label: 'Bold & Vibrant' },
+    { id: 'retro', label: 'Retro' },
+    { id: 'modern', label: 'Modern' },
+    { id: 'cinematic', label: 'Cinematic' },
+    { id: 'cartoon', label: 'Cartoon' },
+    { id: 'dark', label: 'Dark Theme' },
+    { id: 'colorful', label: 'Colorful' },
   ];
 
   const handleGenerate = () => {
@@ -24,16 +28,6 @@ export default function GenerateScreen() {
       <StatusBar style="light" />
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Top App Bar */}
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.burger} activeOpacity={0.7}>
-            <Text style={styles.burgerIcon}>≡</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.topTitle}>Thumbnail Generator</Text>
-
-          <View style={styles.avatar} />
-        </View>
 
         {/* Hero - centered in available space */}
         <View style={styles.hero}>
@@ -108,6 +102,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scroll: {
+    flexGrow: 1,
     paddingTop: Platform.select({ ios: 12, android: 16 }),
     paddingHorizontal: 18,
   },
@@ -123,36 +118,6 @@ const styles = StyleSheet.create({
   actionScrollView: {
     paddingHorizontal: 18,
     marginBottom: 8,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  burger: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  burgerIcon: {
-    color: TEXT,
-    fontSize: 22,
-    lineHeight: 22,
-  },
-  topTitle: {
-    color: TEXT,
-    fontSize: 20,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#3a3f47',
   },
   hero: {
     flex: 1,
@@ -225,9 +190,9 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    minHeight: 40,
     color: TEXT,
     fontSize: 15,
+    textAlign: 'left',
   },
   sendBtn: {
     width: 36,

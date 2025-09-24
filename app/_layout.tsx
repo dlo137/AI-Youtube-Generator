@@ -1,3 +1,4 @@
+import '../polyfills';
 import { Stack } from 'expo-router';
 
 export default function RootLayout() {
@@ -18,6 +19,12 @@ export default function RootLayout() {
         options={{
           title: 'AI YouTube Generator',
           headerShown: false
+        }}
+      />
+      <Stack.Screen
+        name="signup"
+        options={{
+          title: 'Sign Up'
         }}
       />
       <Stack.Screen

@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npx create-expo-app:*)",
       "Read(//c/Users/aidaw/Desktop/Code/**)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx expo start:*)",
+      "Bash(rd:*)",
+      "Bash(del package-lock.json)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "ask": []
