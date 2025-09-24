@@ -16,14 +16,14 @@ export default function GenerateScreen() {
   ];
 
   const handleGenerate = () => {
-    console.log('Generating video with:', { topic, duration, style });
+    console.log('Generating Thumbnail with:', { topic, duration, style });
   };
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Top App Bar */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.burger} activeOpacity={0.7}>
@@ -35,28 +35,25 @@ export default function GenerateScreen() {
           <View style={styles.avatar} />
         </View>
 
-        {/* Hero */}
+        {/* Hero - centered in available space */}
         <View style={styles.hero}>
           <Text style={styles.heroTitle}>Create your first thumbnail.</Text>
           <Text style={styles.heroSubtitle}>Simply type or pick one of the options below</Text>
         </View>
 
-        {/* Main Content Area - can be expanded for generated thumbnails */}
-        <View style={styles.mainContent}>
-          {/* This area can display generated thumbnails or other content */}
-        </View>
+        {/* Bottom padding for fixed action cards and prompt bar */}
+        <View style={{ height: 160 }} />
+      </ScrollView>
 
-        {/* Action Cards (h-scroll) - moved to bottom */}
+      {/* Fixed Bottom Container with Action Cards and Prompt Bar */}
+      <View style={styles.fixedBottomContainer}>
+        {/* Action Cards (h-scroll) - fixed at bottom */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.actionRow}
+          style={styles.actionScrollView}
         >
-          <TouchableOpacity style={styles.actionCard} activeOpacity={0.85}>
-            <View style={styles.actionIconWrap}><Text style={styles.actionIcon}>🎞️</Text></View>
-            <Text style={styles.actionTitle}>Add a video</Text>
-            <Text style={styles.actionSubtitle}>Analyze your content</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionCard} activeOpacity={0.85}>
             <View style={styles.actionIconWrap}><Text style={styles.actionIcon}>👤</Text></View>
@@ -66,12 +63,12 @@ export default function GenerateScreen() {
 
           <TouchableOpacity style={styles.actionCard} activeOpacity={0.85}>
             <View style={styles.actionIconWrap}><Text style={styles.actionIcon}>✨</Text></View>
-            <Text style={styles.actionTitle}>Add a style</Text>
+            <Text style={styles.actionTitle}>Add a Reference</Text>
             <Text style={styles.actionSubtitle}>Inspire the design</Text>
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Prompt Bar - moved to bottom */}
+        {/* Prompt Bar */}
         <View style={styles.inputBar}>
           <Text style={styles.paperclip}>📎</Text>
           <TextInput
@@ -91,10 +88,7 @@ export default function GenerateScreen() {
             <Text style={styles.sendArrow}>↑</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Spacer so bottom nav (outside this file) has breathing room */}
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -110,9 +104,25 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
+  scrollContainer: {
+    flex: 1,
+  },
   scroll: {
     paddingTop: Platform.select({ ios: 12, android: 16 }),
     paddingHorizontal: 18,
+  },
+  fixedBottomContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: BG,
+    paddingBottom: Platform.select({ ios: 34, android: 16 }), // Account for safe area
+    paddingTop: 8,
+  },
+  actionScrollView: {
+    paddingHorizontal: 18,
+    marginBottom: 8,
   },
   topBar: {
     flexDirection: 'row',
@@ -145,15 +155,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#3a3f47',
   },
   hero: {
-    alignItems: 'center',
-    paddingTop: 56,
-    paddingBottom: 18,
-  },
-  mainContent: {
     flex: 1,
-    minHeight: 200,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
   heroTitle: {
     color: TEXT,
@@ -211,7 +216,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginTop: 18,
+    marginHorizontal: 18,
   },
   paperclip: {
     fontSize: 16,
