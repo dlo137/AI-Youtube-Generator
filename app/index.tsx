@@ -10,16 +10,23 @@ export default function WelcomeScreen() {
       <StatusBar style="auto" />
 
       <View style={styles.header}>
-        <Text style={styles.title}>AI YouTube Generator</Text>
+        <Text style={styles.title}>Onboarding Section</Text>
         <Text style={styles.subtitle}>Create amazing videos with AI</Text>
       </View>
 
       <View style={styles.content}>
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/(tabs)')}
+          onPress={() => router.push('/(tabs)/home')}
         >
           <Text style={styles.buttonText}>Get Started</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => router.push('/(tabs)/home')}
+        >
+          <Text style={styles.buttonText}>Go To App</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -51,6 +58,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    gap: 20,
     justifyContent: 'flex-start',
     paddingTop: 40,
   },
