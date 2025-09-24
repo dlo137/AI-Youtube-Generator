@@ -1,11 +1,34 @@
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 
 export default function GenerateScreen() {
   const [topic, setTopic] = useState('');
   const [duration, setDuration] = useState(''); // kept for existing logic
   const [style, setStyle] = useState('educational'); // kept for existing logic
+  const [isLoading, setIsLoading] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const keyboardShowListener = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+
+    const keyboardHideListener = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      keyboardShowListener.remove();
+      keyboardHideListener.remove();
+    };
+  }, []);
 
   // kept from original for backwards-compat; do not change functionality
   const thumbnailStyles = [
@@ -19,8 +42,55 @@ export default function GenerateScreen() {
     { id: 'colorful', label: 'Colorful' },
   ];
 
-  const handleGenerate = () => {
-    console.log('Generating Thumbnail with:', { topic, duration, style });
+  const handleGenerate = async () => {
+    if (!topic.trim()) {
+      Alert.alert('Error', 'Please enter a description for your thumbnail');
+      return;
+    }
+
+    // Dismiss keyboard when generating
+    Keyboard.dismiss();
+    setIsLoading(true);
+
+    // Clear the input field
+    setTopic('');
+
+    try {
+      // Call your Supabase edge function
+      const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
+        body: {
+          prompt: topic.trim(),
+          style: style,
+        },
+      });
+
+      if (error) {
+        console.error('Supabase function error:', error);
+        Alert.alert('Error', 'Failed to generate thumbnail. Please try again.');
+        return;
+      }
+
+      if (data?.error) {
+        console.error('Generation error:', data.error);
+        Alert.alert('Error', data.error || 'Failed to generate thumbnail');
+        return;
+      }
+
+      if (data?.imageUrl) {
+        // Success! You can navigate to a preview screen or show the image
+        console.log('Generated thumbnail URL:', data.imageUrl);
+        Alert.alert('Success!', 'Thumbnail generated successfully!');
+        // TODO: Navigate to preview screen or save to thumbnails list
+      } else {
+        Alert.alert('Error', 'No image was generated. Please try again.');
+      }
+
+    } catch (error) {
+      console.error('Error generating thumbnail:', error);
+      Alert.alert('Error', 'Something went wrong. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -31,8 +101,15 @@ export default function GenerateScreen() {
 
         {/* Hero - centered in available space */}
         <View style={styles.hero}>
-          <Text style={styles.heroTitle}>Create your first thumbnail.</Text>
-          <Text style={styles.heroSubtitle}>Simply type or pick one of the options below</Text>
+          <Text style={styles.heroTitle}>
+            {isLoading ? 'Generating your thumbnail...' : 'Create your first thumbnail.'}
+          </Text>
+          <Text style={styles.heroSubtitle}>
+            {isLoading
+              ? 'This may take a few moments'
+              : 'Simply type or pick one of the options below'
+            }
+          </Text>
         </View>
 
         {/* Bottom padding for fixed action cards and prompt bar */}
@@ -40,7 +117,13 @@ export default function GenerateScreen() {
       </ScrollView>
 
       {/* Fixed Bottom Container with Action Cards and Prompt Bar */}
-      <View style={styles.fixedBottomContainer}>
+      <View style={[
+        styles.fixedBottomContainer,
+        {
+          bottom: keyboardHeight > 0 ? keyboardHeight - insets.bottom : 0,
+          paddingBottom: keyboardHeight > 0 ? 8 : Platform.select({ ios: 34, android: 16 }),
+        }
+      ]}>
         {/* Action Cards (h-scroll) - fixed at bottom */}
         <ScrollView
           horizontal
@@ -72,14 +155,22 @@ export default function GenerateScreen() {
             value={topic}
             onChangeText={setTopic}
             multiline
+            onSubmitEditing={handleGenerate}
+            blurOnSubmit={true}
+            returnKeyType="send"
+            onKeyPress={({ nativeEvent }) => {
+              if (nativeEvent.key === 'Enter' && topic.trim()) {
+                handleGenerate();
+              }
+            }}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, !topic && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!topic || isLoading) && styles.sendBtnDisabled]}
             onPress={handleGenerate}
-            disabled={!topic}
+            disabled={!topic || isLoading}
             activeOpacity={0.8}
           >
-            <Text style={styles.sendArrow}>↑</Text>
+            <Text style={styles.sendArrow}>{isLoading ? '...' : '↑'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -112,7 +203,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: BG,
-    paddingBottom: Platform.select({ ios: 34, android: 16 }), // Account for safe area
+    paddingBottom: 8,
     paddingTop: 8,
   },
   actionScrollView: {
@@ -187,6 +278,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginRight: 8,
     color: MUTED,
+    textAlignVertical: 'center',
   },
   textInput: {
     flex: 1,
