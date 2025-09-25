@@ -12,7 +12,8 @@
       "Bash(npx supabase:*)",
       "Bash(curl:*)",
       "WebSearch",
-      "WebFetch(domain:ai.google.dev)"
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(npm ls:*)"
     ],
     "deny": [],
     "ask": []

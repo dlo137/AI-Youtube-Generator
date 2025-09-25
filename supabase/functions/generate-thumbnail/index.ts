@@ -78,30 +78,60 @@ serve(async (req: Request) => {
     if (!prompt || typeof prompt !== "string")
       return new Response("Missing prompt", { status: 400 });
 
-    // Call Imagen/Gemini Images API
-    const bytes = await callImagen(prompt);
+    // Generate 2 variations with slightly different approaches
+    const variation1Prompt = prompt;
+    const variation2Prompt = `${prompt} - different creative style`;
 
-    // Store to Supabase Storage
-    const filename = `${crypto.randomUUID()}.png`;
-    const { error: uploadErr } = await supabase
-      .storage
-      .from("thumbnails")
-      .upload(filename, bytes, { contentType: "image/png", upsert: true });
-    if (uploadErr) throw uploadErr;
+    console.log('Generating variation 1 with prompt:', variation1Prompt);
+    console.log('Generating variation 2 with prompt:', variation2Prompt);
 
-    // Signed URL (1h). Use a shorter/longer TTL to taste.
-    const { data: signed, error: signErr } = await supabase
-      .storage
-      .from("thumbnails")
-      .createSignedUrl(filename, 60 * 60);
-    if (signErr) throw signErr;
+    // Call Imagen/Gemini Images API for both variations
+    const [bytes1, bytes2] = await Promise.all([
+      callImagen(variation1Prompt),
+      callImagen(variation2Prompt)
+    ]);
+
+    // Store both images to Supabase Storage
+    const filename1 = `${crypto.randomUUID()}.png`;
+    const filename2 = `${crypto.randomUUID()}.png`;
+
+    const [upload1, upload2] = await Promise.all([
+      supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
+      supabase.storage.from("thumbnails").upload(filename2, bytes2, { contentType: "image/png", upsert: true })
+    ]);
+
+    if (upload1.error) throw upload1.error;
+    if (upload2.error) throw upload2.error;
+
+    // Generate signed URLs for both images
+    const [signed1, signed2] = await Promise.all([
+      supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60),
+      supabase.storage.from("thumbnails").createSignedUrl(filename2, 60 * 60)
+    ]);
+
+    if (signed1.error) throw signed1.error;
+    if (signed2.error) throw signed2.error;
 
     return new Response(JSON.stringify({
-      imageUrl: signed?.signedUrl,
-      url: signed?.signedUrl, // keep for compatibility
+      imageUrl: signed1.data?.signedUrl, // keep for compatibility
+      url: signed1.data?.signedUrl, // keep for compatibility
       width: WIDTH,
       height: HEIGHT,
-      file: filename,
+      file: filename1,
+      variation1: {
+        imageUrl: signed1.data?.signedUrl,
+        width: WIDTH,
+        height: HEIGHT,
+        file: filename1,
+        prompt: variation1Prompt
+      },
+      variation2: {
+        imageUrl: signed2.data?.signedUrl,
+        width: WIDTH,
+        height: HEIGHT,
+        file: filename2,
+        prompt: variation2Prompt
+      }
     }), { headers: { "Content-Type": "application/json" } });
 
   } catch (e) {

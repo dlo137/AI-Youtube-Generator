@@ -23,7 +23,7 @@ export default function TabsLayout() {
         },
         headerLeft: () => (
           <TouchableOpacity style={{ marginLeft: 15, padding: 5 }}>
-            <Text style={{ color: '#fff', fontSize: 20 }}>≡</Text>
+            <Text style={{ color: '#fff', fontSize: 32 }}>≡</Text>
           </TouchableOpacity>
         ),
         headerRight: () => (

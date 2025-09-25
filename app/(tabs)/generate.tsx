@@ -1,8 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system';
 
 export default function GenerateScreen() {
   const [topic, setTopic] = useState('');
@@ -11,6 +13,9 @@ export default function GenerateScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [generatedImageUrl, setGeneratedImageUrl] = useState('');
+  const [generatedImageUrl2, setGeneratedImageUrl2] = useState('');
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [modalPrompt, setModalPrompt] = useState('');
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -30,6 +35,51 @@ export default function GenerateScreen() {
       keyboardHideListener.remove();
     };
   }, []);
+
+  const downloadThumbnail = async () => {
+    if (!generatedImageUrl) {
+      Alert.alert('Error', 'No thumbnail to download');
+      return;
+    }
+
+    try {
+      // Request permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant photo library access to save thumbnails');
+        return;
+      }
+
+      // Download the image to local filesystem
+      const filename = `thumbnail_${Date.now()}.png`;
+      const localUri = `${FileSystem.documentDirectory}${filename}`;
+
+      console.log('Downloading image from:', generatedImageUrl);
+      console.log('Saving to local path:', localUri);
+
+      const { uri } = await FileSystem.downloadAsync(generatedImageUrl, localUri);
+
+      // Save to photo library
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      await MediaLibrary.createAlbumAsync('AI Thumbnails', asset, false);
+
+      Alert.alert('Success', 'Thumbnail saved to your photo library!');
+
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert('Error', 'Failed to save thumbnail. Please try again.');
+    }
+  };
+
+  const openModal = () => {
+    setModalPrompt('');
+    setIsModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setIsModalVisible(false);
+    setModalPrompt('');
+  };
 
   // kept from original for backwards-compat; do not change functionality
   const thumbnailStyles = [
@@ -70,9 +120,22 @@ export default function GenerateScreen() {
         },
       });
 
-      console.log('Supabase response data:', data);
-      console.log('Supabase response error:', error);
-      console.log('========================');
+      console.log('=== FULL SUPABASE RESPONSE ===');
+      console.log('Data keys:', data ? Object.keys(data) : 'No data');
+      console.log('Data structure:', JSON.stringify(data, null, 2));
+      console.log('Error:', error);
+      console.log('Has imageUrl?', !!data?.imageUrl);
+      console.log('Has variation1?', !!data?.variation1);
+      console.log('Has variation1.imageUrl?', !!data?.variation1?.imageUrl);
+      console.log('Has variation2?', !!data?.variation2);
+      console.log('Has variation2.imageUrl?', !!data?.variation2?.imageUrl);
+      if (data?.variation1?.imageUrl) {
+        console.log('Variation1 URL:', data.variation1.imageUrl.substring(0, 100) + '...');
+      }
+      if (data?.variation2?.imageUrl) {
+        console.log('Variation2 URL:', data.variation2.imageUrl.substring(0, 100) + '...');
+      }
+      console.log('===============================');
 
       if (error) {
         console.error('Supabase function error:', error);
@@ -86,10 +149,28 @@ export default function GenerateScreen() {
         return;
       }
 
-      if (data?.imageUrl) {
-        // Success! Display the generated image
-        console.log('Generated thumbnail URL:', data.imageUrl);
+      if (data?.variation1?.imageUrl || data?.variation2?.imageUrl) {
+        // Success! Display variations
+        if (data.variation1?.imageUrl) {
+          console.log('Generated variation 1 URL:', data.variation1.imageUrl);
+          setGeneratedImageUrl(data.variation1.imageUrl);
+        }
+        if (data.variation2?.imageUrl) {
+          console.log('Generated variation 2 URL:', data.variation2.imageUrl);
+          setGeneratedImageUrl2(data.variation2.imageUrl);
+        }
+
+        // Verify state was actually set
+        setTimeout(() => {
+          console.log('=== STATE VERIFICATION ===');
+          console.log('generatedImageUrl state:', generatedImageUrl ? 'SET' : 'EMPTY');
+          console.log('generatedImageUrl2 state:', generatedImageUrl2 ? 'SET' : 'EMPTY');
+        }, 100);
+      } else if (data?.imageUrl) {
+        // Fallback for backwards compatibility
+        console.log('Generated thumbnail URL (fallback):', data.imageUrl);
         setGeneratedImageUrl(data.imageUrl);
+        setGeneratedImageUrl2(''); // No second variation
       } else {
         Alert.alert('Error', 'No image was generated. Please try again.');
       }
@@ -108,17 +189,73 @@ export default function GenerateScreen() {
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Display generated image or hero text */}
-        {generatedImageUrl ? (
+        {/* Display generated images or hero text */}
+        {(generatedImageUrl || generatedImageUrl2) ? (
           <View style={styles.imageContainer}>
-            <Image
-              source={{ uri: generatedImageUrl }}
-              style={styles.generatedImage}
-              resizeMode="contain"
-            />
+            {/* DEBUG INFO */}
+            <Text style={{color: 'white', fontSize: 10, marginBottom: 10}}>
+              DEBUG: URL1: {generatedImageUrl ? 'YES' : 'NO'} | URL2: {generatedImageUrl2 ? 'YES' : 'NO'}
+            </Text>
+            {/* First Generated Image */}
+            {generatedImageUrl && (
+              <View style={styles.imageWrapper}>
+                <TouchableOpacity onPress={openModal} activeOpacity={0.8}>
+                  <Image
+                    source={{ uri: generatedImageUrl }}
+                    style={styles.generatedImage}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+                <View style={styles.imageActions}>
+                  <TouchableOpacity
+                    style={styles.downloadIcon}
+                    onPress={downloadThumbnail}
+                  >
+                    <Text style={styles.downloadArrow}>↓</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={openModal}
+                  >
+                    <Text style={styles.editText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Second Generated Image - Different Variation */}
+            {generatedImageUrl2 && (
+              <View style={styles.imageWrapper}>
+                <TouchableOpacity onPress={openModal} activeOpacity={0.8}>
+                  <Image
+                    source={{ uri: generatedImageUrl2 }}
+                    style={styles.generatedImage}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
+                <View style={styles.imageActions}>
+                  <TouchableOpacity
+                    style={styles.downloadIcon}
+                    onPress={downloadThumbnail}
+                  >
+                    <Text style={styles.downloadArrow}>↓</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={openModal}
+                  >
+                    <Text style={styles.editText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.generateNewBtn}
-              onPress={() => setGeneratedImageUrl('')}
+              onPress={() => {
+                setGeneratedImageUrl('');
+                setGeneratedImageUrl2('');
+              }}
             >
               <Text style={styles.generateNewText}>Generate New</Text>
             </TouchableOpacity>
@@ -199,6 +336,77 @@ export default function GenerateScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Modal --- Editing Thumbnail Area */}
+      <Modal
+        visible={isModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <View style={styles.modalContainer}>
+          {/* Header with X icon */}
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={closeModal}
+            >
+              <Text style={styles.closeIcon}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Generated Image in the middle */}
+          <View style={styles.modalContent}>
+            <Image
+              source={{ uri: generatedImageUrl }}
+              style={styles.modalImage}
+              resizeMode="contain"
+            />
+
+            {/* Edit Tools */}
+            <View style={styles.editTools}>
+              <TouchableOpacity
+                style={styles.editToolIcon}
+                onPress={() => {
+                  console.log('Drawing tool selected');
+                }}
+              >
+                <Text style={styles.editToolText}>✎</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.editToolIcon}
+                onPress={() => {
+                  console.log('Text tool selected');
+                }}
+              >
+                <Text style={styles.editToolText}>T</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Prompt Bar at the bottom */}
+          <View style={styles.modalPromptContainer}>
+            <View style={styles.modalInputBar}>
+              <Text style={styles.paperclip}>📎</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Edit your thumbnail prompt"
+                placeholderTextColor="#7b818a"
+                value={modalPrompt}
+                onChangeText={setModalPrompt}
+                multiline
+                returnKeyType="send"
+              />
+              <TouchableOpacity
+                style={[styles.sendBtn, (!modalPrompt) && styles.sendBtnDisabled]}
+                disabled={!modalPrompt}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.sendArrow}>↑</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -339,7 +547,6 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 12,
     backgroundColor: CARD,
-    marginBottom: 20,
   },
   generateNewBtn: {
     backgroundColor: '#2a3038',
@@ -351,5 +558,140 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontSize: 16,
     fontWeight: '600',
+  },
+  imageWrapper: {
+    position: 'relative',
+    width: '100%',
+    marginBottom: 20,
+  },
+  downloadIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  downloadArrow: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  imageActions: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  editButton: {
+    backgroundColor: '#000000',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  editText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2a3038',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeIcon: {
+    color: TEXT,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  modalContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalImage: {
+    width: '100%',
+    height: 250,
+    borderRadius: 12,
+    backgroundColor: CARD,
+  },
+  modalPromptContainer: {
+    paddingHorizontal: 18,
+    paddingBottom: Platform.select({ ios: 34, android: 16 }),
+    paddingTop: 16,
+  },
+  modalInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD,
+    borderColor: BORDER,
+    borderWidth: 1,
+    borderRadius: 28,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  editTools: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingRight: 20,
+    gap: 12,
+  },
+  editToolIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  editToolText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });
