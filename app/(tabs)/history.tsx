@@ -142,10 +142,16 @@ export default function HistoryScreen() {
   );
 }
 
+const BG = '#0b0f14';
+const CARD = '#151a21';
+const BORDER = '#232932';
+const TEXT = '#e7ebf0';
+const MUTED = '#8a9099';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: BG,
   },
   content: {
     flex: 1,
@@ -155,12 +161,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1e293b',
+    color: TEXT,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#64748b',
+    color: MUTED,
     marginBottom: 24,
   },
   filterSection: {
@@ -172,36 +178,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: CARD,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: BORDER,
   },
   activeFilter: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
+    backgroundColor: '#2a3038',
+    borderColor: '#2a3038',
   },
   filterText: {
     fontSize: 14,
-    color: '#374151',
+    color: MUTED,
   },
   activeFilterText: {
-    color: '#fff',
+    color: TEXT,
   },
   videoList: {
     gap: 16,
   },
   videoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: CARD,
+    borderColor: BORDER,
+    borderWidth: 1,
     borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   videoHeader: {
     flexDirection: 'row',
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   videoTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1e293b',
+    color: TEXT,
     flex: 1,
     marginRight: 12,
   },
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 14,
-    color: '#64748b',
+    color: MUTED,
   },
   videoActions: {
     flexDirection: 'row',
@@ -242,20 +242,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#2a3038',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: BORDER,
   },
   deleteButton: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#fecaca',
+    backgroundColor: '#3d1a1a',
+    borderColor: '#5a2d2d',
   },
   actionButtonText: {
     fontSize: 12,
-    color: '#374151',
+    color: TEXT,
     fontWeight: '500',
   },
   deleteButtonText: {
-    color: '#dc2626',
+    color: '#f87171',
   },
 });

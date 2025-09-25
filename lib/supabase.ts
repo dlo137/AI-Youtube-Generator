@@ -6,12 +6,26 @@ const SUPABASE_URL =
 const SUPABASE_ANON_KEY =
   Constants.expoConfig?.extra?.SUPABASE_ANON_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
+// Debug logging to check if env vars are loaded
+console.log('=== SUPABASE CONFIG DEBUG ===');
+console.log('SUPABASE_URL:', SUPABASE_URL ? 'SET' : 'NOT SET');
+console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'SET' : 'NOT SET');
+console.log('URL starts with:', SUPABASE_URL?.substring(0, 20));
+console.log('================================');
+
 // Simplified Supabase client for edge functions only
 class SimpleSupabaseClient {
   private url: string;
   private key: string;
 
   constructor(url: string, key: string) {
+    if (!url || url.includes('undefined') || !url.startsWith('http')) {
+      throw new Error('EXPO_PUBLIC_SUPABASE_URL is not configured correctly. Please check your .env file.');
+    }
+    if (!key || key.includes('undefined') || key.length < 20) {
+      throw new Error('EXPO_PUBLIC_SUPABASE_ANON_KEY is not configured correctly. Please check your .env file.');
+    }
+
     this.url = url;
     this.key = key;
   }

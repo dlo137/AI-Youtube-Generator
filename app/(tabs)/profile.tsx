@@ -73,10 +73,16 @@ export default function ProfileScreen() {
   );
 }
 
+const BG = '#0b0f14';
+const CARD = '#151a21';
+const BORDER = '#232932';
+const TEXT = '#e7ebf0';
+const MUTED = '#8a9099';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: BG,
   },
   content: {
     flex: 1,
@@ -91,50 +97,44 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#6366f1',
+    backgroundColor: '#2a3038',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
   avatarText: {
-    color: '#fff',
+    color: TEXT,
     fontSize: 24,
     fontWeight: 'bold',
   },
   name: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1e293b',
+    color: TEXT,
     marginBottom: 4,
   },
   email: {
     fontSize: 16,
-    color: '#64748b',
+    color: MUTED,
     marginBottom: 8,
   },
   plan: {
     fontSize: 14,
-    color: '#6366f1',
+    color: TEXT,
     fontWeight: '600',
-    backgroundColor: '#eef2ff',
+    backgroundColor: '#2a3038',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
   },
   statsSection: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: CARD,
+    borderColor: BORDER,
+    borderWidth: 1,
     borderRadius: 12,
     padding: 20,
     marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   statItem: {
     flex: 1,
@@ -143,16 +143,16 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1e293b',
+    color: TEXT,
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 14,
-    color: '#64748b',
+    color: MUTED,
   },
   statDivider: {
     width: 1,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: BORDER,
     marginHorizontal: 20,
   },
   settingsSection: {
@@ -161,24 +161,18 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1e293b',
+    color: TEXT,
     marginBottom: 16,
   },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: CARD,
+    borderColor: BORDER,
+    borderWidth: 1,
     padding: 16,
     borderRadius: 12,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
   },
   settingContent: {
     flex: 1,
@@ -186,43 +180,43 @@ const styles = StyleSheet.create({
   settingTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1e293b',
+    color: TEXT,
     marginBottom: 2,
   },
   settingSubtitle: {
     fontSize: 14,
-    color: '#64748b',
+    color: MUTED,
   },
   settingArrow: {
     fontSize: 24,
-    color: '#94a3b8',
+    color: MUTED,
   },
   quickActions: {
     gap: 12,
     marginBottom: 32,
   },
   actionButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#2a3038',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   actionButtonText: {
-    color: '#fff',
+    color: TEXT,
     fontSize: 16,
     fontWeight: '600',
   },
   signOutButton: {
-    backgroundColor: '#fff',
+    backgroundColor: CARD,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: '#5a2d2d',
     marginBottom: 20,
   },
   signOutText: {
-    color: '#ef4444',
+    color: '#f87171',
     fontSize: 16,
     fontWeight: '600',
   },

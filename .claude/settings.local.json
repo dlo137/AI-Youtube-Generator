@@ -7,7 +7,12 @@
       "Bash(npx expo start:*)",
       "Bash(rd:*)",
       "Bash(del package-lock.json)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(supabase:*)",
+      "Bash(npx supabase:*)",
+      "Bash(curl:*)",
+      "WebSearch",
+      "WebFetch(domain:ai.google.dev)"
     ],
     "deny": [],
     "ask": []

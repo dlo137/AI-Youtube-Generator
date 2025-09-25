@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
@@ -10,6 +10,7 @@ export default function GenerateScreen() {
   const [style, setStyle] = useState('educational'); // kept for existing logic
   const [isLoading, setIsLoading] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState('');
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -56,6 +57,11 @@ export default function GenerateScreen() {
     setTopic('');
 
     try {
+      console.log('=== GENERATION DEBUG ===');
+      console.log('Prompt:', topic.trim());
+      console.log('Style:', style);
+      console.log('Calling Supabase function...');
+
       // Call your Supabase edge function
       const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
         body: {
@@ -64,9 +70,13 @@ export default function GenerateScreen() {
         },
       });
 
+      console.log('Supabase response data:', data);
+      console.log('Supabase response error:', error);
+      console.log('========================');
+
       if (error) {
         console.error('Supabase function error:', error);
-        Alert.alert('Error', 'Failed to generate thumbnail. Please try again.');
+        Alert.alert('Error', `Failed to generate thumbnail: ${error.message || 'Unknown error'}\n\nDetails: ${error.details || 'No details available'}`);
         return;
       }
 
@@ -77,10 +87,9 @@ export default function GenerateScreen() {
       }
 
       if (data?.imageUrl) {
-        // Success! You can navigate to a preview screen or show the image
+        // Success! Display the generated image
         console.log('Generated thumbnail URL:', data.imageUrl);
-        Alert.alert('Success!', 'Thumbnail generated successfully!');
-        // TODO: Navigate to preview screen or save to thumbnails list
+        setGeneratedImageUrl(data.imageUrl);
       } else {
         Alert.alert('Error', 'No image was generated. Please try again.');
       }
@@ -99,18 +108,34 @@ export default function GenerateScreen() {
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Hero - centered in available space */}
-        <View style={styles.hero}>
-          <Text style={styles.heroTitle}>
-            {isLoading ? 'Generating your thumbnail...' : 'Create your first thumbnail.'}
-          </Text>
-          <Text style={styles.heroSubtitle}>
-            {isLoading
-              ? 'This may take a few moments'
-              : 'Simply type or pick one of the options below'
-            }
-          </Text>
-        </View>
+        {/* Display generated image or hero text */}
+        {generatedImageUrl ? (
+          <View style={styles.imageContainer}>
+            <Image
+              source={{ uri: generatedImageUrl }}
+              style={styles.generatedImage}
+              resizeMode="contain"
+            />
+            <TouchableOpacity
+              style={styles.generateNewBtn}
+              onPress={() => setGeneratedImageUrl('')}
+            >
+              <Text style={styles.generateNewText}>Generate New</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.hero}>
+            <Text style={styles.heroTitle}>
+              {isLoading ? 'Generating your thumbnail...' : 'Create your first thumbnail.'}
+            </Text>
+            <Text style={styles.heroSubtitle}>
+              {isLoading
+                ? 'This may take a few moments'
+                : 'Simply type or pick one of the options below'
+              }
+            </Text>
+          </View>
+        )}
 
         {/* Bottom padding for fixed action cards and prompt bar */}
         <View style={{ height: 160 }} />
@@ -302,5 +327,29 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontSize: 16,
     fontWeight: '800',
+  },
+  imageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  generatedImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: CARD,
+    marginBottom: 20,
+  },
+  generateNewBtn: {
+    backgroundColor: '#2a3038',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  generateNewText: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

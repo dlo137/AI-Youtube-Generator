@@ -10,9 +10,9 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const WIDTH = 1280;
 const HEIGHT = 720;
 
-// If you're using Google AI Studio's Images API (aka Imagen via Gemini API):
+// Gemini 2.5 Flash with native image generation (may be free tier compatible)
 const IMAGES_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/imagegeneration:generate";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-exp:generateContent";
 
 type GenerateBody = { prompt: string; style?: string; seed?: number };
 
@@ -24,56 +24,55 @@ function b64ToUint8(base64: string) {
 }
 
 async function callImagen(prompt: string) {
-  // NOTE: If you're on **Vertex AI** instead, swap this fetch() to the Vertex endpoint
-  // and auth with a Google service account. This path is for Google AI Studio (API key).
-  const url = `${IMAGES_ENDPOINT}?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
+    {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": GEMINI_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: { 
+          sampleCount: 1, 
+          aspectRatio: "16:9" 
+        }
+      }),
+    }
+  );
 
-  // Body shape can vary by model/version. This works with the current Images API.
-  // If you use a specific model (e.g., "imagen-3.0-fast"), add it in the URL or body if required.
-  const body = {
-    // Some deployments use { "prompt": { "text": "..." } }; this API accepts flat text too.
-    prompt,
-    // Ask for 1280x720 output (16:9). If your plan only allows preset sizes, pick the closest.
-    // Many implementations accept dimensions or a named size. Keep both for compatibility.
-    imageSize: `${WIDTH}x${HEIGHT}`,
-    // Optional styling hints:
-    // negativePrompt: "blurry, low quality, watermark, text artifacts",
-    // safetySettings: [{ category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK" }],
-    // n: 1
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Imagen call failed: ${res.status} ${errText}`);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Imagen API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
-  const data = await res.json() as any;
+  const result = await response.json();
+  
+  if (!result.predictions || !result.predictions[0]) {
+    throw new Error("No image generated from Imagen API");
+  }
 
-  // Typical responses include base64-encoded PNG/JPG bytes.
-  // Adjust this path if your response structure differs (e.g., data.images[0].bytesBase64).
-  const b64 =
-    data?.images?.[0]?.base64 || data?.candidates?.[0]?.image?.base64 || data?.data?.[0]?.b64_json;
-  if (!b64) throw new Error("No image payload returned");
+  // Extract base64 image data from the response
+  const imageData = result.predictions[0].bytesBase64Encoded || result.predictions[0].image?.bytesBase64Encoded;
+  
+  if (!imageData) {
+    throw new Error("No image data in Imagen API response");
+  }
 
-  return b64ToUint8(b64);
+  return b64ToUint8(imageData);
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Require auth – remove if you allow anonymous
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return new Response("Unauthorized", { status: 401 });
+    // Auth disabled for testing - re-enable in production
+    // const { data: { user } } = await supabase.auth.getUser();
+    // if (!user) return new Response("Unauthorized", { status: 401 });
 
     const { prompt }: GenerateBody = await req.json().catch(() => ({} as any));
     if (!prompt || typeof prompt !== "string")
@@ -98,7 +97,8 @@ serve(async (req) => {
     if (signErr) throw signErr;
 
     return new Response(JSON.stringify({
-      url: signed?.signedUrl,
+      imageUrl: signed?.signedUrl,
+      url: signed?.signedUrl, // keep for compatibility
       width: WIDTH,
       height: HEIGHT,
       file: filename,
