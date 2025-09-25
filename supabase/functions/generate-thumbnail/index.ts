@@ -34,9 +34,9 @@ async function callImagen(prompt: string) {
       },
       body: JSON.stringify({
         instances: [{ prompt }],
-        parameters: { 
-          sampleCount: 1, 
-          aspectRatio: "16:9" 
+        parameters: {
+          sampleCount: 1,
+          aspectRatio: "16:9"
         }
       }),
     }
@@ -79,8 +79,8 @@ serve(async (req: Request) => {
       return new Response("Missing prompt", { status: 400 });
 
     // Generate 2 variations with slightly different approaches
-    const variation1Prompt = prompt;
-    const variation2Prompt = `${prompt} - different creative style`;
+    const variation1Prompt = `${prompt} - vibrant and bold style`;
+    const variation2Prompt = `${prompt} - minimalist and clean design`;
 
     console.log('Generating variation 1 with prompt:', variation1Prompt);
     console.log('Generating variation 2 with prompt:', variation2Prompt);

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
+import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
 
 export default function GenerateScreen() {
   const [topic, setTopic] = useState('');
@@ -16,6 +17,14 @@ export default function GenerateScreen() {
   const [generatedImageUrl2, setGeneratedImageUrl2] = useState('');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPrompt, setModalPrompt] = useState('');
+  const [lastPrompt, setLastPrompt] = useState('');
+  const [allGenerations, setAllGenerations] = useState<Array<{
+    id: string;
+    prompt: string;
+    url1: string;
+    url2?: string;
+    timestamp: number;
+  }>>([]);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -36,6 +45,7 @@ export default function GenerateScreen() {
     };
   }, []);
 
+
   const downloadThumbnail = async () => {
     if (!generatedImageUrl) {
       Alert.alert('Error', 'No thumbnail to download');
@@ -52,12 +62,16 @@ export default function GenerateScreen() {
 
       // Download the image to local filesystem
       const filename = `thumbnail_${Date.now()}.png`;
-      const localUri = `${FileSystem.documentDirectory}${filename}`;
+      const docDir = (FileSystem as any).documentDirectory;
+      if (!docDir) {
+        throw new Error('Document directory not available');
+      }
+      const localUri = `${docDir}${filename}`;
 
       console.log('Downloading image from:', generatedImageUrl);
       console.log('Saving to local path:', localUri);
 
-      const { uri } = await FileSystem.downloadAsync(generatedImageUrl, localUri);
+      const { uri } = await (FileSystem as any).downloadAsync(generatedImageUrl, localUri);
 
       // Save to photo library
       const asset = await MediaLibrary.createAssetAsync(uri);
@@ -81,6 +95,20 @@ export default function GenerateScreen() {
     setModalPrompt('');
   };
 
+  const getShortTitle = (prompt: string) => {
+    console.log('getShortTitle called with prompt:', prompt);
+    // Extract key words and create a 2-3 word title
+    const words = prompt.toLowerCase().split(' ').filter(word =>
+      word.length > 2 &&
+      !['the', 'and', 'for', 'with', 'about', 'thumbnail', 'image', 'picture'].includes(word)
+    );
+    const title = words.slice(0, 3).map(word =>
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+    console.log('Generated title:', title);
+    return title;
+  };
+
   // kept from original for backwards-compat; do not change functionality
   const thumbnailStyles = [
     { id: 'minimal', label: 'Minimal' },
@@ -99,6 +127,10 @@ export default function GenerateScreen() {
       return;
     }
 
+    // Store the prompt for title display BEFORE clearing
+    const promptToUse = topic.trim();
+    setLastPrompt(promptToUse);
+
     // Dismiss keyboard when generating
     Keyboard.dismiss();
     setIsLoading(true);
@@ -107,35 +139,15 @@ export default function GenerateScreen() {
     setTopic('');
 
     try {
-      console.log('=== GENERATION DEBUG ===');
-      console.log('Prompt:', topic.trim());
-      console.log('Style:', style);
-      console.log('Calling Supabase function...');
 
       // Call your Supabase edge function
       const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
         body: {
-          prompt: topic.trim(),
+          prompt: promptToUse,
           style: style,
         },
       });
 
-      console.log('=== FULL SUPABASE RESPONSE ===');
-      console.log('Data keys:', data ? Object.keys(data) : 'No data');
-      console.log('Data structure:', JSON.stringify(data, null, 2));
-      console.log('Error:', error);
-      console.log('Has imageUrl?', !!data?.imageUrl);
-      console.log('Has variation1?', !!data?.variation1);
-      console.log('Has variation1.imageUrl?', !!data?.variation1?.imageUrl);
-      console.log('Has variation2?', !!data?.variation2);
-      console.log('Has variation2.imageUrl?', !!data?.variation2?.imageUrl);
-      if (data?.variation1?.imageUrl) {
-        console.log('Variation1 URL:', data.variation1.imageUrl.substring(0, 100) + '...');
-      }
-      if (data?.variation2?.imageUrl) {
-        console.log('Variation2 URL:', data.variation2.imageUrl.substring(0, 100) + '...');
-      }
-      console.log('===============================');
 
       if (error) {
         console.error('Supabase function error:', error);
@@ -151,24 +163,31 @@ export default function GenerateScreen() {
 
       if (data?.variation1?.imageUrl || data?.variation2?.imageUrl) {
         // Success! Display variations
-        if (data.variation1?.imageUrl) {
-          console.log('Generated variation 1 URL:', data.variation1.imageUrl);
-          setGeneratedImageUrl(data.variation1.imageUrl);
+        const url1 = data.variation1?.imageUrl;
+        const url2 = data.variation2?.imageUrl;
+
+        if (url1) {
+          setGeneratedImageUrl(url1);
         }
-        if (data.variation2?.imageUrl) {
-          console.log('Generated variation 2 URL:', data.variation2.imageUrl);
-          setGeneratedImageUrl2(data.variation2.imageUrl);
+        if (url2) {
+          setGeneratedImageUrl2(url2);
         }
 
-        // Verify state was actually set
-        setTimeout(() => {
-          console.log('=== STATE VERIFICATION ===');
-          console.log('generatedImageUrl state:', generatedImageUrl ? 'SET' : 'EMPTY');
-          console.log('generatedImageUrl2 state:', generatedImageUrl2 ? 'SET' : 'EMPTY');
-        }, 100);
+        // Add to all generations list
+        const newGeneration = {
+          id: Date.now().toString(),
+          prompt: promptToUse,
+          url1: url1 || '',
+          url2: url2,
+          timestamp: Date.now(),
+        };
+        setAllGenerations(prev => {
+          console.log('Adding new generation:', newGeneration);
+          console.log('Previous generations:', prev);
+          return [newGeneration, ...prev];
+        });
       } else if (data?.imageUrl) {
         // Fallback for backwards compatibility
-        console.log('Generated thumbnail URL (fallback):', data.imageUrl);
         setGeneratedImageUrl(data.imageUrl);
         setGeneratedImageUrl2(''); // No second variation
       } else {
@@ -189,76 +208,48 @@ export default function GenerateScreen() {
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Display generated images or hero text */}
-        {(generatedImageUrl || generatedImageUrl2) ? (
-          <View style={styles.imageContainer}>
-            {/* DEBUG INFO */}
-            <Text style={{color: 'white', fontSize: 10, marginBottom: 10}}>
-              DEBUG: URL1: {generatedImageUrl ? 'YES' : 'NO'} | URL2: {generatedImageUrl2 ? 'YES' : 'NO'}
-            </Text>
-            {/* First Generated Image */}
-            {generatedImageUrl && (
-              <View style={styles.imageWrapper}>
-                <TouchableOpacity onPress={openModal} activeOpacity={0.8}>
-                  <Image
-                    source={{ uri: generatedImageUrl }}
-                    style={styles.generatedImage}
-                    resizeMode="contain"
-                  />
-                </TouchableOpacity>
-                <View style={styles.imageActions}>
-                  <TouchableOpacity
-                    style={styles.downloadIcon}
-                    onPress={downloadThumbnail}
-                  >
-                    <Text style={styles.downloadArrow}>↓</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={openModal}
-                  >
-                    <Text style={styles.editText}>Edit</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+        {/* Display all generated images or hero text */}
+        {(() => {
+          console.log('Current allGenerations.length:', allGenerations.length);
+          console.log('Current allGenerations:', allGenerations);
+          return allGenerations.length > 0;
+        })() ? (
+          <View style={styles.generationsContainer}>
+            {/* All generations including current one */}
+            {allGenerations.map((generation, index) => {
+              console.log('Rendering generation:', generation);
+              return (
+              <View key={generation.id} style={styles.generationSection}>
+                {/* Title for each generation */}
+                <Text style={styles.imageTitle}>{getShortTitle(generation.prompt)}</Text>
 
-            {/* Second Generated Image - Different Variation */}
-            {generatedImageUrl2 && (
-              <View style={styles.imageWrapper}>
-                <TouchableOpacity onPress={openModal} activeOpacity={0.8}>
-                  <Image
-                    source={{ uri: generatedImageUrl2 }}
-                    style={styles.generatedImage}
-                    resizeMode="contain"
+                {/* First Generated Image */}
+                {generation.url1 && (
+                  <GeneratedThumbnail
+                    key={`${generation.id}-1`}
+                    imageUrl={generation.url1}
+                    onEdit={openModal}
+                    style={styles}
                   />
-                </TouchableOpacity>
-                <View style={styles.imageActions}>
-                  <TouchableOpacity
-                    style={styles.downloadIcon}
-                    onPress={downloadThumbnail}
-                  >
-                    <Text style={styles.downloadArrow}>↓</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={openModal}
-                  >
-                    <Text style={styles.editText}>Edit</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+                )}
 
-            <TouchableOpacity
-              style={styles.generateNewBtn}
-              onPress={() => {
-                setGeneratedImageUrl('');
-                setGeneratedImageUrl2('');
-              }}
-            >
-              <Text style={styles.generateNewText}>Generate New</Text>
-            </TouchableOpacity>
+                {/* Second Generated Image - Different Variation */}
+                {generation.url2 && (
+                  <GeneratedThumbnail
+                    key={`${generation.id}-2`}
+                    imageUrl={generation.url2}
+                    onEdit={openModal}
+                    style={styles}
+                  />
+                )}
+
+                {/* Add separator between generations (except for the last one) */}
+                {index < allGenerations.length - 1 && (
+                  <View style={styles.generationSeparator} />
+                )}
+              </View>
+              );
+            })}
           </View>
         ) : (
           <View style={styles.hero}>
@@ -542,6 +533,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
   },
+  generationsContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  generationSection: {
+    marginBottom: 20,
+  },
+  generationSeparator: {
+    height: 1,
+    backgroundColor: BORDER,
+    marginVertical: 30,
+  },
+  imageTitle: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'left',
+    alignSelf: 'flex-start',
+  },
   generatedImage: {
     width: '100%',
     height: 200,
@@ -612,6 +623,27 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  saveIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  saveArrow: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   modalContainer: {
     flex: 1,

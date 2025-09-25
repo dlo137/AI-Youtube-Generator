@@ -23,6 +23,13 @@ export default function WelcomeScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.loginButton}
+          onPress={() => router.push('/login')}
+        >
+          <Text style={styles.loginButtonText}>Log In</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.button}
           onPress={() => router.push('/(tabs)/generate')}
         >
@@ -86,6 +93,20 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  loginButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#6366f1',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  loginButtonText: {
+    color: '#6366f1',
     fontSize: 18,
     fontWeight: '600',
   },

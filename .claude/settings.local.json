@@ -13,7 +13,8 @@
       "Bash(curl:*)",
       "WebSearch",
       "WebFetch(domain:ai.google.dev)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "mcp__ide__getDiagnostics"
     ],
     "deny": [],
     "ask": []

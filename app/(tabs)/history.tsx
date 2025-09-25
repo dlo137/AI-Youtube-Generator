@@ -76,7 +76,7 @@ export default function HistoryScreen() {
       <StatusBar style="light" />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Video History</Text>
+        <Text style={styles.title}>Thumbnailinstead o History</Text>
         <Text style={styles.subtitle}>Track your generated content</Text>
 
         <View style={styles.filterSection}>

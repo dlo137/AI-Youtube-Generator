@@ -95,9 +95,9 @@ export default function ProfileScreen() {
               {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || '?'}
             </Text>
           </View>
-          <Text style={styles.name}>{profile?.full_name || 'No Name Set'}</Text>
           <Text style={styles.email}>{user?.email}</Text>
           <Text style={styles.plan}>Free Plan</Text>
+          <Text style={styles.name}>{profile?.full_name || ''}</Text>
         </View>
 
         <View style={styles.statsSection}>
