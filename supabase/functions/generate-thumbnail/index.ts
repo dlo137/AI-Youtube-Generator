@@ -78,39 +78,42 @@ serve(async (req: Request) => {
     if (!prompt || typeof prompt !== "string")
       return new Response("Missing prompt", { status: 400 });
 
-    // Generate 2 variations with slightly different approaches
-    const variation1Prompt = `${prompt} - vibrant and bold style`;
-    const variation2Prompt = `${prompt} - minimalist and clean design`;
+    // Generate 1 variation temporarily (2 variations commented out)
+    const variation1Prompt = prompt;
+    // const variation2Prompt = `${prompt} - slightly different composition`;
 
     console.log('Generating variation 1 with prompt:', variation1Prompt);
-    console.log('Generating variation 2 with prompt:', variation2Prompt);
+    // console.log('Generating variation 2 with prompt:', variation2Prompt);
 
-    // Call Imagen/Gemini Images API for both variations
-    const [bytes1, bytes2] = await Promise.all([
-      callImagen(variation1Prompt),
-      callImagen(variation2Prompt)
-    ]);
+    // Call Imagen/Gemini Images API for one variation
+    const bytes1 = await callImagen(variation1Prompt);
+    // const [bytes1, bytes2] = await Promise.all([
+    //   callImagen(variation1Prompt),
+    //   callImagen(variation2Prompt)
+    // ]);
 
-    // Store both images to Supabase Storage
+    // Store one image to Supabase Storage
     const filename1 = `${crypto.randomUUID()}.png`;
-    const filename2 = `${crypto.randomUUID()}.png`;
+    // const filename2 = `${crypto.randomUUID()}.png`;
 
-    const [upload1, upload2] = await Promise.all([
-      supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
-      supabase.storage.from("thumbnails").upload(filename2, bytes2, { contentType: "image/png", upsert: true })
-    ]);
+    const upload1 = await supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true });
+    // const [upload1, upload2] = await Promise.all([
+    //   supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
+    //   supabase.storage.from("thumbnails").upload(filename2, bytes2, { contentType: "image/png", upsert: true })
+    // ]);
 
     if (upload1.error) throw upload1.error;
-    if (upload2.error) throw upload2.error;
+    // if (upload2.error) throw upload2.error;
 
-    // Generate signed URLs for both images
-    const [signed1, signed2] = await Promise.all([
-      supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60),
-      supabase.storage.from("thumbnails").createSignedUrl(filename2, 60 * 60)
-    ]);
+    // Generate signed URL for one image
+    const signed1 = await supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60);
+    // const [signed1, signed2] = await Promise.all([
+    //   supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60),
+    //   supabase.storage.from("thumbnails").createSignedUrl(filename2, 60 * 60)
+    // ]);
 
     if (signed1.error) throw signed1.error;
-    if (signed2.error) throw signed2.error;
+    // if (signed2.error) throw signed2.error;
 
     return new Response(JSON.stringify({
       imageUrl: signed1.data?.signedUrl, // keep for compatibility
@@ -124,14 +127,14 @@ serve(async (req: Request) => {
         height: HEIGHT,
         file: filename1,
         prompt: variation1Prompt
-      },
-      variation2: {
-        imageUrl: signed2.data?.signedUrl,
-        width: WIDTH,
-        height: HEIGHT,
-        file: filename2,
-        prompt: variation2Prompt
       }
+      // variation2: {
+      //   imageUrl: signed2.data?.signedUrl,
+      //   width: WIDTH,
+      //   height: HEIGHT,
+      //   file: filename2,
+      //   prompt: variation2Prompt
+      // }
     }), { headers: { "Content-Type": "application/json" } });
 
   } catch (e) {

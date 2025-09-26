@@ -31,9 +31,13 @@ export default function WelcomeScreen() {
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/(tabs)/generate')}
+          onPress={async () => {
+            // Set guest mode and clear any existing auth
+            global.isGuestMode = true;
+            router.push('/(tabs)/generate');
+          }}
         >
-          <Text style={styles.buttonText}>Get Started</Text>
+          <Text style={styles.buttonText}>Guest</Text>
         </TouchableOpacity>
 
         <TouchableOpacity

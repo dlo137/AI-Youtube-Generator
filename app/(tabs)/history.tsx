@@ -1,82 +1,72 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useState, useEffect } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
+import ThumbnailCard from '../../src/components/ThumbnailCard';
+import { getSavedThumbnails, deleteSavedThumbnail, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 
 export default function HistoryScreen() {
-  const videoHistory = [
-    {
-      id: 1,
-      title: 'AI-Generated Tutorial: React Native Basics',
-      date: '2024-09-22',
-      status: 'completed',
-      views: 1234,
-      duration: '8:45',
-    },
-    {
-      id: 2,
-      title: 'Top 10 JavaScript Tips',
-      date: '2024-09-17',
-      status: 'completed',
-      views: 892,
-      duration: '12:30',
-    },
-    {
-      id: 3,
-      title: 'Introduction to TypeScript',
-      date: '2024-09-15',
-      status: 'processing',
-      views: 0,
-      duration: '10:15',
-    },
-    {
-      id: 4,
-      title: 'Building Mobile Apps with Expo',
-      date: '2024-09-12',
-      status: 'completed',
-      views: 567,
-      duration: '15:20',
-    },
-    {
-      id: 5,
-      title: 'CSS Grid Layout Explained',
-      date: '2024-09-08',
-      status: 'failed',
-      views: 0,
-      duration: '7:30',
-    },
-  ];
+  const [thumbnails, setThumbnails] = useState<SavedThumbnail[]>([]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return '#10b981';
-      case 'processing':
-        return '#f59e0b';
-      case 'failed':
-        return '#ef4444';
-      default:
-        return '#64748b';
+  useEffect(() => {
+    loadThumbnails();
+  }, []);
+
+  // Refresh data when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      loadThumbnails();
+    }, [])
+  );
+
+  const loadThumbnails = async () => {
+    try {
+      const savedThumbnails = await getSavedThumbnails();
+      setThumbnails(savedThumbnails);
+    } catch (error) {
+      console.error('Error loading thumbnails:', error);
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'Completed';
-      case 'processing':
-        return 'Processing';
-      case 'failed':
-        return 'Failed';
-      default:
-        return 'Unknown';
-    }
+  const handleDownload = (id: string) => {
+    Alert.alert('Download', `Downloading thumbnail ${id}`);
   };
+
+  const handleShare = (id: string) => {
+    Alert.alert('Share', `Sharing thumbnail ${id}`);
+  };
+
+  const handleDelete = async (id: string) => {
+    Alert.alert(
+      'Delete Thumbnail',
+      'Are you sure you want to delete this thumbnail?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteSavedThumbnail(id);
+              setThumbnails(prev => prev.filter(thumb => thumb.id !== id));
+            } catch (error) {
+              console.error('Error deleting thumbnail:', error);
+              Alert.alert('Error', 'Failed to delete thumbnail');
+            }
+          }
+        }
+      ]
+    );
+  };
+
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Thumbnailinstead o History</Text>
+        <Text style={styles.title}>Thumbnail History</Text>
         <Text style={styles.subtitle}>Track your generated content</Text>
 
         <View style={styles.filterSection}>
@@ -95,47 +85,26 @@ export default function HistoryScreen() {
         </View>
 
         <View style={styles.videoList}>
-          {videoHistory.map((video) => (
-            <TouchableOpacity key={video.id} style={styles.videoCard}>
-              <View style={styles.videoHeader}>
-                <Text style={styles.videoTitle} numberOfLines={2}>
-                  {video.title}
-                </Text>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: getStatusColor(video.status) },
-                  ]}
-                >
-                  <Text style={styles.statusText}>
-                    {getStatusText(video.status)}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.videoMeta}>
-                <Text style={styles.metaText}>Created: {video.date}</Text>
-                <Text style={styles.metaText}>Duration: {video.duration}</Text>
-                {video.status === 'completed' && (
-                  <Text style={styles.metaText}>Views: {video.views.toLocaleString()}</Text>
-                )}
-              </View>
-
-              {video.status === 'completed' && (
-                <View style={styles.videoActions}>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <Text style={styles.actionButtonText}>View</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <Text style={styles.actionButtonText}>Share</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionButton, styles.deleteButton]}>
-                    <Text style={[styles.actionButtonText, styles.deleteButtonText]}>Delete</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
+          {thumbnails.length > 0 ? (
+            thumbnails.map((thumbnail) => (
+              <ThumbnailCard
+                key={thumbnail.id}
+                id={thumbnail.id}
+                title={thumbnail.title}
+                date={thumbnail.date}
+                status={thumbnail.status}
+                imageUrl={thumbnail.imageUrl}
+                onDownload={() => handleDownload(thumbnail.id)}
+                onShare={() => handleShare(thumbnail.id)}
+                onDelete={() => handleDelete(thumbnail.id)}
+              />
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>No saved thumbnails</Text>
+              <Text style={styles.emptySubtitle}>Generate and save thumbnails to see them here</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -196,66 +165,21 @@ const styles = StyleSheet.create({
   videoList: {
     gap: 16,
   },
-  videoCard: {
-    backgroundColor: CARD,
-    borderColor: BORDER,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
   },
-  videoHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  videoTitle: {
-    fontSize: 16,
+  emptyTitle: {
+    fontSize: 18,
     fontWeight: '600',
     color: TEXT,
-    flex: 1,
-    marginRight: 12,
+    marginBottom: 8,
   },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  videoMeta: {
-    gap: 4,
-    marginBottom: 16,
-  },
-  metaText: {
+  emptySubtitle: {
     fontSize: 14,
     color: MUTED,
-  },
-  videoActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#2a3038',
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  deleteButton: {
-    backgroundColor: '#3d1a1a',
-    borderColor: '#5a2d2d',
-  },
-  actionButtonText: {
-    fontSize: 12,
-    color: TEXT,
-    fontWeight: '500',
-  },
-  deleteButtonText: {
-    color: '#f87171',
+    textAlign: 'center',
   },
 });

@@ -1,14 +1,16 @@
 import { View, TouchableOpacity, Image, Text, Alert } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
+import { saveThumbnail } from '../utils/thumbnailStorage';
 
 interface GeneratedThumbnailProps {
   imageUrl: string;
+  prompt: string;
   onEdit: () => void;
   style: any;
 }
 
-export default function GeneratedThumbnail({ imageUrl, onEdit, style }: GeneratedThumbnailProps) {
+export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style }: GeneratedThumbnailProps) {
   const downloadThumbnail = async () => {
     if (!imageUrl) {
       Alert.alert('Error', 'No thumbnail to download');
@@ -61,9 +63,27 @@ export default function GeneratedThumbnail({ imageUrl, onEdit, style }: Generate
       <View style={style.imageActions}>
         <TouchableOpacity
           style={style.saveIcon}
-          onPress={() => {
-            // Save functionality can be added here
-            Alert.alert('Save', 'Save functionality coming soon!');
+          onPress={async () => {
+            // Check if user is in guest mode
+            if (global?.isGuestMode) {
+              Alert.alert(
+                'Upgrade to Pro',
+                'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
+                [
+                  { text: 'Maybe Later', style: 'cancel' },
+                  { text: 'Upgrade to Pro', style: 'default' }
+                ]
+              );
+              return;
+            }
+
+            try {
+              await saveThumbnail(prompt, imageUrl);
+              Alert.alert('Saved!', 'Thumbnail saved to your history');
+            } catch (error) {
+              console.error('Save error:', error);
+              Alert.alert('Error', 'Failed to save thumbnail');
+            }
           }}
         >
           <Text style={style.saveArrow}>♡</Text>

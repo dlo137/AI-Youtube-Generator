@@ -27,13 +27,24 @@ export default function TabsLayout() {
           </TouchableOpacity>
         ),
         headerRight: () => (
-          <View style={{
+          <TouchableOpacity style={{
             marginRight: 15,
-            width: 32,
-            height: 32,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderWidth: 1,
+            borderColor: '#FFD700',
             borderRadius: 16,
-            backgroundColor: '#3a3f47'
-          }} />
+            backgroundColor: 'transparent',
+          }}>
+            <Text style={{
+              color: '#FFD700',
+              fontSize: 12,
+              fontWeight: '600',
+              textAlign: 'center'
+            }}>
+              Get Pro
+            </Text>
+          </TouchableOpacity>
         ),
       }}
     >

@@ -1,11 +1,14 @@
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image, Modal, PanResponder } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import Svg, { Path } from 'react-native-svg';
+import { PinchGestureHandler, PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../../lib/supabase';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
+import { saveThumbnail } from '../../src/utils/thumbnailStorage';
 
 export default function GenerateScreen() {
   const [topic, setTopic] = useState('');
@@ -17,6 +20,20 @@ export default function GenerateScreen() {
   const [generatedImageUrl2, setGeneratedImageUrl2] = useState('');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPrompt, setModalPrompt] = useState('');
+  const [modalImageUrl, setModalImageUrl] = useState('');
+  const [selectedTool, setSelectedTool] = useState<'save' | 'draw' | 'text' | null>(null);
+  const [drawingPaths, setDrawingPaths] = useState<Array<{id: string, path: string, color: string}>>([]);
+  const [currentPath, setCurrentPath] = useState('');
+  const pathRef = useRef('');
+  const [textElements, setTextElements] = useState<Array<{id: string, text: string, x: number, y: number, color: string, fontSize: number}>>([]);
+  const [isAddingText, setIsAddingText] = useState(false);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [scale, setScale] = useState(1);
+  const [translateX, setTranslateX] = useState(0);
+  const [translateY, setTranslateY] = useState(0);
+  const scaleValue = useRef(new Animated.Value(1));
+  const translateXValue = useRef(new Animated.Value(0));
+  const translateYValue = useRef(new Animated.Value(0));
   const [lastPrompt, setLastPrompt] = useState('');
   const [allGenerations, setAllGenerations] = useState<Array<{
     id: string;
@@ -85,29 +102,191 @@ export default function GenerateScreen() {
     }
   };
 
-  const openModal = () => {
+  const openModal = (imageUrl: string) => {
     setModalPrompt('');
+    setModalImageUrl(imageUrl);
     setIsModalVisible(true);
   };
 
   const closeModal = () => {
     setIsModalVisible(false);
     setModalPrompt('');
+    setModalImageUrl('');
+    setSelectedTool(null);
+    setDrawingPaths([]);
+    setCurrentPath('');
+    pathRef.current = '';
+    setTextElements([]);
+    setIsAddingText(false);
+    setSelectedTextId(null);
+    // Reset zoom and pan
+    setScale(1);
+    setTranslateX(0);
+    setTranslateY(0);
+    scaleValue.current.setValue(1);
+    translateXValue.current.setValue(0);
+    translateYValue.current.setValue(0);
   };
 
   const getShortTitle = (prompt: string) => {
-    console.log('getShortTitle called with prompt:', prompt);
     // Extract key words and create a 2-3 word title
     const words = prompt.toLowerCase().split(' ').filter(word =>
       word.length > 2 &&
       !['the', 'and', 'for', 'with', 'about', 'thumbnail', 'image', 'picture'].includes(word)
     );
-    const title = words.slice(0, 3).map(word =>
+    return words.slice(0, 3).map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
-    console.log('Generated title:', title);
-    return title;
   };
+
+  const handleTextPlacement = (event: any) => {
+    if (selectedTool !== 'text') return;
+
+    const { locationX, locationY } = event.nativeEvent;
+
+    Alert.prompt(
+      'Add Text',
+      'Enter your text:',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Add',
+          onPress: (userText) => {
+            if (userText && userText.trim()) {
+              const newTextElement = {
+                id: Date.now().toString(),
+                text: userText.trim(),
+                x: locationX,
+                y: locationY,
+                color: '#FFD700', // Yellow color
+                fontSize: 16
+              };
+              setTextElements(prev => [...prev, newTextElement]);
+              setSelectedTextId(newTextElement.id); // Auto-select the new text
+            }
+            setSelectedTool(null); // Deselect text tool after placing text
+          },
+        },
+      ],
+      'plain-text',
+      '', // Default text
+      'default'
+    );
+  };
+
+  const handleTextSelection = (textId: string) => {
+    setSelectedTextId(selectedTextId === textId ? null : textId);
+  };
+
+  const moveText = (textId: string, deltaX: number, deltaY: number) => {
+    setTextElements(prev => prev.map(text =>
+      text.id === textId
+        ? { ...text, x: text.x + deltaX, y: text.y + deltaY }
+        : text
+    ));
+  };
+
+  const resizeText = (textId: string, scale: number) => {
+    setTextElements(prev => prev.map(text =>
+      text.id === textId
+        ? { ...text, fontSize: Math.max(12, Math.min(48, text.fontSize * scale)) }
+        : text
+    ));
+  };
+
+  const onPinchGestureEvent = (event: any) => {
+    const { scale: newScale } = event.nativeEvent;
+    const clampedScale = Math.max(0.5, Math.min(newScale, 3)); // Min 0.5x, Max 3x
+    scaleValue.current.setValue(clampedScale);
+  };
+
+  const onPinchHandlerStateChange = (event: any) => {
+    if (event.nativeEvent.state === State.END) {
+      const { scale: newScale } = event.nativeEvent;
+      const clampedScale = Math.max(0.5, Math.min(newScale, 3));
+      setScale(clampedScale);
+      scaleValue.current.setValue(clampedScale);
+    }
+  };
+
+  const onPanGestureEvent = (event: any) => {
+    if (selectedTool !== 'draw' && scale > 1) {
+      const { translationX, translationY } = event.nativeEvent;
+      translateXValue.current.setValue(translationX);
+      translateYValue.current.setValue(translationY);
+    }
+  };
+
+  const onPanHandlerStateChange = (event: any) => {
+    if (event.nativeEvent.state === State.END && selectedTool !== 'draw' && scale > 1) {
+      const { translationX, translationY } = event.nativeEvent;
+      setTranslateX(prev => prev + translationX);
+      setTranslateY(prev => prev + translationY);
+      translateXValue.current.setOffset(translateX + translationX);
+      translateYValue.current.setOffset(translateY + translationY);
+      translateXValue.current.setValue(0);
+      translateYValue.current.setValue(0);
+    }
+  };
+
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => selectedTool === 'draw',
+    onMoveShouldSetPanResponder: () => selectedTool === 'draw',
+    onStartShouldSetPanResponderCapture: () => selectedTool === 'draw',
+    onMoveShouldSetPanResponderCapture: () => selectedTool === 'draw',
+    onPanResponderTerminationRequest: () => false, // Don't allow termination
+    onShouldBlockNativeResponder: () => true, // Block native responder
+
+    onPanResponderGrant: (evt) => {
+      console.log('PanResponder Grant - selectedTool:', selectedTool);
+      if (selectedTool !== 'draw') return;
+      const { locationX, locationY } = evt.nativeEvent;
+      console.log('Drawing started at:', locationX, locationY);
+      const newPath = `M${locationX.toFixed(2)},${locationY.toFixed(2)}`;
+      pathRef.current = newPath;
+      setCurrentPath(newPath);
+    },
+
+    onPanResponderMove: (evt) => {
+      if (selectedTool !== 'draw') return;
+      const { locationX, locationY } = evt.nativeEvent;
+      console.log('Drawing move to:', locationX, locationY);
+      const updatedPath = `${pathRef.current} L${locationX.toFixed(2)},${locationY.toFixed(2)}`;
+      pathRef.current = updatedPath;
+      setCurrentPath(updatedPath); on
+    },
+
+    onPanResponderRelease: () => {
+      console.log('Drawing released');
+      if (selectedTool !== 'draw' || !pathRef.current) return;
+      const newDrawingPath = {
+        id: Date.now().toString(),
+        path: pathRef.current,
+        color: '#FFD700' // Yellow color
+      };
+      setDrawingPaths(prev => [...prev, newDrawingPath]);
+      setCurrentPath('');
+      pathRef.current = '';
+    },
+
+    onPanResponderTerminate: () => {
+      console.log('Drawing terminated');
+      // Handle forced termination - save current path
+      if (selectedTool === 'draw' && pathRef.current) {
+        const newDrawingPath = {
+          id: Date.now().toString(),
+          path: pathRef.current,
+          color: '#FFD700'
+        };
+        setDrawingPaths(prev => [...prev, newDrawingPath]);
+        setCurrentPath('');
+        pathRef.current = '';
+      }
+    },
+  });
 
   // kept from original for backwards-compat; do not change functionality
   const thumbnailStyles = [
@@ -181,11 +360,7 @@ export default function GenerateScreen() {
           url2: url2,
           timestamp: Date.now(),
         };
-        setAllGenerations(prev => {
-          console.log('Adding new generation:', newGeneration);
-          console.log('Previous generations:', prev);
-          return [newGeneration, ...prev];
-        });
+        setAllGenerations(prev => [newGeneration, ...prev]);
       } else if (data?.imageUrl) {
         // Fallback for backwards compatibility
         setGeneratedImageUrl(data.imageUrl);
@@ -209,16 +384,10 @@ export default function GenerateScreen() {
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Display all generated images or hero text */}
-        {(() => {
-          console.log('Current allGenerations.length:', allGenerations.length);
-          console.log('Current allGenerations:', allGenerations);
-          return allGenerations.length > 0;
-        })() ? (
+        {allGenerations.length > 0 ? (
           <View style={styles.generationsContainer}>
             {/* All generations including current one */}
-            {allGenerations.map((generation, index) => {
-              console.log('Rendering generation:', generation);
-              return (
+            {allGenerations.map((generation, index) => (
               <View key={generation.id} style={styles.generationSection}>
                 {/* Title for each generation */}
                 <Text style={styles.imageTitle}>{getShortTitle(generation.prompt)}</Text>
@@ -228,7 +397,8 @@ export default function GenerateScreen() {
                   <GeneratedThumbnail
                     key={`${generation.id}-1`}
                     imageUrl={generation.url1}
-                    onEdit={openModal}
+                    prompt={generation.prompt}
+                    onEdit={() => openModal(generation.url1)}
                     style={styles}
                   />
                 )}
@@ -238,7 +408,8 @@ export default function GenerateScreen() {
                   <GeneratedThumbnail
                     key={`${generation.id}-2`}
                     imageUrl={generation.url2}
-                    onEdit={openModal}
+                    prompt={generation.prompt}
+                    onEdit={() => openModal(generation.url2)}
                     style={styles}
                   />
                 )}
@@ -248,8 +419,7 @@ export default function GenerateScreen() {
                   <View style={styles.generationSeparator} />
                 )}
               </View>
-              );
-            })}
+            ))}
           </View>
         ) : (
           <View style={styles.hero}>
@@ -266,7 +436,7 @@ export default function GenerateScreen() {
         )}
 
         {/* Bottom padding for fixed action cards and prompt bar */}
-        <View style={{ height: 160 }} />
+        <View style={{ height: 225 }} />
       </ScrollView>
 
       {/* Fixed Bottom Container with Action Cards and Prompt Bar */}
@@ -331,12 +501,30 @@ export default function GenerateScreen() {
       {/* Modal --- Editing Thumbnail Area */}
       <Modal
         visible={isModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType="none"
+        presentationStyle="overFullScreen"
+        supportedOrientations={['portrait']}
+        onRequestClose={() => {}} // Prevent back button/gesture close
+        hardwareAccelerated={true}
       >
-        <View style={styles.modalContainer}>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <View style={[
+            styles.modalContainer,
+            {
+              overflow: 'hidden',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              // Disable scroll when drawing
+              ...(selectedTool === 'draw' && {
+                pointerEvents: 'box-none'
+              })
+            }
+          ]}>
           {/* Header with X icon */}
-          <View style={styles.modalHeader}>
+          <View style={[styles.modalHeader, { paddingTop: 50 }]}>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={closeModal}
@@ -346,30 +534,243 @@ export default function GenerateScreen() {
           </View>
 
           {/* Generated Image in the middle */}
-          <View style={styles.modalContent}>
-            <Image
-              source={{ uri: generatedImageUrl }}
-              style={styles.modalImage}
-              resizeMode="contain"
-            />
+          <View style={[
+            styles.modalContent,
+            // Prevent scroll interference when drawing
+            selectedTool === 'draw' && { pointerEvents: 'box-none' }
+          ]}>
+            <View style={styles.imageWithDrawing}>
+              <PinchGestureHandler
+                onGestureEvent={onPinchGestureEvent}
+                onHandlerStateChange={onPinchHandlerStateChange}
+                enabled={selectedTool !== 'draw' && selectedTool !== 'text'}
+              >
+                <PanGestureHandler
+                  onGestureEvent={onPanGestureEvent}
+                  onHandlerStateChange={onPanHandlerStateChange}
+                  enabled={selectedTool !== 'draw' && selectedTool !== 'text'}
+                >
+                  <Animated.View
+                    style={[
+                      styles.modalImageContainer,
+                      {
+                        transform: [
+                          { scale: scaleValue.current },
+                          { translateX: translateXValue.current },
+                          { translateY: translateYValue.current },
+                        ],
+                      },
+                    ]}
+                  >
+                    <Image
+                      source={{ uri: modalImageUrl }}
+                      style={styles.modalImage}
+                      resizeMode="contain"
+                    />
+
+                    {/* Persistent drawings overlay - always show completed drawings */}
+                    <View style={styles.persistentDrawingsOverlay} pointerEvents="none">
+                      <Svg style={StyleSheet.absoluteFillObject}>
+                        {drawingPaths.map((drawing) => (
+                          <Path
+                            key={drawing.id}
+                            d={drawing.path}
+                            stroke={drawing.color}
+                            strokeWidth="3"
+                            fill="transparent"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        ))}
+                      </Svg>
+                    </View>
+
+                    {/* Text elements overlay - only when not drawing */}
+                    {selectedTool !== 'draw' && textElements.map((textEl) => {
+                      const isSelected = selectedTextId === textEl.id;
+                      return (
+                        <PinchGestureHandler
+                          key={`pinch-${textEl.id}`}
+                          onGestureEvent={(event) => {
+                            if (isSelected) {
+                              const scale = event.nativeEvent.scale;
+                              resizeText(textEl.id, scale);
+                            }
+                          }}
+                          enabled={isSelected}
+                        >
+                          <PanGestureHandler
+                            key={`pan-${textEl.id}`}
+                            onGestureEvent={(event) => {
+                              if (isSelected) {
+                                const { translationX, translationY } = event.nativeEvent;
+                                moveText(textEl.id, translationX * 0.02, translationY * 0.02);
+                              }
+                            }}
+                            enabled={isSelected}
+                          >
+                            <View
+                              style={[
+                                styles.textElement,
+                                {
+                                  left: textEl.x - 50,
+                                  top: textEl.y - 15,
+                                  borderWidth: isSelected ? 2 : 0,
+                                  borderColor: isSelected ? '#FFD700' : 'transparent',
+                                  borderStyle: 'dashed',
+                                  padding: isSelected ? 8 : 0,
+                                }
+                              ]}
+                            >
+                              <TouchableOpacity
+                                onPress={() => handleTextSelection(textEl.id)}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[
+                                  styles.textElementText,
+                                  { fontSize: textEl.fontSize }
+                                ]}>
+                                  {textEl.text}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </PanGestureHandler>
+                        </PinchGestureHandler>
+                      );
+                    })}
+                  </Animated.View>
+                </PanGestureHandler>
+              </PinchGestureHandler>
+
+              {/* Active drawing overlay - only when drawing */}
+              {selectedTool === 'draw' && (
+                <View
+                  style={[styles.drawingOverlay, { zIndex: 1000 }]}
+                  {...panResponder.panHandlers}
+                  pointerEvents="auto"
+                >
+                  <Svg style={StyleSheet.absoluteFillObject}>
+                    {/* Only show the current path being drawn */}
+                    {currentPath !== '' && (
+                      <Path
+                        d={currentPath}
+                        stroke="#FFD700"
+                        strokeWidth="3"
+                        fill="transparent"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+                  </Svg>
+                </View>
+              )}
+
+              {/* Text placement overlay - only when text tool active */}
+              {selectedTool === 'text' && (
+                <View
+                  style={styles.drawingOverlay}
+                  onStartShouldSetResponder={() => true}
+                  onResponderGrant={handleTextPlacement}
+                >
+                  {/* Centered "Enter text" placeholder */}
+                  <View style={styles.textPlaceholder}>
+                    <Text style={styles.textPlaceholderText}>Enter text</Text>
+                  </View>
+
+                  {textElements.map((textEl) => (
+                    <View
+                      key={textEl.id}
+                      style={[
+                        styles.textElement,
+                        {
+                          left: textEl.x - 50,
+                          top: textEl.y - 15,
+                        }
+                      ]}
+                    >
+                      <Text style={[styles.textElementText, { fontSize: textEl.fontSize }]}>
+                        {textEl.text}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
 
             {/* Edit Tools */}
             <View style={styles.editTools}>
               <TouchableOpacity
-                style={styles.editToolIcon}
+                style={[
+                  styles.editToolIcon,
+                  selectedTool === 'draw' && styles.editToolIconSelected
+                ]}
                 onPress={() => {
-                  console.log('Drawing tool selected');
+                  setSelectedTool(selectedTool === 'draw' ? null : 'draw');
                 }}
               >
                 <Text style={styles.editToolText}>✎</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.editToolIcon}
+                style={[
+                  styles.editToolIcon,
+                  selectedTool === 'text' && styles.editToolIconSelected
+                ]}
                 onPress={() => {
-                  console.log('Text tool selected');
+                  setSelectedTool(selectedTool === 'text' ? null : 'text');
                 }}
               >
-                <Text style={styles.editToolText}>T</Text>
+                <Text style={styles.editToolText}>Aa</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.editToolIcon}
+                onPress={() => {
+                  setDrawingPaths([]);
+                  setCurrentPath('');
+                  pathRef.current = '';
+                  setTextElements([]);
+                  Alert.alert('Erased', 'All edits cleared!');
+                }}
+              >
+                <Text style={styles.editToolText}>↻</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.editToolIcon,
+                  selectedTool === 'save' && styles.editToolIconSelected
+                ]}
+                onPress={async () => {
+                  // Check if user is in guest mode
+                  if (global?.isGuestMode) {
+                    Alert.alert(
+                      'Upgrade to Pro',
+                      'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
+                      [
+                        { text: 'Maybe Later', style: 'cancel' },
+                        { text: 'Upgrade to Pro', style: 'default' }
+                      ]
+                    );
+                    return;
+                  }
+
+                  try {
+                    // Find the generation that matches the current modal image
+                    const currentGeneration = allGenerations.find(gen =>
+                      gen.url1 === modalImageUrl || gen.url2 === modalImageUrl
+                    );
+
+                    if (currentGeneration) {
+                      await saveThumbnail(currentGeneration.prompt, modalImageUrl);
+                      Alert.alert('Saved!', 'Thumbnail saved to your history');
+                    } else {
+                      Alert.alert('Error', 'Could not find thumbnail to save');
+                    }
+                  } catch (error) {
+                    console.error('Save error:', error);
+                    Alert.alert('Error', 'Failed to save thumbnail');
+                  }
+                }}
+              >
+                <Text style={styles.editToolText}>♡</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -397,6 +798,7 @@ export default function GenerateScreen() {
             </View>
           </View>
         </View>
+        </GestureHandlerRootView>
       </Modal>
     </View>
   );
@@ -509,6 +911,7 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontSize: 15,
     textAlign: 'left',
+    textAlignVertical: 'center',
   },
   sendBtn: {
     width: 36,
@@ -682,6 +1085,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: CARD,
   },
+  modalImageContainer: {
+    width: '100%',
+    height: 250,
+  },
   modalPromptContainer: {
     paddingHorizontal: 18,
     paddingBottom: Platform.select({ ios: 34, android: 16 }),
@@ -725,5 +1132,59 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  editToolIconSelected: {
+    borderWidth: 3,
+    borderColor: '#FFD700', // Yellow border when selected
+  },
+  imageWithDrawing: {
+    position: 'relative',
+    width: '100%',
+    height: 250,
+  },
+  drawingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+  },
+  persistentDrawingsOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 5,
+  },
+  textElement: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  textElementText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    color: '#ffffff',
+  },
+  textPlaceholder: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -50 }, { translateY: -15 }],
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    borderStyle: 'dashed',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 4,
+  },
+  textPlaceholderText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });

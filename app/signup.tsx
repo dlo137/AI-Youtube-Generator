@@ -35,7 +35,7 @@ export default function SignUpScreen() {
       if (data.user) {
         Alert.alert(
           'Success!',
-          'Account created successfully! Please check your email to verify your account.',
+          'Account created successfully!',
           [
             {
               text: 'OK',
@@ -58,7 +58,7 @@ export default function SignUpScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
@@ -72,7 +72,7 @@ export default function SignUpScreen() {
             <TextInput
               style={styles.input}
               placeholder="Enter your email"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={MUTED}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -86,7 +86,7 @@ export default function SignUpScreen() {
             <TextInput
               style={styles.input}
               placeholder="Enter your password"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={MUTED}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
@@ -99,7 +99,7 @@ export default function SignUpScreen() {
             <TextInput
               style={styles.input}
               placeholder="Confirm your password"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={MUTED}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -136,15 +136,23 @@ export default function SignUpScreen() {
   );
 }
 
+const BG = '#0b0f14';
+const CARD = '#151a21';
+const BORDER = '#232932';
+const TEXT = '#e7ebf0';
+const MUTED = '#8a9099';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: BG,
   },
   scrollContainer: {
     flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 40,
+    minHeight: '100%',
   },
   header: {
     marginBottom: 40,
@@ -153,18 +161,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1e293b',
+    color: TEXT,
     marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#64748b',
+    color: MUTED,
     textAlign: 'center',
     lineHeight: 24,
   },
   form: {
-    flex: 1,
+    maxWidth: 400,
+    alignSelf: 'center',
+    width: '100%',
   },
   inputContainer: {
     marginBottom: 20,
@@ -172,18 +182,18 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: TEXT,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#ffffff',
+    backgroundColor: CARD,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: BORDER,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
-    color: '#1f2937',
+    color: TEXT,
   },
   signUpButton: {
     backgroundColor: '#6366f1',
@@ -216,7 +226,7 @@ const styles = StyleSheet.create({
   },
   loginText: {
     fontSize: 16,
-    color: '#64748b',
+    color: MUTED,
   },
   loginLink: {
     fontSize: 16,

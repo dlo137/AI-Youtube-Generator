@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import { getCurrentUser, getMyProfile, updateMyProfile, signOut } from '../../src/features/auth/api';
 
 export default function ProfileScreen() {
@@ -17,7 +18,6 @@ export default function ProfileScreen() {
 
   const settings = [
     { id: 'account', title: 'Account Settings', subtitle: 'Manage your account' },
-    { id: 'notifications', title: 'Notifications', subtitle: 'Configure alerts and updates' },
     { id: 'privacy', title: 'Privacy & Security', subtitle: 'Control your data' },
     { id: 'billing', title: 'Billing', subtitle: 'Manage subscription and payments' },
     { id: 'help', title: 'Help & Support', subtitle: 'Get assistance' },
@@ -28,8 +28,33 @@ export default function ProfileScreen() {
     loadUserData();
   }, []);
 
+  // Refresh data when screen is focused (important for guest mode)
+  useFocusEffect(
+    useCallback(() => {
+      loadUserData();
+    }, [])
+  );
+
   const loadUserData = async () => {
     try {
+      // Check if we're in guest mode first
+      if (global?.isGuestMode) {
+        // Set guest data without any API calls
+        setUser({
+          email: 'Guest',
+          isGuest: true
+        });
+        setProfile({
+          full_name: 'Guest User'
+        });
+        setEditForm({
+          full_name: 'Guest User',
+          website: ''
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const userData = await getCurrentUser();
       if (!userData) {
         router.push('/login');
@@ -56,7 +81,12 @@ export default function ProfileScreen() {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      if (user?.isGuest) {
+        // Clear guest mode
+        global.isGuestMode = false;
+      } else {
+        await signOut();
+      }
       router.push('/');
     } catch (error) {
       console.error('Sign out error:', error);
@@ -92,30 +122,14 @@ export default function ProfileScreen() {
         <View style={styles.profileHeader}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || '?'}
+              {user?.isGuest ? 'G' : (profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || '?')}
             </Text>
           </View>
-          <Text style={styles.email}>{user?.email}</Text>
+          <Text style={styles.email}>{user?.isGuest ? 'Guest' : user?.email}</Text>
           <Text style={styles.plan}>Free Plan</Text>
-          <Text style={styles.name}>{profile?.full_name || ''}</Text>
+          <Text style={styles.name}>{user?.isGuest ? '' : (profile?.full_name || '')}</Text>
         </View>
 
-        <View style={styles.statsSection}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>12</Text>
-            <Text style={styles.statLabel}>Videos</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>2.4K</Text>
-            <Text style={styles.statLabel}>Total Views</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>28</Text>
-            <Text style={styles.statLabel}>Days Active</Text>
-          </View>
-        </View>
 
         <View style={styles.settingsSection}>
           <Text style={styles.sectionTitle}>Settings</Text>
@@ -214,7 +228,9 @@ const styles = StyleSheet.create({
   },
   profileHeader: {
     alignItems: 'center',
-    marginBottom: 32,
+    justifyContent: 'center',
+    flex: 1,
+    paddingVertical: 15,
   },
   avatar: {
     width: 80,
@@ -250,36 +266,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
   },
-  statsSection: {
-    flexDirection: 'row',
-    backgroundColor: CARD,
-    borderColor: BORDER,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 32,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: TEXT,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: MUTED,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: BORDER,
-    marginHorizontal: 20,
-  },
   settingsSection: {
     marginBottom: 32,
+    flex: 0,
   },
   sectionTitle: {
     fontSize: 18,
