@@ -63,7 +63,7 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, ed
             key={imageUrl}
             source={{ uri: imageUrl }}
             style={style.generatedImage}
-            resizeMode="contain"
+            resizeMode="cover"
           />
 
           {/* Render edits overlay */}

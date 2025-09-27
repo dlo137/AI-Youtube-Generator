@@ -250,6 +250,10 @@ export default function GenerateScreen() {
       // Create an adjustment-focused prompt that preserves the original image
       const fullPrompt = `Keep the exact same composition, layout, and core elements from this thumbnail: "${currentGeneration.prompt}". Only make this specific adjustment: ${enhancedPrompt}. Do not change the overall design, just modify the requested aspect while maintaining everything else identical.`;
 
+      // Only use images that are actively selected for adjustment mode
+      const activeSubjectImageUrl = subjectImage ? subjectImageUrl : null;
+      const activeReferenceImageUrls = referenceImages.length > 0 ? referenceImageUrls : [];
+
       // Call the generation API with the current image as reference
       const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
         body: {
@@ -257,8 +261,8 @@ export default function GenerateScreen() {
           style: style,
           baseImageUrl: modalImageUrl, // Provide current image as reference for adjustments
           adjustmentMode: true, // Flag to indicate this is an adjustment, not new generation
-          subjectImageUrl: subjectImageUrl, // Include subject image URL for face/body swapping
-          referenceImageUrls: referenceImageUrls, // Include reference image URLs for style matching
+          subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
+          referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
         },
       });
 
@@ -531,12 +535,16 @@ export default function GenerateScreen() {
     // Store the prompt for title display BEFORE clearing
     let promptToUse = topic.trim();
 
-    // Enhance prompt with subject/reference instructions
-    if (subjectImageUrl && referenceImageUrls.length > 0) {
+    // Only use images that are actively selected (have local images)
+    const activeSubjectImageUrl = subjectImage ? subjectImageUrl : null;
+    const activeReferenceImageUrls = referenceImages.length > 0 ? referenceImageUrls : [];
+
+    // Enhance prompt with subject/reference instructions based on actively selected images
+    if (activeSubjectImageUrl && activeReferenceImageUrls.length > 0) {
       promptToUse += '. Use the reference image(s) as the exact style and composition template, and replace the main subject/person in the reference with the provided subject image (face swap/body replacement). Maintain the exact background, lighting, pose, and style of the reference.';
-    } else if (subjectImageUrl) {
+    } else if (activeSubjectImageUrl) {
       promptToUse += '. Use the provided subject image as the main focus, incorporating the person/face into the generated thumbnail.';
-    } else if (referenceImageUrls.length > 0) {
+    } else if (activeReferenceImageUrls.length > 0) {
       promptToUse += '. Use the reference image(s) as inspiration for the style, composition, and overall look of the thumbnail.';
     }
 
@@ -556,8 +564,8 @@ export default function GenerateScreen() {
         body: {
           prompt: promptToUse,
           style: style,
-          subjectImageUrl: subjectImageUrl, // Include subject image URL for face/body swapping
-          referenceImageUrls: referenceImageUrls, // Include reference image URLs for style matching
+          subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
+          referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
         },
       });
 
@@ -800,7 +808,7 @@ export default function GenerateScreen() {
                 }
               ]}>
           {/* Header with X icon */}
-          <View style={[styles.modalHeader, { paddingTop: 50 }]}>
+          <View style={[styles.modalHeader, { paddingTop: 60, paddingBottom: 20 }]}>
             <TouchableOpacity
               style={styles.closeButton}
               onPress={closeModal}
@@ -811,11 +819,12 @@ export default function GenerateScreen() {
 
           {/* Generated Image in the middle */}
           <View style={[
-            styles.modalContent,
+            styles.centeredImageContainer,
             // Prevent scroll interference when drawing
             selectedTool === 'draw' && { pointerEvents: 'box-none' }
           ]}>
-            <View style={styles.imageWithDrawing}>
+            <View style={styles.imageAndToolsGroup}>
+              <View style={styles.imageWithDrawing}>
               <PinchGestureHandler
                 onGestureEvent={onPinchGestureEvent}
                 onHandlerStateChange={onPinchHandlerStateChange}
@@ -841,7 +850,7 @@ export default function GenerateScreen() {
                     <Image
                       source={{ uri: modalImageUrl }}
                       style={styles.modalImage}
-                      resizeMode="contain"
+                      resizeMode="cover"
                     />
 
                     {/* Persistent drawings overlay - always show completed drawings */}
@@ -1121,17 +1130,6 @@ export default function GenerateScreen() {
               <TouchableOpacity
                 style={[
                   styles.editToolIcon,
-                  selectedTool === 'draw' && styles.editToolIconSelected
-                ]}
-                onPress={() => {
-                  setSelectedTool(selectedTool === 'draw' ? null : 'draw');
-                }}
-              >
-                <Text style={styles.editToolText}>✎</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.editToolIcon,
                   selectedTool === 'text' && styles.editToolIconSelected
                 ]}
                 onPress={() => {
@@ -1259,6 +1257,7 @@ export default function GenerateScreen() {
                 <Text style={styles.editToolText}>♡</Text>
               </TouchableOpacity>
             </View>
+            </View>
           </View>
 
           {/* Prompt Bar at the bottom */}
@@ -1281,6 +1280,17 @@ export default function GenerateScreen() {
                   onChangeText={setModalPrompt}
                   multiline
                   returnKeyType="send"
+                  blurOnSubmit={false}
+                  onKeyPress={({ nativeEvent }) => {
+                    if (nativeEvent.key === 'Enter' && modalPrompt.trim() && !isModalGenerating) {
+                      handleModalGenerate();
+                    }
+                  }}
+                  onSubmitEditing={() => {
+                    if (modalPrompt.trim() && !isModalGenerating) {
+                      handleModalGenerate();
+                    }
+                  }}
                 />
                 <TouchableOpacity
                   style={[styles.sendBtn, (!modalPrompt || isModalGenerating) && styles.sendBtnDisabled]}
@@ -1316,7 +1326,10 @@ export default function GenerateScreen() {
                 <Image source={{ uri: subjectImage }} style={styles.imagePreview} />
                 <TouchableOpacity
                   style={styles.removeImageButton}
-                  onPress={() => setSubjectImage(null)}
+                  onPress={() => {
+                    setSubjectImage(null);
+                    setSubjectImageUrl(null); // Clear URL when image is removed
+                  }}
                 >
                   <Text style={styles.removeImageText}>✕</Text>
                 </TouchableOpacity>
@@ -1370,8 +1383,6 @@ export default function GenerateScreen() {
                 onPress={async () => {
                   if (subjectImage) {
                     try {
-                      Alert.alert('Uploading...', 'Uploading subject image to server');
-
                       // Upload image to Supabase Storage
                       const uploadedUrl = await uploadImageToStorage(subjectImage, 'subject');
 
@@ -1417,6 +1428,7 @@ export default function GenerateScreen() {
                     style={styles.removeReferenceButton}
                     onPress={() => {
                       setReferenceImages(prev => prev.filter((_, i) => i !== index));
+                      setReferenceImageUrls(prev => prev.filter((_, i) => i !== index)); // Clear corresponding URL
                     }}
                   >
                     <Text style={styles.removeImageText}>✕</Text>
@@ -1478,8 +1490,6 @@ export default function GenerateScreen() {
                 onPress={async () => {
                   if (referenceImages.length > 0) {
                     try {
-                      Alert.alert('Uploading...', `Uploading ${referenceImages.length} reference image${referenceImages.length > 1 ? 's' : ''} to server`);
-
                       // Upload all reference images
                       const uploadPromises = referenceImages.map((imageUri, index) =>
                         uploadImageToStorage(imageUri, `reference_${index}`)
@@ -1746,7 +1756,7 @@ const styles = StyleSheet.create({
   },
   generatedImage: {
     width: '100%',
-    height: 200,
+    aspectRatio: 16/9, // YouTube thumbnail ratio
     borderRadius: 12,
     backgroundColor: CARD,
   },
@@ -1861,21 +1871,25 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  modalContent: {
+  centeredImageContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
+  imageAndToolsGroup: {
+    alignItems: 'center',
   },
   modalImage: {
     width: '100%',
-    height: 250,
+    aspectRatio: 16/9, // YouTube thumbnail ratio
     borderRadius: 12,
     backgroundColor: CARD,
   },
   modalImageContainer: {
     width: '100%',
-    height: 250,
+    aspectRatio: 16/9, // YouTube thumbnail ratio
   },
   modalPromptContainer: {
     paddingHorizontal: 18,
@@ -1894,10 +1908,10 @@ const styles = StyleSheet.create({
   },
   editTools: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
-    paddingRight: 20,
+    marginTop: 8,
+    paddingHorizontal: 20,
     gap: 12,
   },
   editToolIcon: {
