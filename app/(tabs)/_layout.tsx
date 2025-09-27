@@ -1,7 +1,9 @@
 import { Tabs } from 'expo-router';
 import { View, Text, TouchableOpacity } from 'react-native';
+import { ModalProvider } from '../../src/contexts/ModalContext';
+import HeaderLeft from '../../src/components/HeaderLeft';
 
-export default function TabsLayout() {
+function TabsContent() {
   return (
     <Tabs
       screenOptions={{
@@ -21,11 +23,7 @@ export default function TabsLayout() {
         headerTitleStyle: {
           fontWeight: 'bold',
         },
-        headerLeft: () => (
-          <TouchableOpacity style={{ marginLeft: 15, padding: 5 }}>
-            <Text style={{ color: '#fff', fontSize: 32 }}>≡</Text>
-          </TouchableOpacity>
-        ),
+        headerLeft: () => <HeaderLeft />,
         headerRight: () => (
           <TouchableOpacity style={{
             marginRight: 15,
@@ -133,5 +131,13 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+  );
+}
+
+export default function TabsLayout() {
+  return (
+    <ModalProvider>
+      <TabsContent />
+    </ModalProvider>
   );
 }

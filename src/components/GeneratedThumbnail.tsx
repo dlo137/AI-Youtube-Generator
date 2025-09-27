@@ -2,15 +2,20 @@ import { View, TouchableOpacity, Image, Text, Alert } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import { saveThumbnail } from '../utils/thumbnailStorage';
+import Svg, { Path } from 'react-native-svg';
 
 interface GeneratedThumbnailProps {
   imageUrl: string;
   prompt: string;
   onEdit: () => void;
   style: any;
+  edits?: {
+    drawings: Array<{id: string, path: string, color: string}>;
+    text: {text: string, x: number, y: number, fontSize: number} | null;
+  } | null;
 }
 
-export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style }: GeneratedThumbnailProps) {
+export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, edits }: GeneratedThumbnailProps) {
   const downloadThumbnail = async () => {
     if (!imageUrl) {
       Alert.alert('Error', 'No thumbnail to download');
@@ -53,12 +58,64 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style }: 
   return (
     <View style={style.imageWrapper}>
       <TouchableOpacity onPress={onEdit} activeOpacity={0.8}>
-        <Image
-          key={imageUrl}
-          source={{ uri: imageUrl }}
-          style={style.generatedImage}
-          resizeMode="contain"
-        />
+        <View style={{ position: 'relative' }}>
+          <Image
+            key={imageUrl}
+            source={{ uri: imageUrl }}
+            style={style.generatedImage}
+            resizeMode="contain"
+          />
+
+          {/* Render edits overlay */}
+          {edits && (
+            <View style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              pointerEvents: 'none'
+            }}>
+              {/* Drawings overlay */}
+              {edits.drawings.length > 0 && (
+                <Svg style={{
+                  position: 'absolute',
+                  width: '100%',
+                  height: '100%'
+                }}>
+                  {edits.drawings.map((drawing) => (
+                    <Path
+                      key={drawing.id}
+                      d={drawing.path}
+                      stroke={drawing.color}
+                      strokeWidth="3"
+                      fill="transparent"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  ))}
+                </Svg>
+              )}
+
+              {/* Text overlay */}
+              {edits.text && (
+                <Text
+                  style={{
+                    position: 'absolute',
+                    left: edits.text.x,
+                    top: edits.text.y,
+                    fontSize: edits.text.fontSize,
+                    color: '#ffffff',
+                    fontWeight: 'bold',
+                    transform: [{ translateX: -50 }, { translateY: -15 }],
+                  }}
+                >
+                  {edits.text.text}
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
       <View style={style.imageActions}>
         <TouchableOpacity
@@ -78,7 +135,7 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style }: 
             }
 
             try {
-              await saveThumbnail(prompt, imageUrl);
+              await saveThumbnail(prompt, imageUrl, edits);
               Alert.alert('Saved!', 'Thumbnail saved to your history');
             } catch (error) {
               console.error('Save error:', error);

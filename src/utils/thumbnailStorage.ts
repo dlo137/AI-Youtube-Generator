@@ -8,11 +8,22 @@ export interface SavedThumbnail {
   date: string;
   status: 'completed' | 'processing' | 'failed';
   timestamp: number;
+  edits?: {
+    drawings: Array<{id: string, path: string, color: string}>;
+    text: {text: string, x: number, y: number, fontSize: number} | null;
+  } | null;
 }
 
 const STORAGE_KEY = 'saved_thumbnails';
 
-export const saveThumbnail = async (prompt: string, imageUrl: string): Promise<SavedThumbnail> => {
+export const saveThumbnail = async (
+  prompt: string,
+  imageUrl: string,
+  edits?: {
+    drawings: Array<{id: string, path: string, color: string}>;
+    text: {text: string, x: number, y: number, fontSize: number} | null;
+  } | null
+): Promise<SavedThumbnail> => {
   try {
     const existingThumbnails = await getSavedThumbnails();
 
@@ -24,6 +35,7 @@ export const saveThumbnail = async (prompt: string, imageUrl: string): Promise<S
       date: new Date().toISOString().split('T')[0],
       status: 'completed',
       timestamp: Date.now(),
+      edits: edits || null,
     };
 
     const updatedThumbnails = [newThumbnail, ...existingThumbnails];

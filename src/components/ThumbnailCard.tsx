@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 
 interface ThumbnailCardProps {
   id: string;
@@ -6,6 +7,10 @@ interface ThumbnailCardProps {
   date: string;
   status: 'completed' | 'processing' | 'failed';
   imageUrl?: string;
+  edits?: {
+    drawings: Array<{id: string, path: string, color: string}>;
+    text: {text: string, x: number, y: number, fontSize: number} | null;
+  } | null;
   onDownload?: () => void;
   onShare?: () => void;
   onDelete?: () => void;
@@ -23,6 +28,7 @@ export default function ThumbnailCard({
   date,
   status,
   imageUrl,
+  edits,
   onDownload,
   onShare,
   onDelete
@@ -74,11 +80,104 @@ export default function ThumbnailCard({
 
       <View style={styles.thumbnailPlaceholder}>
         {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={styles.thumbnailImage}
-            resizeMode="cover"
-          />
+          <View style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <Image
+              source={{ uri: imageUrl }}
+              style={styles.thumbnailImage}
+              resizeMode="cover"
+            />
+
+            {/* Render edits overlay */}
+            {edits && (
+              <View style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                pointerEvents: 'none'
+              }}>
+                {/* Drawings overlay */}
+                {edits.drawings.length > 0 && (
+                  <Svg style={{
+                    position: 'absolute',
+                    width: '100%',
+                    height: '100%'
+                  }}>
+                    {edits.drawings.map((drawing) => {
+                      // Scale drawing paths for smaller thumbnail
+                      // Modal image: width: '100%' (typically ~350px on phone), height: 250px
+                      // Thumbnail: width: '65%' with 16:9 aspect ratio
+
+                      // Assuming container width is ~350px on typical phone
+                      const containerWidth = 350;
+                      const modalWidth = containerWidth; // Modal image is 100% width
+                      const modalHeight = 250; // From styles.modalImage
+
+                      // Thumbnail is 65% width with 16:9 aspect ratio
+                      const thumbnailWidth = containerWidth * 0.65; // ~227px
+                      const thumbnailHeight = thumbnailWidth / (16/9); // ~128px
+
+                      const scaleX = thumbnailWidth / modalWidth;   // ~0.65
+                      const scaleY = thumbnailHeight / modalHeight; // ~0.51
+
+                      const scaledPath = drawing.path.replace(/M([\d.-]+),([\d.-]+)/g, (match, x, y) => {
+                        return `M${(parseFloat(x) * scaleX).toFixed(2)},${(parseFloat(y) * scaleY).toFixed(2)}`;
+                      }).replace(/L([\d.-]+),([\d.-]+)/g, (match, x, y) => {
+                        return `L${(parseFloat(x) * scaleX).toFixed(2)},${(parseFloat(y) * scaleY).toFixed(2)}`;
+                      });
+
+                      return (
+                        <Path
+                          key={drawing.id}
+                          d={scaledPath}
+                          stroke={drawing.color}
+                          strokeWidth="1.5"
+                          fill="transparent"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      );
+                    })}
+                  </Svg>
+                )}
+
+                {/* Text overlay */}
+                {edits.text && (() => {
+                  // Use same scaling factors as drawings
+                  const containerWidth = 350;
+                  const modalWidth = containerWidth; // Modal image is 100% width
+                  const modalHeight = 250; // From styles.modalImage
+
+                  // Thumbnail is 65% width with 16:9 aspect ratio
+                  const thumbnailWidth = containerWidth * 0.65; // ~227px
+                  const thumbnailHeight = thumbnailWidth / (16/9); // ~128px
+
+                  const scaleX = thumbnailWidth / modalWidth;   // ~0.65
+                  const scaleY = thumbnailHeight / modalHeight; // ~0.51
+
+                  return (
+                    <Text
+                      style={{
+                        position: 'absolute',
+                        left: edits.text.x * scaleX, // Use calculated scale
+                        top: edits.text.y * scaleY, // Use calculated scale
+                        fontSize: edits.text.fontSize * scaleX, // Scale font size proportionally
+                        color: '#ffffff',
+                        fontWeight: 'bold',
+                        transform: [
+                          { translateX: -25 * scaleX },
+                          { translateY: -15 * scaleY }
+                        ], // Scale the centering transforms too
+                      }}
+                    >
+                      {edits.text.text}
+                    </Text>
+                  );
+                })()}
+              </View>
+            )}
+          </View>
         ) : (
           <Text style={styles.placeholderText}>No Image</Text>
         )}

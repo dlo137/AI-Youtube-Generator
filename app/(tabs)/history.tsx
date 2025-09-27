@@ -77,10 +77,7 @@ export default function HistoryScreen() {
             <Text style={styles.filterText}>Completed</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.filterButton}>
-            <Text style={styles.filterText}>Processing</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.filterButton}>
-            <Text style={styles.filterText}>Failed</Text>
+            <Text style={styles.filterText}>Saved</Text>
           </TouchableOpacity>
         </View>
 
@@ -94,6 +91,7 @@ export default function HistoryScreen() {
                 date={thumbnail.date}
                 status={thumbnail.status}
                 imageUrl={thumbnail.imageUrl}
+                edits={thumbnail.edits}
                 onDownload={() => handleDownload(thumbnail.id)}
                 onShare={() => handleShare(thumbnail.id)}
                 onDelete={() => handleDelete(thumbnail.id)}
