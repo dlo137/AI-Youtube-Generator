@@ -67,6 +67,9 @@ export default function GenerateScreen() {
   const [duration, setDuration] = useState(''); // kept for existing logic
   const [style, setStyle] = useState('educational'); // kept for existing logic
   const [isLoading, setIsLoading] = useState(false);
+  const dot1Anim = useRef(new Animated.Value(0)).current;
+  const dot2Anim = useRef(new Animated.Value(0)).current;
+  const dot3Anim = useRef(new Animated.Value(0)).current;
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [generatedImageUrl, setGeneratedImageUrl] = useState('');
   const [generatedImageUrl2, setGeneratedImageUrl2] = useState('');
@@ -119,6 +122,45 @@ export default function GenerateScreen() {
     timestamp: number;
   }>>([]);
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (isLoading) {
+      const createFloatingAnimation = (animValue: Animated.Value, delay: number) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.timing(animValue, {
+              toValue: -6,
+              duration: 500,
+              delay,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 0,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+
+      const animation1 = createFloatingAnimation(dot1Anim, 0);
+      const animation2 = createFloatingAnimation(dot2Anim, 150);
+      const animation3 = createFloatingAnimation(dot3Anim, 300);
+
+      animation1.start();
+      animation2.start();
+      animation3.start();
+
+      return () => {
+        animation1.stop();
+        animation2.stop();
+        animation3.stop();
+        dot1Anim.setValue(0);
+        dot2Anim.setValue(0);
+        dot3Anim.setValue(0);
+      };
+    }
+  }, [isLoading]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -771,7 +813,15 @@ export default function GenerateScreen() {
             disabled={!topic || isLoading}
             activeOpacity={0.8}
           >
-            <Text style={styles.sendArrow}>{isLoading ? '...' : '↑'}</Text>
+            {isLoading ? (
+              <View style={styles.loadingDots}>
+                <Animated.View style={[styles.dot, { transform: [{ translateY: dot1Anim }] }]} />
+                <Animated.View style={[styles.dot, { transform: [{ translateY: dot2Anim }] }]} />
+                <Animated.View style={[styles.dot, { transform: [{ translateY: dot3Anim }] }]} />
+              </View>
+            ) : (
+              <Text style={styles.sendArrow}>↑</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -1717,7 +1767,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2a3038',
+    backgroundColor: '#007AFF',
     marginLeft: 8,
   },
   sendBtnDisabled: {
@@ -1727,6 +1777,18 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontSize: 16,
     fontWeight: '800',
+  },
+  loadingDots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#FFFFFF',
   },
   imageContainer: {
     flex: 1,
