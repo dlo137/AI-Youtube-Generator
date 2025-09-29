@@ -1,9 +1,17 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { ModalProvider } from '../../src/contexts/ModalContext';
+import { ModalProvider, useModal } from '../../src/contexts/ModalContext';
 import HeaderLeft from '../../src/components/HeaderLeft';
 
 function TabsContent() {
+  const router = useRouter();
+  const { setIsBillingModalVisible } = useModal();
+
+  const handleGetPro = () => {
+    router.push('/(tabs)/profile');
+    setTimeout(() => setIsBillingModalVisible(true), 100);
+  };
+
   return (
     <Tabs
       screenOptions={{
@@ -25,15 +33,18 @@ function TabsContent() {
         },
         headerLeft: () => <HeaderLeft />,
         headerRight: () => (
-          <TouchableOpacity style={{
-            marginRight: 15,
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            borderWidth: 1,
-            borderColor: '#FFD700',
-            borderRadius: 16,
-            backgroundColor: 'transparent',
-          }}>
+          <TouchableOpacity
+            style={{
+              marginRight: 15,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderWidth: 1,
+              borderColor: '#FFD700',
+              borderRadius: 16,
+              backgroundColor: 'transparent',
+            }}
+            onPress={handleGetPro}
+          >
             <Text style={{
               color: '#FFD700',
               fontSize: 12,

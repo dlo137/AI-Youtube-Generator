@@ -790,7 +790,6 @@ export default function GenerateScreen() {
 
         {/* Prompt Bar */}
         <View style={styles.inputBar}>
-          <Text style={styles.paperclip}>📎</Text>
           <TextInput
             style={styles.textInput}
             placeholder="Describe your thumbnail idea"
@@ -1321,7 +1320,6 @@ export default function GenerateScreen() {
               }
             ]}>
               <View style={styles.modalInputBar}>
-                <Text style={styles.paperclip}>📎</Text>
                 <TextInput
                   style={styles.textInput}
                   placeholder="Edit your thumbnail prompt"
@@ -1760,6 +1758,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: 'left',
     textAlignVertical: 'center',
+    paddingLeft: 8,
   },
   sendBtn: {
     width: 36,
