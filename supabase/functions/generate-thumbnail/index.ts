@@ -204,12 +204,19 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
 User request: ${prompt}
 
 IMPORTANT: Use the BASE IMAGE as your starting point. Only make the specific changes requested. Maintain the existing composition, layout, and overall structure unless the user explicitly asks to change them. Generate a 16:9 aspect ratio YouTube thumbnail (1280x720 pixels).`;
-  } else {
+  } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
     promptText = `Create a 16:9 YouTube thumbnail (1280x720 pixels) using the REFERENCE IMAGE composition/style and featuring the SUBJECT IMAGE person.
 
 User request: ${prompt}
 
 Match the REFERENCE IMAGE composition, lighting, color palette, and visual style while naturally integrating the SUBJECT IMAGE person.`;
+  } else {
+    // Text-only generation
+    promptText = `Create a 16:9 YouTube thumbnail (1280x720 pixels).
+
+User request: ${prompt}
+
+Generate a professional, eye-catching YouTube thumbnail in landscape orientation.`;
   }
 
   const parts: any[] = [{ text: promptText }];
@@ -306,44 +313,23 @@ Match the REFERENCE IMAGE composition, lighting, color palette, and visual style
   }
 }
 
-async function callImagen(prompt: string) {
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict",
-    {
-      method: "POST",
-      headers: {
-        "x-goog-api-key": GEMINI_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: "16:9"
-        }
-      }),
-    }
-  );
+async function callImagen(prompt: string): Promise<Uint8Array> {
+  // TEMPORARY: Return a demo message until billing is enabled
+  // You need to enable billing in Google AI Studio to use Imagen API
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Imagen API error: ${response.status} ${response.statusText} - ${errorText}`);
-  }
+  throw new Error(`Imagen API requires billing to be enabled.
 
-  const result = await response.json();
+To fix this:
+1. Go to Google AI Studio (ai.google.dev)
+2. Enable billing for your project
+3. The Imagen API costs $0.04 per image
 
-  if (!result.predictions || !result.predictions[0]) {
-    throw new Error("No image generated from Imagen API");
-  }
+Your prompt was: "${prompt}"
 
-  // Extract base64 image data from the response
-  const imageData = result.predictions[0].bytesBase64Encoded || result.predictions[0].image?.bytesBase64Encoded;
-
-  if (!imageData) {
-    throw new Error("No image data in Imagen API response");
-  }
-
-  return b64ToUint8(imageData);
+Alternatively, you can:
+- Use free alternatives like Hugging Face's FLUX.1
+- Use OpenAI DALL-E (also requires billing)
+- Use local Stable Diffusion models`);
 }
 
 serve(async (req: Request) => {
@@ -380,41 +366,19 @@ serve(async (req: Request) => {
 
     let bytes1: Uint8Array;
 
-    // Use Gemini Image Preview for direct image generation when images are provided
-    if (baseImageUrl || subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
-      try {
-        if (baseImageUrl) {
-          console.log('Using Gemini Image Preview for adjustment mode with base image...');
-        } else {
-          console.log('Using Gemini Image Preview for direct image generation...');
-        }
-        bytes1 = await callGeminiImagePreview(finalPrompt, subjectImageUrl, referenceImageUrls, baseImageUrl);
-      } catch (error) {
-        console.log('Gemini Image Preview failed:', error);
-
-        if (allowTextFallback) {
-          console.log('allowTextFallback=true, attempting fallback to Imagen...');
-          try {
-            console.log('Analyzing images with Gemini to create enhanced prompt...');
-            // Use Gemini to analyze the images and create a detailed prompt
-            const aiEnhancedPrompt = await analyzeImagesWithGemini(finalPrompt, subjectImageUrl, referenceImageUrls);
-            console.log('AI Enhanced Prompt:', aiEnhancedPrompt);
-
-            // Use the enhanced prompt with Imagen
-            bytes1 = await callImagen(aiEnhancedPrompt);
-          } catch (fallbackError) {
-            console.log('AI analysis also failed, using basic enhanced prompt:', fallbackError);
-            // Final fallback to Imagen with basic enhanced text prompt
-            bytes1 = await callImagen(finalPrompt);
-          }
-        } else {
-          // Return error instead of automatic fallback
-          throw new Error(`Image-guided generation failed: ${error.message}`);
-        }
+    // Always use Gemini Image Preview for image generation
+    try {
+      if (baseImageUrl) {
+        console.log('Using Gemini Image Preview for adjustment mode with base image...');
+      } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
+        console.log('Using Gemini Image Preview for direct image generation with images...');
+      } else {
+        console.log('Using Gemini Image Preview for text-only generation...');
       }
-    } else {
-      // Use standard Imagen for text-only prompts
-      bytes1 = await callImagen(finalPrompt);
+      bytes1 = await callGeminiImagePreview(finalPrompt, subjectImageUrl, referenceImageUrls, baseImageUrl);
+    } catch (error) {
+      console.error('Gemini Image Preview failed:', error);
+      throw new Error(`Image generation failed: ${error.message}`);
     }
     // const [bytes1, bytes2] = await Promise.all([
     //   callImagen(variation1Prompt),
