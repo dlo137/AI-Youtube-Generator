@@ -15,5 +15,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     persistSession: true,
     detectSessionInUrl: false, // RN app, not web
     flowType: "pkce",          // required for mobile OAuth
+    storageKey: 'supabase.auth.token', // Custom storage key for persistence
   },
 });

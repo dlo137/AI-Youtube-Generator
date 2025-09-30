@@ -2,48 +2,51 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvo
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { signUpEmail } from '../src/features/auth/api';
+import { supabase } from '../lib/supabase';
 
-export default function SignUpScreen() {
-  const [name, setName] = useState('');
+export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const handleSignUp = async () => {
-    if (!name || !email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+  const handleResetPassword = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters long');
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      const data = await signUpEmail(email, password);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'exp://localhost:8081/reset-password',
+      });
 
-      if (data.user) {
-        Alert.alert(
-          'Success!',
-          'Account created successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.push('/(tabs)/generate')
-            }
-          ]
-        );
+      if (error) {
+        throw error;
       }
 
+      Alert.alert(
+        'Check Your Email',
+        'We\'ve sent you a password reset link. Please check your email inbox and follow the instructions.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.back()
+          }
+        ]
+      );
+
     } catch (error: any) {
-      console.error('Sign up error:', error);
-      Alert.alert('Sign Up Error', error.message || 'Something went wrong. Please try again.');
+      console.error('Password reset error:', error);
+      Alert.alert('Error', error.message || 'Failed to send reset email. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -58,23 +61,13 @@ export default function SignUpScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Sign up to start creating amazing thumbnails</Text>
+          <Text style={styles.title}>Reset Password</Text>
+          <Text style={styles.subtitle}>
+            Enter your email address and we'll send you a link to reset your password
+          </Text>
         </View>
 
         <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your name"
-              placeholderTextColor={MUTED}
-              value={name}
-              onChangeText={setName}
-              autoComplete="name"
-            />
-          </View>
-
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -89,39 +82,18 @@ export default function SignUpScreen() {
             />
           </View>
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                placeholder="Enter your password"
-                placeholderTextColor={MUTED}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                autoComplete="password"
-              />
-              <TouchableOpacity
-                style={styles.eyeIcon}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Text style={styles.eyeIconText}>{showPassword ? 'Hide' : 'Show'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
           <TouchableOpacity
-            style={[styles.signUpButton, isLoading && styles.signUpButtonDisabled]}
-            onPress={handleSignUp}
+            style={[styles.resetButton, isLoading && styles.resetButtonDisabled]}
+            onPress={handleResetPassword}
             disabled={isLoading}
           >
-            <Text style={styles.signUpButtonText}>
-              {isLoading ? 'Creating Account...' : 'Sign Up'}
+            <Text style={styles.resetButtonText}>
+              {isLoading ? 'Sending...' : 'Send Reset Link'}
             </Text>
           </TouchableOpacity>
 
           <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Already have an account? </Text>
+            <Text style={styles.loginText}>Remember your password? </Text>
             <TouchableOpacity onPress={() => router.push('/login')}>
               <Text style={styles.loginLink}>Log In</Text>
             </TouchableOpacity>
@@ -173,6 +145,7 @@ const styles = StyleSheet.create({
     color: MUTED,
     textAlign: 'center',
     lineHeight: 24,
+    paddingHorizontal: 20,
   },
   form: {
     maxWidth: 400,
@@ -198,30 +171,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: TEXT,
   },
-  passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 12,
-  },
-  passwordInput: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    fontSize: 16,
-    color: TEXT,
-  },
-  eyeIcon: {
-    paddingHorizontal: 16,
-  },
-  eyeIconText: {
-    fontSize: 14,
-    color: '#6366f1',
-    fontWeight: '600',
-  },
-  signUpButton: {
+  resetButton: {
     backgroundColor: '#6366f1',
     paddingVertical: 16,
     borderRadius: 12,
@@ -236,10 +186,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  signUpButtonDisabled: {
+  resetButtonDisabled: {
     opacity: 0.6,
   },
-  signUpButtonText: {
+  resetButtonText: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '600',

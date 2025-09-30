@@ -36,6 +36,20 @@ export default function RootLayout() {
         }}
       />
       <Stack.Screen
+        name="forgot-password"
+        options={{
+          title: 'Forgot Password',
+          headerShown: false
+        }}
+      />
+      <Stack.Screen
+        name="reset-password"
+        options={{
+          title: 'Reset Password',
+          headerShown: false
+        }}
+      />
+      <Stack.Screen
         name="auth/callback"
         options={{
           title: 'Auth Callback',

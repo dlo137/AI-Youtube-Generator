@@ -1,10 +1,11 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { getCurrentUser, getMyProfile, updateMyProfile, signOut } from '../../src/features/auth/api';
 import { useModal } from '../../src/contexts/ModalContext';
+import { supabase } from '../../lib/supabase';
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
@@ -265,8 +266,23 @@ export default function ProfileScreen() {
     }
 
     try {
-      // Here you would typically send the form data to your backend
-      // For now, we'll just show a success message
+      // Send email via Supabase Edge Function
+      const { data, error } = await supabase.functions.invoke('send-contact-email', {
+        body: {
+          name: contactForm.name,
+          email: contactForm.email,
+          subject: contactForm.subject,
+          message: contactForm.message,
+        },
+      });
+
+      if (error) {
+        console.error('Error sending email:', error);
+        Alert.alert('Error', 'Failed to send message. Please try again later.');
+        return;
+      }
+
+      // Success
       Alert.alert(
         'Message Sent!',
         'Thank you for your feedback. We\'ll get back to you as soon as possible.',
@@ -281,6 +297,7 @@ export default function ProfileScreen() {
         ]
       );
     } catch (error) {
+      console.error('Error submitting contact form:', error);
       Alert.alert('Error', 'Failed to send message. Please try again later.');
     }
   };
@@ -491,83 +508,87 @@ export default function ProfileScreen() {
         animationType="fade"
         onRequestClose={() => setIsContactModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.contactModal}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.contactTitle}>Help & Support</Text>
-              <Text style={styles.contactSubtitle}>
-                We're here to help! Send us a message and we'll get back to you as soon as possible.
-              </Text>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <View style={styles.contactModal}>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <Text style={styles.contactTitle}>Help & Support</Text>
+                  <Text style={styles.contactSubtitle}>
+                    We're here to help! Send us a message and we'll get back to you as soon as possible.
+                  </Text>
 
-              <View style={styles.contactForm}>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Name</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Your full name"
-                    placeholderTextColor="#8a9099"
-                    value={contactForm.name}
-                    onChangeText={(text) => setContactForm({...contactForm, name: text})}
-                  />
-                </View>
+                  <View style={styles.contactForm}>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.inputLabel}>Name</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Your full name"
+                        placeholderTextColor="#8a9099"
+                        value={contactForm.name}
+                        onChangeText={(text) => setContactForm({...contactForm, name: text})}
+                      />
+                    </View>
 
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Email</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="your.email@example.com"
-                    placeholderTextColor="#8a9099"
-                    value={contactForm.email}
-                    onChangeText={(text) => setContactForm({...contactForm, email: text})}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.inputLabel}>Email</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="your.email@example.com"
+                        placeholderTextColor="#8a9099"
+                        value={contactForm.email}
+                        onChangeText={(text) => setContactForm({...contactForm, email: text})}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                      />
+                    </View>
 
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Subject</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="What's this about?"
-                    placeholderTextColor="#8a9099"
-                    value={contactForm.subject}
-                    onChangeText={(text) => setContactForm({...contactForm, subject: text})}
-                  />
-                </View>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.inputLabel}>Subject</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="What's this about?"
+                        placeholderTextColor="#8a9099"
+                        value={contactForm.subject}
+                        onChangeText={(text) => setContactForm({...contactForm, subject: text})}
+                      />
+                    </View>
 
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Message</Text>
-                  <TextInput
-                    style={[styles.input, styles.messageInput]}
-                    placeholder="Tell us how we can help you..."
-                    placeholderTextColor="#8a9099"
-                    value={contactForm.message}
-                    onChangeText={(text) => setContactForm({...contactForm, message: text})}
-                    multiline={true}
-                    numberOfLines={6}
-                    textAlignVertical="top"
-                  />
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.inputLabel}>Message</Text>
+                      <TextInput
+                        style={[styles.input, styles.messageInput]}
+                        placeholder="Tell us how we can help you..."
+                        placeholderTextColor="#8a9099"
+                        value={contactForm.message}
+                        onChangeText={(text) => setContactForm({...contactForm, message: text})}
+                        multiline={true}
+                        numberOfLines={6}
+                        textAlignVertical="top"
+                      />
+                    </View>
+                  </View>
+                </ScrollView>
+
+                <View style={styles.contactActions}>
+                  <TouchableOpacity
+                    style={styles.contactSubmitButton}
+                    onPress={handleContactSubmit}
+                  >
+                    <Text style={styles.contactSubmitText}>Send Message</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.contactCancelButton}
+                    onPress={() => setIsContactModalVisible(false)}
+                  >
+                    <Text style={styles.contactCancelText}>Cancel</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-            </ScrollView>
-
-            <View style={styles.contactActions}>
-              <TouchableOpacity
-                style={styles.contactSubmitButton}
-                onPress={handleContactSubmit}
-              >
-                <Text style={styles.contactSubmitText}>Send Message</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.contactCancelButton}
-                onPress={() => setIsContactModalVisible(false)}
-              >
-                <Text style={styles.contactCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+            </TouchableWithoutFeedback>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Billing Modal */}

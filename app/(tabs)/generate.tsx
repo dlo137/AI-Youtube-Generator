@@ -2,14 +2,17 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platfo
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef } from 'react';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { PinchGestureHandler, PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../../lib/supabase';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
-import { saveThumbnail } from '../../src/utils/thumbnailStorage';
+import { saveThumbnail, addThumbnailToHistory } from '../../src/utils/thumbnailStorage';
+
+// Create Animated SVG components
+const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 // Utility function to upload image to Supabase Storage
 const uploadImageToStorage = async (imageUri: string, fileName: string): Promise<string | null> => {
@@ -70,6 +73,8 @@ export default function GenerateScreen() {
   const dot1Anim = useRef(new Animated.Value(0)).current;
   const dot2Anim = useRef(new Animated.Value(0)).current;
   const dot3Anim = useRef(new Animated.Value(0)).current;
+  const borderOffset1 = useRef(new Animated.Value(0)).current;
+  const borderOffset2 = useRef(new Animated.Value(0)).current;
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [generatedImageUrl, setGeneratedImageUrl] = useState('');
   const [generatedImageUrl2, setGeneratedImageUrl2] = useState('');
@@ -125,6 +130,7 @@ export default function GenerateScreen() {
 
   useEffect(() => {
     if (isLoading) {
+      // Animation for loading dots in button
       const createFloatingAnimation = (animValue: Animated.Value, delay: number) => {
         return Animated.loop(
           Animated.sequence([
@@ -143,21 +149,67 @@ export default function GenerateScreen() {
         );
       };
 
+      // Shimmer animation for loading skeletons
+      const createShimmerAnimation = (animValue: Animated.Value, delay: number) => {
+        return Animated.loop(
+          Animated.sequence([
+            Animated.timing(animValue, {
+              toValue: 1,
+              duration: 800,
+              delay,
+              useNativeDriver: true,
+            }),
+            Animated.timing(animValue, {
+              toValue: 0.3,
+              duration: 800,
+              useNativeDriver: true,
+            }),
+          ])
+        );
+      };
+
+      // Border offset animation - travels the gradient along the border
+      const createBorderOffsetAnimation = (animValue: Animated.Value) => {
+        return Animated.loop(
+          Animated.timing(animValue, {
+            toValue: 1000, // Total perimeter approximation
+            duration: 2500,
+            useNativeDriver: false, // Can't use native driver for SVG props
+          })
+        );
+      };
+
       const animation1 = createFloatingAnimation(dot1Anim, 0);
       const animation2 = createFloatingAnimation(dot2Anim, 150);
       const animation3 = createFloatingAnimation(dot3Anim, 300);
 
+      const shimmer1 = createShimmerAnimation(dot1Anim, 0);
+      const shimmer2 = createShimmerAnimation(dot2Anim, 200);
+
+      const borderAnim1 = createBorderOffsetAnimation(borderOffset1);
+      const borderAnim2 = createBorderOffsetAnimation(borderOffset2);
+
       animation1.start();
       animation2.start();
       animation3.start();
+      shimmer1.start();
+      shimmer2.start();
+      borderAnim1.start();
+      borderAnim2.start();
 
       return () => {
         animation1.stop();
         animation2.stop();
         animation3.stop();
+        shimmer1.stop();
+        shimmer2.stop();
+        borderAnim1.stop();
+        borderAnim2.stop();
         dot1Anim.setValue(0);
         dot2Anim.setValue(0);
         dot3Anim.setValue(0);
+        borderOffset1.setValue(0);
+        borderOffset2.setValue(0);
       };
     }
   }, [isLoading]);
@@ -631,9 +683,13 @@ export default function GenerateScreen() {
 
         if (url1) {
           setGeneratedImageUrl(url1);
+          // Automatically add to history (not favorited)
+          await addThumbnailToHistory(promptToUse, url1);
         }
         if (url2) {
           setGeneratedImageUrl2(url2);
+          // Automatically add to history (not favorited)
+          await addThumbnailToHistory(promptToUse, url2);
         }
 
         // Add to all generations list
@@ -668,8 +724,109 @@ export default function GenerateScreen() {
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Display all generated images or hero text */}
-        {allGenerations.length > 0 ? (
+        {allGenerations.length > 0 || isLoading ? (
           <View style={styles.generationsContainer}>
+            {/* Loading placeholder at the top when generating */}
+            {isLoading && (
+              <View style={styles.generationSection}>
+                <Text style={styles.imageTitle}>{lastPrompt ? getShortTitle(lastPrompt) : 'Generating...'}</Text>
+
+                {/* First loading skeleton */}
+                <View style={styles.loadingThumbnailContainer}>
+                  <View style={styles.loadingSkeletonWrapper}>
+                    <View style={styles.loadingBorderAnimated}>
+                      <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
+                        <Defs>
+                          <LinearGradient id="borderGrad1">
+                            <Stop offset="0%" stopColor="transparent" stopOpacity="0" />
+                            <Stop offset="30%" stopColor="#1e40af" stopOpacity="0.6" />
+                            <Stop offset="50%" stopColor="#3b82f6" stopOpacity="1" />
+                            <Stop offset="70%" stopColor="#60a5fa" stopOpacity="1" />
+                            <Stop offset="85%" stopColor="#3b82f6" stopOpacity="0.6" />
+                            <Stop offset="100%" stopColor="transparent" stopOpacity="0" />
+                          </LinearGradient>
+                        </Defs>
+                        <Rect
+                          x="2"
+                          y="2"
+                          width="346"
+                          height="196"
+                          rx="12"
+                          stroke="#232932"
+                          strokeWidth="1"
+                          fill="none"
+                        />
+                        <AnimatedRect
+                          x="2"
+                          y="2"
+                          width="346"
+                          height="196"
+                          rx="12"
+                          stroke="url(#borderGrad1)"
+                          strokeWidth="3"
+                          fill="none"
+                          strokeDasharray="200 800"
+                          strokeDashoffset={borderOffset1}
+                        />
+                      </Svg>
+                    </View>
+                    <View style={styles.loadingSkeleton}>
+                      <Animated.View style={[styles.loadingShimmer, { opacity: dot1Anim }]} />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Second loading skeleton */}
+                <View style={styles.loadingThumbnailContainer}>
+                  <View style={styles.loadingSkeletonWrapper}>
+                    <View style={styles.loadingBorderAnimated}>
+                      <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
+                        <Defs>
+                          <LinearGradient id="borderGrad2">
+                            <Stop offset="0%" stopColor="transparent" stopOpacity="0" />
+                            <Stop offset="30%" stopColor="#1e40af" stopOpacity="0.6" />
+                            <Stop offset="50%" stopColor="#3b82f6" stopOpacity="1" />
+                            <Stop offset="70%" stopColor="#60a5fa" stopOpacity="1" />
+                            <Stop offset="85%" stopColor="#3b82f6" stopOpacity="0.6" />
+                            <Stop offset="100%" stopColor="transparent" stopOpacity="0" />
+                          </LinearGradient>
+                        </Defs>
+                        <Rect
+                          x="2"
+                          y="2"
+                          width="346"
+                          height="196"
+                          rx="12"
+                          stroke="#232932"
+                          strokeWidth="1"
+                          fill="none"
+                        />
+                        <AnimatedRect
+                          x="2"
+                          y="2"
+                          width="346"
+                          height="196"
+                          rx="12"
+                          stroke="url(#borderGrad2)"
+                          strokeWidth="3"
+                          fill="none"
+                          strokeDasharray="200 800"
+                          strokeDashoffset={borderOffset2}
+                        />
+                      </Svg>
+                    </View>
+                    <View style={styles.loadingSkeleton}>
+                      <Animated.View style={[styles.loadingShimmer, { opacity: dot2Anim }]} />
+                    </View>
+                  </View>
+                </View>
+
+                {allGenerations.length > 0 && (
+                  <View style={styles.generationSeparator} />
+                )}
+              </View>
+            )}
+
             {/* All generations including current one */}
             {allGenerations.map((generation, index) => (
               <View key={generation.id} style={styles.generationSection}>
@@ -1836,6 +1993,40 @@ const styles = StyleSheet.create({
     position: 'relative',
     width: '100%',
     marginBottom: 20,
+  },
+  loadingThumbnailContainer: {
+    width: '100%',
+    marginBottom: 20,
+    position: 'relative',
+  },
+  loadingSkeletonWrapper: {
+    position: 'relative',
+    width: '100%',
+    aspectRatio: 16/9,
+  },
+  loadingBorderAnimated: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1,
+  },
+  loadingSkeleton: {
+    width: '100%',
+    aspectRatio: 16/9,
+    borderRadius: 12,
+    backgroundColor: CARD,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  loadingShimmer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(139, 146, 155, 0.1)',
   },
   downloadIcon: {
     width: 36,

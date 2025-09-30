@@ -8,6 +8,7 @@ import { getSavedThumbnails, deleteSavedThumbnail, SavedThumbnail } from '../../
 
 export default function HistoryScreen() {
   const [thumbnails, setThumbnails] = useState<SavedThumbnail[]>([]);
+  const [filter, setFilter] = useState<'all' | 'saved'>('all');
 
   useEffect(() => {
     loadThumbnails();
@@ -35,6 +36,29 @@ export default function HistoryScreen() {
 
   const handleShare = (id: string) => {
     Alert.alert('Share', `Sharing thumbnail ${id}`);
+  };
+
+  const handleFavorite = async (id: string) => {
+    try {
+      const existingThumbnails = await getSavedThumbnails();
+      const updatedThumbnails = existingThumbnails.map(thumb =>
+        thumb.id === id ? { ...thumb, isFavorited: !thumb.isFavorited } : thumb
+      );
+
+      // Save back to storage
+      await require('../../src/utils/thumbnailStorage').default;
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.setItem('saved_thumbnails', JSON.stringify(updatedThumbnails));
+
+      // Update local state
+      setThumbnails(updatedThumbnails);
+
+      const thumbnail = updatedThumbnails.find(t => t.id === id);
+      Alert.alert('Success', thumbnail?.isFavorited ? 'Added to saved' : 'Removed from saved');
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      Alert.alert('Error', 'Failed to update thumbnail');
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -70,20 +94,33 @@ export default function HistoryScreen() {
         <Text style={styles.subtitle}>Track your generated content</Text>
 
         <View style={styles.filterSection}>
-          <TouchableOpacity style={[styles.filterButton, styles.activeFilter]}>
-            <Text style={[styles.filterText, styles.activeFilterText]}>All</Text>
+          <TouchableOpacity
+            style={[styles.filterButton, filter === 'all' && styles.activeFilter]}
+            onPress={() => setFilter('all')}
+          >
+            <Text style={[styles.filterText, filter === 'all' && styles.activeFilterText]}>All</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.filterButton}>
-            <Text style={styles.filterText}>Completed</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.filterButton}>
-            <Text style={styles.filterText}>Saved</Text>
+          <TouchableOpacity
+            style={[styles.filterButton, filter === 'saved' && styles.activeFilter]}
+            onPress={() => setFilter('saved')}
+          >
+            <Text style={[styles.filterText, filter === 'saved' && styles.activeFilterText]}>Saved</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.videoList}>
-          {thumbnails.length > 0 ? (
-            thumbnails.map((thumbnail) => (
+          {(() => {
+            let filteredThumbnails = thumbnails;
+
+            if (filter === 'saved') {
+              filteredThumbnails = thumbnails.filter(t => t.isFavorited);
+            } else if (filter === 'all') {
+              // Limit "All" section to 5 most recent thumbnails
+              filteredThumbnails = thumbnails.slice(0, 5);
+            }
+
+            return filteredThumbnails.length > 0 ? (
+              filteredThumbnails.map((thumbnail) => (
               <ThumbnailCard
                 key={thumbnail.id}
                 id={thumbnail.id}
@@ -91,18 +128,28 @@ export default function HistoryScreen() {
                 date={thumbnail.date}
                 status={thumbnail.status}
                 imageUrl={thumbnail.imageUrl}
+                isFavorited={thumbnail.isFavorited}
                 edits={thumbnail.edits}
                 onDownload={() => handleDownload(thumbnail.id)}
                 onShare={() => handleShare(thumbnail.id)}
+                onFavorite={() => handleFavorite(thumbnail.id)}
                 onDelete={() => handleDelete(thumbnail.id)}
               />
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>No saved thumbnails</Text>
-              <Text style={styles.emptySubtitle}>Generate and save thumbnails to see them here</Text>
-            </View>
-          )}
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyTitle}>
+                  {filter === 'saved' ? 'No saved thumbnails' : 'No thumbnails'}
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  {filter === 'saved'
+                    ? 'Click the heart icon on thumbnails to save them'
+                    : 'Generate and save thumbnails to see them here'
+                  }
+                </Text>
+              </View>
+            );
+          })()}
         </View>
       </ScrollView>
     </View>

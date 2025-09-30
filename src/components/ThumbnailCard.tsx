@@ -7,6 +7,7 @@ interface ThumbnailCardProps {
   date: string;
   status: 'completed' | 'processing' | 'failed';
   imageUrl?: string;
+  isFavorited?: boolean;
   edits?: {
     drawings: Array<{id: string, path: string, color: string}>;
     text: {text: string, x: number, y: number, fontSize: number} | null;
@@ -14,6 +15,7 @@ interface ThumbnailCardProps {
   onDownload?: () => void;
   onShare?: () => void;
   onDelete?: () => void;
+  onFavorite?: () => void;
 }
 
 const BG = '#0b0f14';
@@ -28,10 +30,12 @@ export default function ThumbnailCard({
   date,
   status,
   imageUrl,
+  isFavorited = false,
   edits,
   onDownload,
   onShare,
-  onDelete
+  onDelete,
+  onFavorite
 }: ThumbnailCardProps) {
 
   const getStatusColor = (status: string) => {
@@ -63,9 +67,14 @@ export default function ThumbnailCard({
   return (
     <TouchableOpacity style={styles.videoCard}>
       <View style={styles.videoHeader}>
-        <Text style={styles.videoTitle} numberOfLines={2}>
-          {title}
-        </Text>
+        <View style={styles.titleContainer}>
+          <Text style={styles.videoTitle} numberOfLines={2}>
+            {title}
+          </Text>
+          <Text style={styles.categoryLabel}>
+            {isFavorited ? 'Saved' : 'Completed'}
+          </Text>
+        </View>
         <View
           style={[
             styles.statusBadge,
@@ -185,6 +194,19 @@ export default function ThumbnailCard({
 
       {status === 'completed' && (
         <View style={styles.videoActions}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.heartButton, isFavorited && styles.heartButtonActive]}
+            onPress={onFavorite}
+          >
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+                stroke={isFavorited ? "#ef4444" : "#ffffff"}
+                strokeWidth="2"
+                fill={isFavorited ? "#ef4444" : "none"}
+              />
+            </Svg>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.actionButton} onPress={onDownload}>
             <Text style={styles.actionButtonText}>Download</Text>
           </TouchableOpacity>
@@ -215,12 +237,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 12,
   },
+  titleContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
   videoTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: TEXT,
-    flex: 1,
-    marginRight: 12,
+    marginBottom: 4,
+  },
+  categoryLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#10b981',
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -262,6 +292,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a3038',
     borderWidth: 1,
     borderColor: BORDER,
+  },
+  heartButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  heartButtonActive: {
+    backgroundColor: '#5a2d2d',
+    borderColor: '#ef4444',
   },
   deleteButton: {
     backgroundColor: '#3d1a1a',

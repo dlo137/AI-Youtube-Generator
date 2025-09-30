@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 
@@ -7,85 +7,70 @@ export default function WelcomeScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="auto" />
-
-      <View style={styles.header}>
-        <Text style={styles.title}>Onboarding Section</Text>
-        <Text style={styles.subtitle}>Create amazing videos with AI</Text>
-      </View>
+      <StatusBar style="light" />
 
       <View style={styles.content}>
+        <Image
+          source={require('../assets/homescreen.png')}
+          style={styles.heroImage}
+          resizeMode="contain"
+        />
+
+        <Text style={styles.title}>Youtube Thumbnails{'\n'}Made Easy</Text>
+
         <TouchableOpacity
-          style={styles.button}
+          style={styles.getStartedButton}
           onPress={() => router.push('/signup')}
         >
-          <Text style={styles.buttonText}>Sign Up</Text>
+          <Text style={styles.getStartedButtonText}>Get Started</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.loginButton}
-          onPress={() => router.push('/login')}
-        >
-          <Text style={styles.loginButtonText}>Log In</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={async () => {
-            // Set guest mode and clear any existing auth
-            global.isGuestMode = true;
-            router.push('/(tabs)/generate');
-          }}
-        >
-          <Text style={styles.buttonText}>Guest</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.push('/(tabs)/generate')}
-        >
-          <Text style={styles.buttonText}>Go To App</Text>
-        </TouchableOpacity>
+        <View style={styles.loginContainer}>
+          <Text style={styles.loginText}>Already got an account? </Text>
+          <TouchableOpacity onPress={() => router.push('/login')}>
+            <Text style={styles.loginLink}>Log in</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 }
 
+const BG = '#0b0f14';
+const TEXT = '#e7ebf0';
+const MUTED = '#8a9099';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 20,
+    backgroundColor: BG,
   },
-  header: {
+  content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  heroImage: {
+    width: '100%',
+    height: 650,
+    marginTop: -80,
+    marginBottom: 20,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 8,
+    color: TEXT,
+    marginBottom: 24,
     textAlign: 'center',
   },
-  subtitle: {
-    fontSize: 18,
-    color: '#64748b',
-    textAlign: 'center',
-  },
-  content: {
-    flex: 1,
-    gap: 20,
-    justifyContent: 'flex-start',
-    paddingTop: 40,
-  },
-  button: {
+  getStartedButton: {
     backgroundColor: '#6366f1',
     paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingHorizontal: 48,
     borderRadius: 12,
     alignItems: 'center',
+    marginBottom: 16,
     shadowColor: '#6366f1',
     shadowOffset: {
       width: 0,
@@ -94,24 +79,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+    width: '90%',
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
+  getStartedButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
     fontWeight: '600',
   },
-  loginButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: '#6366f1',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+  loginContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  loginButtonText: {
+  loginText: {
+    fontSize: 14,
+    color: MUTED,
+  },
+  loginLink: {
+    fontSize: 14,
     color: '#6366f1',
-    fontSize: 18,
     fontWeight: '600',
   },
 });
