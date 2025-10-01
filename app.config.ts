@@ -4,12 +4,25 @@ export default {
   expo: {
     name: "Youtube Thumbnail Generator",
     slug: "youtube-thumbnail-generator",
-    scheme: "thumbnailgen",               // <— custom URL scheme for deep links
+    scheme: "thumbnailgen",
+    jsEngine: "jsc",
     extra: {
+      eas: {
+        projectId: "c1df1c80-b01c-45b2-bd7f-87e1a6b25e15"
+      },
       EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
     },
-    ios: { bundleIdentifier: "com.watsonsweb.thumbnail-generator" },
-    android: { package: "com.watsonsweb.thumbnail-generator" },
+    ios: {
+      bundleIdentifier: "com.watsonsweb.thumbnail-generator",
+      jsEngine: "jsc",
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false
+      }
+    },
+    android: {
+      package: "com.watsonsweb.thumbnail-generator",
+      jsEngine: "jsc"
+    },
   },
 };

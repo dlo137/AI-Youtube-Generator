@@ -1,8 +1,17 @@
 // Polyfills for React Native compatibility with Node.js modules
-import 'react-native-url-polyfill/auto';
-import 'react-native-get-random-values';
+try {
+  require('react-native-url-polyfill/auto');
+} catch (e) {
+  console.warn('URL polyfill failed to load:', e);
+}
 
-// Configure global polyfills
+try {
+  require('react-native-get-random-values');
+} catch (e) {
+  console.warn('Random values polyfill failed to load:', e);
+}
+
+// Configure global polyfills safely
 if (typeof global === 'undefined') {
   // @ts-ignore
   global = {};
@@ -15,10 +24,14 @@ if (typeof WebSocket !== 'undefined') {
 }
 
 // Buffer polyfill
-import { Buffer } from '@craftzdog/react-native-buffer';
-if (!global.Buffer) {
-  // @ts-ignore
-  global.Buffer = Buffer;
+try {
+  const { Buffer } = require('@craftzdog/react-native-buffer');
+  if (!global.Buffer) {
+    // @ts-ignore
+    global.Buffer = Buffer;
+  }
+} catch (e) {
+  console.warn('Buffer polyfill failed to load:', e);
 }
 
 // Process polyfill
@@ -29,6 +42,6 @@ if (!global.process) {
       NODE_ENV: __DEV__ ? 'development' : 'production',
     },
     version: '',
-    platform: 'linux', // Use a valid platform value
+    platform: 'ios',
   };
 }

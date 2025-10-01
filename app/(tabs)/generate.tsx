@@ -36,13 +36,21 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
     const authToken = session?.access_token;
 
     // Upload directly to Supabase Storage using fetch
-    const uploadUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/thumbnails/${uniqueFileName}`;
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+    const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase configuration');
+      return null;
+    }
+
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/thumbnails/${uniqueFileName}`;
 
     const uploadResponse = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${authToken || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
-        'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+        'Authorization': `Bearer ${authToken || supabaseKey}`,
+        'apikey': supabaseKey,
       },
       body: formData,
     });

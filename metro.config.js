@@ -13,6 +13,9 @@ config.resolver.alias = {
   'events': 'events',
   // Replace ws package with our mock
   'ws': path.resolve(__dirname, 'MockWebSocket.ts'),
+  // Add React JSX runtime aliases
+  'react/jsx-runtime': 'react/jsx-runtime',
+  'react/jsx-dev-runtime': 'react/jsx-dev-runtime',
 };
 
 // Add node_modules resolution for polyfills
@@ -23,9 +26,6 @@ config.resolver.nodeModulesPaths = [
 // Exclude problematic packages
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
 config.resolver.platforms = ['native', 'ios', 'android', 'web'];
-
-config.resolver.unstable_enableSymlinks = true;
-config.resolver.unstable_enablePackageExports = true;
 
 // Configure transformer to handle Node.js modules
 config.transformer = {

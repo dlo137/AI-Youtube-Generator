@@ -1,28 +1,82 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
+import { useState, useRef, useEffect } from 'react';
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const [step, setStep] = useState(1);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const handleGetStarted = () => {
+    try {
+      Animated.timing(slideAnim, {
+        toValue: -1,
+        duration: 250,
+        useNativeDriver: true,
+      }).start(() => {
+        try {
+          if (step === 1) {
+            setStep(2);
+          } else if (step === 2) {
+            setStep(3);
+          } else {
+            router.push('/signup');
+          }
+          slideAnim.setValue(1);
+          Animated.timing(slideAnim, {
+            toValue: 0,
+            duration: 250,
+            useNativeDriver: true,
+          }).start();
+        } catch (error) {
+          console.error('Animation callback error:', error);
+        }
+      });
+    } catch (error) {
+      console.error('Animation start error:', error);
+      // Fallback navigation
+      router.push('/signup');
+    }
+  };
+
+  const translateX = slideAnim.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: [-500, 0, 500],
+  });
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
       <View style={styles.content}>
-        <Image
+        <Animated.Image
           source={require('../assets/homescreen.png')}
-          style={styles.heroImage}
+          style={[
+            styles.heroImage,
+            {
+              transform: [{ translateX }],
+            },
+          ]}
           resizeMode="contain"
         />
 
-        <Text style={styles.title}>Youtube Thumbnails{'\n'}Made Easy</Text>
+        <Animated.Text
+          style={[
+            styles.title,
+            {
+              transform: [{ translateX }],
+            },
+          ]}
+        >
+          {step === 1 ? 'Youtube Thumbnails\nMade Easy' : step === 2 ? 'Save Your Perfect Thumbnail' : 'Tweak & Edit Easier'}
+        </Animated.Text>
 
         <TouchableOpacity
           style={styles.getStartedButton}
-          onPress={() => router.push('/signup')}
+          onPress={handleGetStarted}
         >
-          <Text style={styles.getStartedButtonText}>Get Started</Text>
+          <Text style={styles.getStartedButtonText}>Continue</Text>
         </TouchableOpacity>
 
         <View style={styles.loginContainer}>

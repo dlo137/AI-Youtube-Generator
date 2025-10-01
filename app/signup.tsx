@@ -29,16 +29,7 @@ export default function SignUpScreen() {
       const data = await signUpEmail(email, password);
 
       if (data.user) {
-        Alert.alert(
-          'Success!',
-          'Account created successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.push('/(tabs)/generate')
-            }
-          ]
-        );
+        router.push('/loadingaccount');
       }
 
     } catch (error: any) {
@@ -55,6 +46,13 @@ export default function SignUpScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <StatusBar style="light" />
+
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+      >
+        <Text style={styles.backButtonText}>← Back</Text>
+      </TouchableOpacity>
 
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
@@ -120,6 +118,16 @@ export default function SignUpScreen() {
             </Text>
           </TouchableOpacity>
 
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity style={styles.appleButton}>
+            <Text style={styles.appleButtonText}>Continue with Apple</Text>
+          </TouchableOpacity>
+
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Already have an account? </Text>
             <TouchableOpacity onPress={() => router.push('/login')}>
@@ -127,12 +135,14 @@ export default function SignUpScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
+          <View style={styles.termsContainer}>
+            <Text style={styles.termsText}>
+              By creating an account, you indicate that you have read and agreed to the{' '}
+              <Text style={styles.termsLink}>privacy policy</Text>
+              {' '}and{' '}
+              <Text style={styles.termsLink}>terms of use</Text>
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -158,6 +168,7 @@ const styles = StyleSheet.create({
     minHeight: '100%',
   },
   header: {
+    marginTop: 60,
     marginBottom: 40,
     alignItems: 'center',
   },
@@ -260,8 +271,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   backButton: {
-    alignSelf: 'flex-start',
-    marginTop: 20,
+    position: 'absolute',
+    top: 50,
+    left: 24,
+    zIndex: 10,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
@@ -269,5 +282,50 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6366f1',
     fontWeight: '600',
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: BORDER,
+  },
+  dividerText: {
+    color: MUTED,
+    fontSize: 14,
+    marginHorizontal: 16,
+  },
+  appleButton: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  appleButtonText: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  termsContainer: {
+    marginTop: 32,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  termsText: {
+    fontSize: 12,
+    color: MUTED,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  termsLink: {
+    textDecorationLine: 'underline',
   },
 });

@@ -14,7 +14,16 @@
       "WebSearch",
       "WebFetch(domain:ai.google.dev)",
       "Bash(npm ls:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(npx expo install:*)",
+      "Read(//c/Users/aidaw/Desktop/testflight_feedback/**)",
+      "Read(//c/Users/aidaw/Desktop/testflight_feedback (1)/**)",
+      "Bash(npm cache clean:*)",
+      "Read(//c/Users/aidaw/Desktop/testflight_feedback (2)/**)",
+      "Read(//c/Users/aidaw/Desktop/testflight_feedback (3)/**)",
+      "Bash(eas build:*)",
+      "Bash(pkill:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []
