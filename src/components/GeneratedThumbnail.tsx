@@ -4,6 +4,21 @@ import * as FileSystem from 'expo-file-system';
 import { saveThumbnail } from '../utils/thumbnailStorage';
 import Svg, { Path } from 'react-native-svg';
 
+// Create a mock function for development
+const mockIsUserSubscribed = async () => {
+  // In Expo Go, assume user is subscribed for testing
+  return true;
+};
+
+// Conditionally import subscription utility
+let isUserSubscribed: any = mockIsUserSubscribed;
+try {
+  const subscriptionUtils = require('../utils/subscriptionStorage');
+  isUserSubscribed = subscriptionUtils.isUserSubscribed;
+} catch (error) {
+  console.log('Using mock subscription check for development');
+}
+
 interface GeneratedThumbnailProps {
   imageUrl: string;
   prompt: string;
@@ -121,8 +136,9 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, ed
         <TouchableOpacity
           style={style.saveIcon}
           onPress={async () => {
-            // Check if user is in guest mode
-            if (global?.isGuestMode) {
+            // Check if user has subscription
+            const hasSubscription = await isUserSubscribed();
+            if (!hasSubscription) {
               Alert.alert(
                 'Upgrade to Pro',
                 'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
@@ -143,7 +159,12 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, ed
             }
           }}
         >
-          <Text style={style.saveArrow}>♡</Text>
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+            <Path
+              d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+              fill="#ffffff"
+            />
+          </Svg>
         </TouchableOpacity>
         <TouchableOpacity
           style={style.downloadIcon}

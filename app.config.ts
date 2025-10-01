@@ -17,12 +17,16 @@ export default {
       bundleIdentifier: "com.watsonsweb.thumbnail-generator",
       jsEngine: "jsc",
       infoPlist: {
-        ITSAppUsesNonExemptEncryption: false
+        ITSAppUsesNonExemptEncryption: false,
+        NSPhotoLibraryUsageDescription: "This app needs access to your photo library to save generated thumbnails."
       }
     },
     android: {
       package: "com.watsonsweb.thumbnail-generator",
-      jsEngine: "jsc"
+      jsEngine: "jsc",
+      permissions: [
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
   },
 };

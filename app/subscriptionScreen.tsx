@@ -3,8 +3,15 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
-// Temporarily commenting out IAP to test if it causes crashes
-// import * as InAppPurchases from 'expo-in-app-purchases';
+import { saveSubscriptionInfo } from '../src/utils/subscriptionStorage';
+
+// Conditionally import InAppPurchases to handle Expo Go limitation
+let InAppPurchases: any = null;
+try {
+  InAppPurchases = require('expo-in-app-purchases');
+} catch (error) {
+  console.log('InAppPurchases not available in Expo Go - using mock for development');
+}
 
 const PRODUCT_IDS = {
   yearly: 'thumbnail.pro.yearly',
@@ -16,7 +23,7 @@ export default function SubscriptionScreen() {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState('yearly');
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  // const [products, setProducts] = useState<InAppPurchases.IAPItemDetails[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -26,48 +33,162 @@ export default function SubscriptionScreen() {
       useNativeDriver: true,
     }).start();
 
-    // initializeIAP();
+    initializeIAP();
   }, []);
 
-  // const initializeIAP = async () => {
-  //   try {
-  //     await InAppPurchases.connectAsync();
-  //     const { results } = await InAppPurchases.getProductsAsync(Object.values(PRODUCT_IDS));
-  //     setProducts(results);
+  const initializeIAP = async () => {
+    try {
+      // Check if InAppPurchases is available (not in Expo Go)
+      if (!InAppPurchases) {
+        console.log('InAppPurchases not available - running in development mode');
+        return;
+      }
 
-  //     // Set up purchase listener
-  //     InAppPurchases.setPurchaseListener(({ responseCode, results, errorCode }) => {
-  //       if (responseCode === InAppPurchases.IAPResponseCode.OK) {
-  //         results?.forEach((purchase) => {
-  //           if (!purchase.acknowledged) {
-  //             console.log('Purchase successful:', purchase);
-  //             InAppPurchases.finishTransactionAsync(purchase, true);
-  //             router.replace('/(tabs)/generate');
-  //           }
-  //         });
-  //       } else if (responseCode === InAppPurchases.IAPResponseCode.USER_CANCELED) {
-  //         console.log('User canceled purchase');
-  //       } else {
-  //         console.log('Purchase error:', errorCode);
-  //         Alert.alert('Error', 'Failed to complete purchase');
-  //       }
-  //       setLoading(false);
-  //     });
-  //   } catch (error) {
-  //     console.error('Error initializing IAP:', error);
-  //     // Don't show alert, just log it - IAP might not be available in all environments
-  //   }
-  // };
+      // Connect to the in-app purchase service
+      await InAppPurchases.connectAsync();
+      
+      // Get product information
+      const { results } = await InAppPurchases.getProductsAsync(Object.values(PRODUCT_IDS));
+      setProducts(results || []);
+      console.log('Available products:', results);
+
+      // Set up purchase listener
+      InAppPurchases.setPurchaseListener(({ responseCode, results, errorCode }: any) => {
+        console.log('Purchase response:', { responseCode, results, errorCode });
+        
+        if (responseCode === InAppPurchases.IAPResponseCode.OK) {
+          results?.forEach(async (purchase: any) => {
+            if (!purchase.acknowledged) {
+              console.log('Purchase successful:', purchase);
+              
+              // Save subscription info
+              try {
+                await saveSubscriptionInfo({
+                  isActive: true,
+                  productId: purchase.productId,
+                  purchaseDate: new Date().toISOString(),
+                  // For subscriptions, you'd calculate expiry based on product type
+                });
+              } catch (error) {
+                console.error('Error saving subscription info:', error);
+              }
+              
+              // Acknowledge the purchase
+              InAppPurchases.finishTransactionAsync(purchase, true);
+              
+              // Set user as premium and navigate
+              Alert.alert('Success!', 'Welcome to ThumbnailPro!', [
+                { text: 'OK', onPress: () => router.replace('/(tabs)/generate') }
+              ]);
+            }
+          });
+        } else if (responseCode === InAppPurchases.IAPResponseCode.USER_CANCELED) {
+          console.log('User canceled purchase');
+        } else {
+          console.log('Purchase error:', errorCode);
+          Alert.alert('Error', 'Failed to complete purchase. Please try again.');
+        }
+        setLoading(false);
+      });
+    } catch (error) {
+      console.error('Error initializing IAP:', error);
+      // For development/testing, don't show error to user
+      // In production, you might want to handle this differently
+    }
+  };
 
   const handleSubscribe = async (plan: string) => {
-    // Temporary: Skip IAP for testing
-    console.log(`Selected plan: ${plan}`);
-    router.replace('/(tabs)/generate');
+    if (loading) return;
+    
+    // Handle development mode (Expo Go)
+    if (!InAppPurchases) {
+      Alert.alert(
+        'Development Mode', 
+        'In-app purchases are not available in Expo Go. This will work in a development build or production.',
+        [
+          { text: 'Continue Anyway', onPress: () => router.replace('/(tabs)/generate') },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const productId = PRODUCT_IDS[plan as keyof typeof PRODUCT_IDS];
+      console.log('Attempting to purchase:', productId);
+      
+      // Request the purchase
+      await InAppPurchases.purchaseItemAsync(productId);
+      // The purchase listener will handle the response
+    } catch (error) {
+      console.error('Error requesting purchase:', error);
+      Alert.alert('Error', 'Failed to start purchase. Please try again.');
+      setLoading(false);
+    }
   };
 
   const handleRestore = async () => {
-    // Temporary: Skip restore for testing
-    Alert.alert('Restore', 'Restore functionality temporarily disabled for testing');
+    // Handle development mode (Expo Go)
+    if (!InAppPurchases) {
+      Alert.alert('Development Mode', 'Restore purchases not available in Expo Go.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      console.log('Attempting to restore purchases...');
+      
+      // Get purchase history
+      const { results } = await InAppPurchases.getPurchaseHistoryAsync();
+      console.log('Purchase history:', results);
+      
+      if (results && results.length > 0) {
+        // Check if any purchases are still valid
+        const validPurchase = results.find((purchase: any) => 
+          Object.values(PRODUCT_IDS).includes(purchase.productId)
+        );
+        
+        if (validPurchase) {
+          // Save restored subscription info
+          try {
+            await saveSubscriptionInfo({
+              isActive: true,
+              productId: validPurchase.productId,
+              purchaseDate: validPurchase.purchaseTime?.toString() || new Date().toISOString(),
+            });
+          } catch (error) {
+            console.error('Error saving restored subscription info:', error);
+          }
+          
+          Alert.alert('Success!', 'Your purchases have been restored!', [
+            { text: 'OK', onPress: () => router.replace('/(tabs)/generate') }
+          ]);
+        } else {
+          Alert.alert('No Purchases', 'No previous purchases found to restore.');
+        }
+      } else {
+        Alert.alert('No Purchases', 'No previous purchases found to restore.');
+      }
+    } catch (error) {
+      console.error('Error restoring purchases:', error);
+      Alert.alert('Error', 'Failed to restore purchases. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to get product info
+  const getProductInfo = (productId: string) => {
+    const product = products.find(p => p.productId === productId);
+    return product;
+  };
+
+  // Helper function to format price
+  const formatPrice = (plan: string, fallbackPrice: string) => {
+    const productId = PRODUCT_IDS[plan as keyof typeof PRODUCT_IDS];
+    const product = getProductInfo(productId);
+    return product?.price || fallbackPrice;
   };
 
   const handleContinue = () => {
@@ -149,7 +270,7 @@ export default function SubscriptionScreen() {
             <View style={styles.planContent}>
               <Text style={styles.planName}>Yearly</Text>
             </View>
-            <Text style={styles.planPrice}>$0.38/week</Text>
+            <Text style={styles.planPrice}>{formatPrice('yearly', '$0.38/week')}</Text>
           </TouchableOpacity>
 
           {/* Monthly Plan */}
@@ -172,7 +293,7 @@ export default function SubscriptionScreen() {
             <View style={styles.planContent}>
               <Text style={styles.planName}>Monthly</Text>
             </View>
-            <Text style={styles.planPrice}>$1.50/week</Text>
+            <Text style={styles.planPrice}>{formatPrice('monthly', '$1.50/week')}</Text>
           </TouchableOpacity>
 
           {/* Weekly Plan */}
@@ -189,7 +310,7 @@ export default function SubscriptionScreen() {
             <View style={styles.planContent}>
               <Text style={styles.planName}>Weekly</Text>
             </View>
-            <Text style={styles.planPrice}>$2.99/week</Text>
+            <Text style={styles.planPrice}>{formatPrice('weekly', '$2.99/week')}</Text>
           </TouchableOpacity>
         </View>
 
