@@ -132,13 +132,14 @@ export const addThumbnailToHistory = async (
     // Generate ID first (we'll need it for download)
     const thumbnailId = Date.now().toString();
 
-    // Check if this thumbnail already exists (by imageUrl or local path)
+    // Check if this exact URL already exists in history
     const existingIndex = existingThumbnails.findIndex(t =>
-      t.imageUrl === imageUrl || t.imageUrl.includes(`thumbnail_${t.id}.png`)
+      t.imageUrl === imageUrl
     );
 
     if (existingIndex !== -1) {
-      // Already exists, just return it
+      // This exact thumbnail already exists in history, just return it
+      console.log('Thumbnail already exists in history:', imageUrl);
       return existingThumbnails[existingIndex];
     }
 
@@ -161,6 +162,7 @@ export const addThumbnailToHistory = async (
 
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedThumbnails));
 
+    console.log('Added new thumbnail to history:', thumbnailId, localImageUrl);
     return newThumbnail;
   } catch (error) {
     console.error('Error adding thumbnail to history:', error);
@@ -171,7 +173,9 @@ export const addThumbnailToHistory = async (
 export const getSavedThumbnails = async (): Promise<SavedThumbnail[]> => {
   try {
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    const thumbnails = stored ? JSON.parse(stored) : [];
+    // Sort by timestamp descending (most recent first)
+    return thumbnails.sort((a: SavedThumbnail, b: SavedThumbnail) => b.timestamp - a.timestamp);
   } catch (error) {
     console.error('Error getting saved thumbnails:', error);
     return [];
