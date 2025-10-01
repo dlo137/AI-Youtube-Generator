@@ -113,6 +113,12 @@ export default function RootLayout() {
           headerShown: false
         }}
       />
+      <Stack.Screen
+        name="subscriptionScreen"
+        options={{
+          headerShown: false
+        }}
+      />
     </Stack>
   );
 }

@@ -1,11 +1,13 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, TouchableWithoutFeedback, Keyboard, Animated } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { getCurrentUser, getMyProfile, updateMyProfile, signOut } from '../../src/features/auth/api';
 import { useModal } from '../../src/contexts/ModalContext';
 import { supabase } from '../../lib/supabase';
+import { LinearGradient } from 'expo-linear-gradient';
+import { getSubscriptionInfo, SubscriptionInfo } from '../../src/utils/subscriptionStorage';
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
@@ -15,6 +17,8 @@ export default function ProfileScreen() {
   const [editForm, setEditForm] = useState({
     full_name: ''
   });
+  const [subscriptionInfo, setSubscriptionInfo] = useState<SubscriptionInfo | null>(null);
+  const [currentPlan, setCurrentPlan] = useState('Free');
   const {
     isAboutModalVisible,
     setIsAboutModalVisible,
@@ -25,7 +29,8 @@ export default function ProfileScreen() {
     isBillingManagementModalVisible,
     setIsBillingManagementModalVisible,
   } = useModal();
-  const [selectedPlan, setSelectedPlan] = useState('monthly');
+  const [selectedPlan, setSelectedPlan] = useState('yearly');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
   const [contactForm, setContactForm] = useState({
     name: '',
     email: '',
@@ -44,39 +49,54 @@ export default function ProfileScreen() {
 
   const subscriptionPlans = [
     {
-      id: 'weekly',
-      name: 'Weekly',
-      price: '$2.99',
-      period: '/week',
-      description: 'Perfect for short-term projects',
-      features: ['Unlimited thumbnails', 'Advanced editing tools', 'Cloud storage', 'Priority support']
+      id: 'yearly',
+      name: 'Yearly',
+      price: '$0.38/week',
+      description: 'Free for 3 days, then $19.99 / year.\nNo payment now',
+      hasTrial: true
     },
     {
       id: 'monthly',
       name: 'Monthly',
-      price: '$9.99',
-      period: '/month',
-      description: 'Most popular for regular creators',
-      features: ['Unlimited thumbnails', 'Advanced editing tools', 'Cloud storage', 'Priority support', 'Export in 4K'],
-      popular: true
+      price: '$1.50/week',
+      description: 'Billed monthly at $5.99.\nCancel anytime'
     },
     {
-      id: 'yearly',
-      name: 'Yearly',
-      price: '$89.99',
-      period: '/year',
-      description: 'Best value - save 25%',
-      originalPrice: '$119.88',
-      features: ['Unlimited thumbnails', 'Advanced editing tools', 'Cloud storage', 'Priority support', 'Export in 4K', 'Team collaboration']
+      id: 'weekly',
+      name: 'Weekly',
+      price: '$2.99/week',
+      description: 'Billed weekly at $2.99.\nCancel anytime'
     }
   ];
 
-  // Mock current subscription data - replace with actual subscription state
-  const currentSubscription = {
-    plan: 'Monthly Pro',
-    price: '$9.99/month',
-    renewalDate: '2024-01-15',
-    status: 'active'
+  // Get current subscription data from state
+  const getCurrentSubscriptionDisplay = () => {
+    if (!subscriptionInfo || !subscriptionInfo.isActive) {
+      return {
+        plan: 'Free Plan',
+        price: '$0.00',
+        renewalDate: null,
+        status: 'free'
+      };
+    }
+
+    let price = '';
+    let planName = currentPlan;
+
+    if (subscriptionInfo.productId === 'thumbnail.pro.yearly') {
+      price = '$19.99/year';
+    } else if (subscriptionInfo.productId === 'thumbnail.pro.monthly') {
+      price = '$5.99/month';
+    } else if (subscriptionInfo.productId === 'thumbnail.pro.weekly') {
+      price = '$2.99/week';
+    }
+
+    return {
+      plan: planName,
+      price: price,
+      renewalDate: subscriptionInfo.expiryDate || subscriptionInfo.purchaseDate,
+      status: 'active'
+    };
   };
 
   useEffect(() => {
@@ -105,6 +125,7 @@ export default function ProfileScreen() {
         setEditForm({
           full_name: 'Guest User'
         });
+        setCurrentPlan('Free');
         setIsLoading(false);
         return;
       }
@@ -124,6 +145,25 @@ export default function ProfileScreen() {
         setEditForm({
           full_name: profileData.full_name || ''
         });
+      }
+
+      // Load subscription info
+      const subInfo = await getSubscriptionInfo();
+      setSubscriptionInfo(subInfo);
+
+      // Determine current plan based on product ID
+      if (subInfo && subInfo.isActive) {
+        if (subInfo.productId === 'thumbnail.pro.yearly') {
+          setCurrentPlan('Yearly Pro');
+        } else if (subInfo.productId === 'thumbnail.pro.monthly') {
+          setCurrentPlan('Monthly Pro');
+        } else if (subInfo.productId === 'thumbnail.pro.weekly') {
+          setCurrentPlan('Weekly Pro');
+        } else {
+          setCurrentPlan('Pro');
+        }
+      } else {
+        setCurrentPlan('Free');
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -329,6 +369,8 @@ export default function ProfileScreen() {
   };
 
   const handleCancelSubscription = async () => {
+    const currentSub = getCurrentSubscriptionDisplay();
+
     Alert.alert(
       'Cancel Subscription',
       'Are you sure you want to cancel your subscription? You will lose access to Pro features at the end of your current billing period.',
@@ -340,9 +382,17 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               // Here you would call your cancel subscription API
+              const renewalDateStr = currentSub.renewalDate
+                ? new Date(currentSub.renewalDate).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })
+                : 'the end of your billing period';
+
               Alert.alert(
                 'Subscription Cancelled',
-                `Your subscription has been cancelled. You will continue to have access to Pro features until ${currentSubscription.renewalDate}.`,
+                `Your subscription has been cancelled. You will continue to have access to Pro features until ${renewalDateStr}.`,
                 [{ text: 'OK', onPress: () => setIsBillingManagementModalVisible(false) }]
               );
             } catch (error) {
@@ -401,7 +451,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
           <Text style={styles.email}>{user?.isGuest ? 'Guest' : user?.email}</Text>
-          <Text style={styles.plan}>Free Plan</Text>
+          <Text style={styles.plan}>{currentPlan} Plan</Text>
           <Text style={styles.name}>{user?.isGuest ? '' : (profile?.full_name || '')}</Text>
         </View>
 
@@ -598,77 +648,96 @@ export default function ProfileScreen() {
         animationType="fade"
         onRequestClose={() => setIsBillingModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.billingModal}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.billingTitle}>Choose Your Plan</Text>
-              <Text style={styles.billingSubtitle}>
-                Upgrade to Pro to unlock unlimited thumbnails and advanced features
-              </Text>
+        <LinearGradient
+          colors={['#050810', '#0d1120', '#08091a']}
+          style={styles.gradientModalOverlay}
+        >
+          {/* Close Button */}
+          <TouchableOpacity
+            style={styles.modalCloseButton}
+            onPress={() => setIsBillingModalVisible(false)}
+          >
+            <Text style={styles.modalCloseText}>✕</Text>
+          </TouchableOpacity>
 
-              <View style={styles.plansContainer}>
-                {subscriptionPlans.map((plan) => (
-                  <TouchableOpacity
-                    key={plan.id}
-                    style={[
-                      styles.planCard,
-                      selectedPlan === plan.id && styles.selectedPlan,
-                      plan.popular && styles.popularPlan
-                    ]}
-                    onPress={() => setSelectedPlan(plan.id)}
-                  >
-                    {plan.popular && (
-                      <View style={styles.popularBadge}>
-                        <Text style={styles.popularText}>Most Popular</Text>
-                      </View>
-                    )}
+          {/* Decorative Shapes */}
+          <View style={[styles.shape, styles.triangle, { top: 100, left: 30 }]} />
+          <View style={[styles.shape, styles.square, { top: 200, right: 40 }]} />
+          <View style={[styles.shape, styles.triangle, { bottom: 150, left: 50 }]} />
+          <View style={[styles.shape, styles.square, { top: 400, left: 20 }]} />
 
-                    <Text style={styles.planName}>{plan.name}</Text>
-                    <Text style={styles.planDescription}>{plan.description}</Text>
-
-                    <View style={styles.priceContainer}>
-                      <Text style={styles.planPrice}>{plan.price}</Text>
-                      <Text style={styles.planPeriod}>{plan.period}</Text>
-                    </View>
-
-                    {plan.originalPrice && (
-                      <Text style={styles.originalPrice}>
-                        Was {plan.originalPrice}
-                      </Text>
-                    )}
-
-                    <View style={styles.featuresContainer}>
-                      {plan.features.map((feature, index) => (
-                        <View key={index} style={styles.featureRow}>
-                          <Text style={styles.checkmark}>✓</Text>
-                          <Text style={styles.featureText}>{feature}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </TouchableOpacity>
-                ))}
+          <ScrollView
+            contentContainerStyle={styles.gradientScrollContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Logo/Icon with Glow */}
+            <View style={styles.logoContainer}>
+              <View style={styles.logoGlow}>
+                <View style={styles.logo}>
+                  <Text style={styles.logoText}>📸</Text>
+                </View>
               </View>
-            </ScrollView>
-
-            <View style={styles.billingActions}>
-              <TouchableOpacity
-                style={styles.subscribeButton}
-                onPress={() => handleSubscribe(selectedPlan)}
-              >
-                <Text style={styles.subscribeText}>
-                  Subscribe to {subscriptionPlans.find(p => p.id === selectedPlan)?.name}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.billingCancelButton}
-                onPress={() => setIsBillingModalVisible(false)}
-              >
-                <Text style={styles.billingCancelText}>Not Now</Text>
-              </TouchableOpacity>
             </View>
+
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.billingTitle}>Get access to ThumbnailPro with no limits!</Text>
+              <Text style={styles.billingSubtitle}>
+                Achieve your goals and build lasting habits with our ultimate suite for a healthier routine.
+              </Text>
+            </View>
+
+            {/* Plans */}
+            <View style={styles.plansContainer}>
+              {subscriptionPlans.map((plan) => (
+                <TouchableOpacity
+                  key={plan.id}
+                  style={[
+                    styles.planCard,
+                    selectedPlan === plan.id && styles.selectedPlan,
+                    plan.hasTrial && styles.popularPlan,
+                  ]}
+                  onPress={() => setSelectedPlan(plan.id)}
+                >
+                  {plan.hasTrial && selectedPlan === plan.id && (
+                    <View style={styles.popularBadge}>
+                      <Text style={styles.popularText}>3 DAY FREE TRIAL</Text>
+                    </View>
+                  )}
+                  <View style={styles.planRadio}>
+                    {selectedPlan === plan.id && <View style={styles.planRadioSelected} />}
+                  </View>
+                  <View style={styles.planContent}>
+                    <Text style={styles.planName}>{plan.name}</Text>
+                  </View>
+                  <Text style={styles.planPrice}>{plan.price}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Trial Info */}
+            <Text style={styles.trialInfo}>
+              {subscriptionPlans.find(p => p.id === selectedPlan)?.description}
+            </Text>
+          </ScrollView>
+
+          {/* Continue Button - Fixed at Bottom */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.continueButton}
+              onPress={() => handleSubscribe(selectedPlan)}
+            >
+              <LinearGradient
+                colors={['#5b6ef5', '#3b4fd9']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.continueGradient}
+              >
+                <Text style={styles.continueText}>Continue</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
-        </View>
+        </LinearGradient>
       </Modal>
 
       {/* Billing Management Modal */}
@@ -687,25 +756,29 @@ export default function ProfileScreen() {
                 <Text style={styles.currentPlanTitle}>Current Plan</Text>
                 <View style={styles.planDetailsCard}>
                   <View style={styles.planInfo}>
-                    <Text style={styles.planNameText}>{currentSubscription.plan}</Text>
-                    <Text style={styles.planPriceText}>{currentSubscription.price}</Text>
+                    <Text style={styles.planNameText}>{getCurrentSubscriptionDisplay().plan}</Text>
+                    <Text style={styles.planPriceText}>{getCurrentSubscriptionDisplay().price}</Text>
                   </View>
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusText}>Active</Text>
-                  </View>
+                  {getCurrentSubscriptionDisplay().status === 'active' && (
+                    <View style={styles.statusBadge}>
+                      <Text style={styles.statusText}>Active</Text>
+                    </View>
+                  )}
                 </View>
 
-                <View style={styles.renewalInfo}>
-                  <Text style={styles.renewalLabel}>Next Billing Date</Text>
-                  <Text style={styles.renewalDate}>
-                    {new Date(currentSubscription.renewalDate).toLocaleDateString('en-US', {
-                      weekday: 'long',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </Text>
-                </View>
+                {getCurrentSubscriptionDisplay().renewalDate && (
+                  <View style={styles.renewalInfo}>
+                    <Text style={styles.renewalLabel}>Next Billing Date</Text>
+                    <Text style={styles.renewalDate}>
+                      {new Date(getCurrentSubscriptionDisplay().renewalDate).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </Text>
+                  </View>
+                )}
 
                 <View style={styles.billingActionsContainer}>
                   <TouchableOpacity
@@ -1008,135 +1081,204 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  billingModal: {
-    backgroundColor: CARD,
-    borderRadius: 16,
-    padding: 24,
-    maxHeight: '90%',
-    width: '100%',
-    borderWidth: 1,
-    borderColor: BORDER,
+  gradientModalOverlay: {
+    flex: 1,
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+  },
+  modalCloseText: {
+    fontSize: 24,
+    color: '#ffffff',
+    fontWeight: '300',
+  },
+  shape: {
+    position: 'absolute',
+    opacity: 0.15,
+  },
+  triangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 15,
+    borderRightWidth: 15,
+    borderBottomWidth: 25,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#5b6ef5',
+  },
+  square: {
+    width: 20,
+    height: 20,
+    backgroundColor: '#3b4fd9',
+    transform: [{ rotate: '45deg' }],
+  },
+  gradientScrollContainer: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 120,
+    paddingBottom: 20,
+    justifyContent: 'center',
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  logoGlow: {
+    shadowColor: '#5b6ef5',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 30,
+    elevation: 10,
+  },
+  logo: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(91, 110, 245, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(91, 110, 245, 0.3)',
+  },
+  logoText: {
+    fontSize: 50,
+  },
+  header: {
+    marginBottom: 40,
+    alignItems: 'center',
   },
   billingTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: TEXT,
+    color: '#ffffff',
+    marginBottom: 16,
     textAlign: 'center',
-    marginBottom: 8,
+    lineHeight: 36,
   },
   billingSubtitle: {
-    fontSize: 14,
-    color: MUTED,
+    fontSize: 15,
+    color: '#a0a8b8',
     textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 20,
+    lineHeight: 22,
+    paddingHorizontal: 10,
   },
   plansContainer: {
     gap: 16,
     marginBottom: 16,
   },
   planCard: {
-    backgroundColor: BG,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderWidth: 2,
-    borderColor: BORDER,
-    borderRadius: 12,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
     padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
     position: 'relative',
   },
   selectedPlan: {
-    borderColor: '#6366f1',
+    borderColor: '#5b6ef5',
+    backgroundColor: 'rgba(91, 110, 245, 0.1)',
+    shadowColor: '#5b6ef5',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 15,
+    elevation: 8,
   },
   popularPlan: {
-    borderColor: '#f59e0b',
+    // Additional styling for popular plan
   },
   popularBadge: {
     position: 'absolute',
     top: -10,
-    left: 20,
-    backgroundColor: '#f59e0b',
-    paddingHorizontal: 12,
+    alignSelf: 'center',
+    backgroundColor: '#5b6ef5',
+    paddingHorizontal: 14,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 10,
+    shadowColor: '#5b6ef5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 5,
   },
   popularText: {
     color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  planName: {
-    fontSize: 20,
+    fontSize: 10,
     fontWeight: 'bold',
-    color: TEXT,
-    marginBottom: 4,
+    letterSpacing: 1,
   },
-  planDescription: {
-    fontSize: 14,
-    color: MUTED,
-    marginBottom: 12,
-  },
-  priceContainer: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 8,
-  },
-  planPrice: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: TEXT,
-  },
-  planPeriod: {
-    fontSize: 16,
-    color: MUTED,
-    marginLeft: 4,
-  },
-  originalPrice: {
-    fontSize: 14,
-    color: MUTED,
-    textDecorationLine: 'line-through',
-    marginBottom: 16,
-  },
-  featuresContainer: {
-    gap: 8,
-  },
-  featureRow: {
-    flexDirection: 'row',
+  planRadio: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#a0a8b8',
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    marginRight: 16,
   },
-  checkmark: {
-    color: '#10b981',
-    fontSize: 16,
-    fontWeight: 'bold',
+  planRadioSelected: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#5b6ef5',
   },
-  featureText: {
-    fontSize: 14,
-    color: TEXT,
+  planContent: {
     flex: 1,
   },
-  billingActions: {
-    gap: 12,
-  },
-  subscribeButton: {
-    backgroundColor: '#6366f1',
-    paddingVertical: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  subscribeText: {
+  planName: {
+    fontSize: 18,
+    fontWeight: '600',
     color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
-  billingCancelButton: {
-    backgroundColor: 'transparent',
-    paddingVertical: 14,
-    borderRadius: 8,
+  planPrice: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#a0a8b8',
+  },
+  trialInfo: {
+    fontSize: 13,
+    color: '#a0a8b8',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 18,
+  },
+  buttonContainer: {
+    paddingHorizontal: 24,
+    paddingBottom: 40,
+    paddingTop: 10,
+  },
+  continueButton: {
+    borderRadius: 30,
+    overflow: 'hidden',
+    shadowColor: '#5b6ef5',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  continueGradient: {
+    paddingVertical: 18,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  billingCancelText: {
-    color: MUTED,
-    fontSize: 16,
-    fontWeight: '600',
+  continueText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 0.5,
   },
   billingManagementModal: {
     backgroundColor: CARD,

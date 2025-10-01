@@ -53,42 +53,47 @@ export default function SubscriptionScreen() {
       console.log('Available products:', results);
 
       // Set up purchase listener
-      InAppPurchases.setPurchaseListener(({ responseCode, results, errorCode }: any) => {
+      InAppPurchases.setPurchaseListener(async ({ responseCode, results, errorCode }: any) => {
         console.log('Purchase response:', { responseCode, results, errorCode });
-        
+
         if (responseCode === InAppPurchases.IAPResponseCode.OK) {
-          results?.forEach(async (purchase: any) => {
-            if (!purchase.acknowledged) {
-              console.log('Purchase successful:', purchase);
-              
-              // Save subscription info
-              try {
-                await saveSubscriptionInfo({
-                  isActive: true,
-                  productId: purchase.productId,
-                  purchaseDate: new Date().toISOString(),
-                  // For subscriptions, you'd calculate expiry based on product type
-                });
-              } catch (error) {
-                console.error('Error saving subscription info:', error);
+          if (results && results.length > 0) {
+            for (const purchase of results) {
+              if (!purchase.acknowledged) {
+                console.log('Purchase successful:', purchase);
+
+                // Save subscription info
+                try {
+                  await saveSubscriptionInfo({
+                    isActive: true,
+                    productId: purchase.productId,
+                    purchaseDate: new Date().toISOString(),
+                    // For subscriptions, you'd calculate expiry based on product type
+                  });
+                } catch (error) {
+                  console.error('Error saving subscription info:', error);
+                }
+
+                // Acknowledge the purchase
+                await InAppPurchases.finishTransactionAsync(purchase, true);
+
+                // Set loading to false before navigation
+                setLoading(false);
+
+                // Navigate immediately without alert
+                router.replace('/(tabs)/generate');
+                return;
               }
-              
-              // Acknowledge the purchase
-              InAppPurchases.finishTransactionAsync(purchase, true);
-              
-              // Set user as premium and navigate
-              Alert.alert('Success!', 'Welcome to ThumbnailPro!', [
-                { text: 'OK', onPress: () => router.replace('/(tabs)/generate') }
-              ]);
             }
-          });
+          }
         } else if (responseCode === InAppPurchases.IAPResponseCode.USER_CANCELED) {
           console.log('User canceled purchase');
+          setLoading(false);
         } else {
           console.log('Purchase error:', errorCode);
+          setLoading(false);
           Alert.alert('Error', 'Failed to complete purchase. Please try again.');
         }
-        setLoading(false);
       });
     } catch (error) {
       console.error('Error initializing IAP:', error);
@@ -229,7 +234,7 @@ export default function SubscriptionScreen() {
       <Animated.ScrollView
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
-        style={{ opacity: fadeAnim }}
+        style={{ opacity: fadeAnim, flex: 1 }}
       >
         {/* Logo/Icon with Glow */}
         <View style={styles.logoContainer}>
@@ -278,15 +283,9 @@ export default function SubscriptionScreen() {
             style={[
               styles.planCard,
               selectedPlan === 'monthly' && styles.selectedPlan,
-              styles.popularPlan,
             ]}
             onPress={() => setSelectedPlan('monthly')}
           >
-            {selectedPlan === 'monthly' && (
-              <View style={styles.popularBadge}>
-                <Text style={styles.popularText}>3 DAY FREE TRIAL</Text>
-              </View>
-            )}
             <View style={styles.planRadio}>
               {selectedPlan === 'monthly' && <View style={styles.planRadioSelected} />}
             </View>
@@ -317,11 +316,13 @@ export default function SubscriptionScreen() {
         {/* Trial Info */}
         <Text style={styles.trialInfo}>
           {selectedPlan === 'yearly' && 'Free for 3 days, then $19.99 / year.\nNo payment now'}
-          {selectedPlan === 'monthly' && 'Free for 3 days, then $5.99 / month.\nNo payment now'}
+          {selectedPlan === 'monthly' && 'Billed monthly at $5.99.\nCancel anytime'}
           {selectedPlan === 'weekly' && 'Billed weekly at $2.99.\nCancel anytime'}
         </Text>
+      </Animated.ScrollView>
 
-        {/* Continue Button */}
+      {/* Continue Button - Fixed at Bottom */}
+      <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={styles.continueButton}
           onPress={handleContinue}
@@ -338,7 +339,7 @@ export default function SubscriptionScreen() {
             </Text>
           </LinearGradient>
         </TouchableOpacity>
-      </Animated.ScrollView>
+      </View>
     </LinearGradient>
   );
 }
@@ -403,7 +404,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 120,
+    paddingBottom: 20,
+    justifyContent: 'center',
+  },
+  buttonContainer: {
+    paddingHorizontal: 24,
     paddingBottom: 40,
+    paddingTop: 10,
   },
   logoContainer: {
     alignItems: 'center',
@@ -537,7 +544,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   continueButton: {
-    marginBottom: 20,
     borderRadius: 30,
     overflow: 'hidden',
     shadowColor: '#5b6ef5',

@@ -51,7 +51,7 @@ function TabsContent() {
               fontWeight: '600',
               textAlign: 'center'
             }}>
-              Get Pro
+              Rate App
             </Text>
           </TouchableOpacity>
         ),

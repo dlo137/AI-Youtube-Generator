@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import * as Linking from 'expo-linking';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -25,8 +26,11 @@ export default function ForgotPasswordScreen() {
     setIsLoading(true);
 
     try {
+      // Create proper deep link that works in both Expo Go and production builds
+      const redirectUrl = Linking.createURL('/reset-password');
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'exp://localhost:8081/reset-password',
+        redirectTo: redirectUrl,
       });
 
       if (error) {

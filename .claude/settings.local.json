@@ -23,7 +23,10 @@
       "Read(//c/Users/aidaw/Desktop/testflight_feedback (3)/**)",
       "Bash(eas build:*)",
       "Bash(pkill:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(eas secret:list:*)",
+      "Bash(eas env:list:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
