@@ -199,24 +199,13 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
   let promptText: string;
 
   if (baseImageUrl) {
-    promptText = `Edit the BASE IMAGE; do not change composition unless explicitly requested.
+    promptText = `Edit image keeping 1280×720 frame. ${prompt}
 
-User request: ${prompt}
-
-IMPORTANT: Use the BASE IMAGE as your starting point. Only make the specific changes requested. Maintain the existing composition, layout, and overall structure unless the user explicitly asks to change them. Generate a 16:9 aspect ratio YouTube thumbnail (1280x720 pixels).`;
-  } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
-    promptText = `Create a 16:9 YouTube thumbnail (1280x720 pixels) using the REFERENCE IMAGE composition/style and featuring the SUBJECT IMAGE person.
-
-User request: ${prompt}
-
-Match the REFERENCE IMAGE composition, lighting, color palette, and visual style while naturally integrating the SUBJECT IMAGE person.`;
+MANDATORY: Keep all content fully visible. No cropping. No borders or frames around the image - fill entire canvas edge to edge.`;
   } else {
-    // Text-only generation
-    promptText = `Create a 16:9 YouTube thumbnail (1280x720 pixels).
+    promptText = `Generate 1280×720 YouTube thumbnail. ${prompt}
 
-User request: ${prompt}
-
-Generate a professional, eye-catching YouTube thumbnail in landscape orientation.`;
+MANDATORY: Show complete subjects - no cropped faces, bodies, or text. Leave visible spacing on all sides so the subjects and content in the middle have breathing room compositionally. No borders or frames around the image - fill entire canvas edge to edge.`;
   }
 
   const parts: any[] = [{ text: promptText }];

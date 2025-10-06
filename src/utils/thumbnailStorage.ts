@@ -10,10 +10,7 @@ export interface SavedThumbnail {
   status: 'completed' | 'processing' | 'failed';
   timestamp: number;
   isFavorited: boolean;
-  edits?: {
-    drawings: Array<{id: string, path: string, color: string}>;
-    text: {text: string, x: number, y: number, fontSize: number} | null;
-  } | null;
+  edits?: null;
 }
 
 const STORAGE_KEY = 'saved_thumbnails';
@@ -60,10 +57,7 @@ const downloadImageToLocal = async (remoteUrl: string, thumbnailId: string): Pro
 export const saveThumbnail = async (
   prompt: string,
   imageUrl: string,
-  edits?: {
-    drawings: Array<{id: string, path: string, color: string}>;
-    text: {text: string, x: number, y: number, fontSize: number} | null;
-  } | null
+  edits?: null
 ): Promise<SavedThumbnail> => {
   try {
     const existingThumbnails = await getSavedThumbnails();
@@ -81,7 +75,7 @@ export const saveThumbnail = async (
       const updatedThumbnail = {
         ...existingThumbnails[existingIndex],
         isFavorited: true,
-        edits: edits || existingThumbnails[existingIndex].edits,
+        edits: null,
       };
 
       const updatedThumbnails = [...existingThumbnails];
@@ -104,7 +98,7 @@ export const saveThumbnail = async (
       status: 'completed',
       timestamp: Date.now(),
       isFavorited: true,
-      edits: edits || null,
+      edits: null,
     };
 
     const updatedThumbnails = [newThumbnail, ...existingThumbnails];
@@ -121,10 +115,7 @@ export const saveThumbnail = async (
 export const addThumbnailToHistory = async (
   prompt: string,
   imageUrl: string,
-  edits?: {
-    drawings: Array<{id: string, path: string, color: string}>;
-    text: {text: string, x: number, y: number, fontSize: number} | null;
-  } | null
+  edits?: null
 ): Promise<SavedThumbnail> => {
   try {
     const existingThumbnails = await getSavedThumbnails();
@@ -155,7 +146,7 @@ export const addThumbnailToHistory = async (
       status: 'completed',
       timestamp: Date.now(),
       isFavorited: false, // Not favorited by default for history
-      edits: edits || null,
+      edits: null,
     };
 
     const updatedThumbnails = [newThumbnail, ...existingThumbnails];
@@ -210,12 +201,56 @@ export const deleteSavedThumbnail = async (id: string): Promise<void> => {
 };
 
 const generateTitle = (prompt: string): string => {
-  // Extract key words and create a 2-3 word title
-  const words = prompt.toLowerCase().split(' ').filter(word =>
-    word.length > 2 &&
-    !['the', 'and', 'for', 'with', 'about', 'thumbnail', 'image', 'picture'].includes(word)
+  // Clean and normalize the prompt
+  const cleanPrompt = prompt
+    .replace(/[.,!?;:]/g, '') // Remove punctuation
+    .trim();
+
+  const wordCount = cleanPrompt.split(/\s+/).length;
+
+  // If prompt is 2-3 words, just capitalize and use as is
+  if (wordCount <= 3) {
+    return cleanPrompt.split(/\s+/).map(word =>
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+  }
+
+  // For longer prompts, summarize
+  const lowerPrompt = cleanPrompt.toLowerCase();
+
+  // Stop words to filter out
+  const stopWords = new Set([
+    'the', 'and', 'for', 'with', 'about', 'thumbnail', 'image', 'picture',
+    'create', 'make', 'generate', 'show', 'display', 'featuring', 'youtube',
+    'that', 'this', 'has', 'have', 'are', 'was', 'were', 'been', 'being',
+    'a', 'an', 'of', 'in', 'on', 'at', 'to', 'from', 'by', 'as'
+  ]);
+
+  // Split into words and filter
+  const words = lowerPrompt.split(/\s+/).filter(word =>
+    word.length > 2 && !stopWords.has(word)
   );
-  return words.slice(0, 3).map(word =>
+
+  // Remove duplicate consecutive words (e.g., "gamer vs gamer" -> "gamer vs")
+  const uniqueWords = words.filter((word, index) =>
+    index === 0 || word !== words[index - 1]
+  );
+
+  // Take first 3-4 unique words for title
+  const titleWords = uniqueWords.slice(0, 4);
+
+  // Capitalize each word properly
+  const title = titleWords.map(word =>
     word.charAt(0).toUpperCase() + word.slice(1)
   ).join(' ');
+
+  // If title is too short after filtering, use first few words of original prompt
+  if (title.length < 5) {
+    const fallbackWords = lowerPrompt.split(/\s+/).slice(0, 3);
+    return fallbackWords.map(word =>
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
+  }
+
+  return title;
 };

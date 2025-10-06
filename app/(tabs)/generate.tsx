@@ -81,6 +81,8 @@ export default function GenerateScreen() {
   const dot1Anim = useRef(new Animated.Value(0)).current;
   const dot2Anim = useRef(new Animated.Value(0)).current;
   const dot3Anim = useRef(new Animated.Value(0)).current;
+  const shimmer1Anim = useRef(new Animated.Value(0.3)).current;
+  const shimmer2Anim = useRef(new Animated.Value(0.3)).current;
   const borderOffset1 = useRef(new Animated.Value(0)).current;
   const borderOffset2 = useRef(new Animated.Value(0)).current;
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -89,18 +91,10 @@ export default function GenerateScreen() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPrompt, setModalPrompt] = useState('');
   const [modalImageUrl, setModalImageUrl] = useState('');
-  const [selectedTool, setSelectedTool] = useState<'save' | 'draw' | 'text' | null>(null);
-  const [drawingPaths, setDrawingPaths] = useState<Array<{id: string, path: string, color: string}>>([]);
-  const [currentPath, setCurrentPath] = useState('');
-  const pathRef = useRef('');
+  const [selectedTool, setSelectedTool] = useState<'save' | null>(null);
   const [textElements, setTextElements] = useState<Array<{id: string, text: string, x: number, y: number, color: string, fontSize: number}>>([]);
   const [isAddingText, setIsAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
-  const [placeholderText, setPlaceholderText] = useState('Enter text');
-  const [textPosition, setTextPosition] = useState({ x: 0, y: 0 });
-  const [textSize, setTextSize] = useState(16);
-  const [finalTextElement, setFinalTextElement] = useState<{text: string, x: number, y: number, fontSize: number} | null>(null);
-  const [isScalingFinalText, setIsScalingFinalText] = useState(false);
   const [isSubjectModalVisible, setIsSubjectModalVisible] = useState(false);
   const [isReferenceModalVisible, setIsReferenceModalVisible] = useState(false);
   const [subjectImage, setSubjectImage] = useState<string | null>(null);
@@ -109,15 +103,7 @@ export default function GenerateScreen() {
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
   const [thumbnailEdits, setThumbnailEdits] = useState<{
     imageUrl: string;
-    drawings: Array<{id: string, path: string, color: string}>;
-    text: {text: string, x: number, y: number, fontSize: number} | null;
   } | null>(null);
-  const textTranslateXValue = useRef(new Animated.Value(0));
-  const textTranslateYValue = useRef(new Animated.Value(0));
-  const textScaleValue = useRef(new Animated.Value(1));
-  const finalTextTranslateX = useRef(new Animated.Value(0));
-  const finalTextTranslateY = useRef(new Animated.Value(0));
-  const finalTextScaleValue = useRef(new Animated.Value(1));
   const [scale, setScale] = useState(1);
   const [modalKeyboardHeight, setModalKeyboardHeight] = useState(0);
   const [isModalGenerating, setIsModalGenerating] = useState(false);
@@ -134,10 +120,11 @@ export default function GenerateScreen() {
     url2?: string;
     timestamp: number;
   }>>([]);
+  const [imageContainerDimensions, setImageContainerDimensions] = useState({ width: 0, height: 0 });
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    if (isLoading) {
+    if (isLoading || isModalGenerating) {
       // Animation for loading dots in button
       const createFloatingAnimation = (animValue: Animated.Value, delay: number) => {
         return Animated.loop(
@@ -191,8 +178,8 @@ export default function GenerateScreen() {
       const animation2 = createFloatingAnimation(dot2Anim, 150);
       const animation3 = createFloatingAnimation(dot3Anim, 300);
 
-      const shimmer1 = createShimmerAnimation(dot1Anim, 0);
-      const shimmer2 = createShimmerAnimation(dot2Anim, 200);
+      const shimmer1 = createShimmerAnimation(shimmer1Anim, 0);
+      const shimmer2 = createShimmerAnimation(shimmer2Anim, 200);
 
       const borderAnim1 = createBorderOffsetAnimation(borderOffset1);
       const borderAnim2 = createBorderOffsetAnimation(borderOffset2);
@@ -220,7 +207,7 @@ export default function GenerateScreen() {
         borderOffset2.setValue(0);
       };
     }
-  }, [isLoading]);
+  }, [isLoading, isModalGenerating]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -296,17 +283,8 @@ export default function GenerateScreen() {
     // Initialize or load existing edits for this image
     if (!thumbnailEdits || thumbnailEdits.imageUrl !== imageUrl) {
       setThumbnailEdits({
-        imageUrl,
-        drawings: [],
-        text: null
+        imageUrl
       });
-      // Reset modal edit states
-      setDrawingPaths([]);
-      setFinalTextElement(null);
-    } else {
-      // Load existing edits into modal edit states
-      setDrawingPaths(thumbnailEdits.drawings);
-      setFinalTextElement(thumbnailEdits.text);
     }
   };
 
@@ -333,24 +311,14 @@ export default function GenerateScreen() {
       // Create edit-aware prompt
       let enhancedPrompt = modalPrompt.trim();
 
-      // Check if user has made edits and enhance the prompt accordingly
-      const hasDrawings = thumbnailEdits?.drawings?.length > 0;
-      const hasText = thumbnailEdits?.text?.text;
 
-      if (hasDrawings || hasText) {
-        enhancedPrompt += '. Note: This thumbnail has been edited with';
-        if (hasDrawings) {
-          enhancedPrompt += ' hand-drawn elements';
-        }
-        if (hasText) {
-          enhancedPrompt += hasDrawings ? ' and' : '';
-          enhancedPrompt += ` text saying "${hasText}"`;
-        }
-        enhancedPrompt += '. Please consider these edits when making adjustments.';
-      }
+      // Create an adjustment-focused prompt
+      // For zoom/framing requests, allow composition changes
+      const isFramingAdjustment = /zoom|show more|show less|pull back|widen|closer|crop|frame|padding|margin/i.test(enhancedPrompt);
 
-      // Create an adjustment-focused prompt that preserves the original image
-      const fullPrompt = `Keep the exact same composition, layout, and core elements from this thumbnail: "${currentGeneration.prompt}". Only make this specific adjustment: ${enhancedPrompt}. Do not change the overall design, just modify the requested aspect while maintaining everything else identical.`;
+      const fullPrompt = isFramingAdjustment
+        ? `Original thumbnail: "${currentGeneration.prompt}". Adjustment: ${enhancedPrompt}. Keep the same content and style, but adjust the framing/composition as requested.`
+        : `Keep the exact same composition, layout, and core elements from this thumbnail: "${currentGeneration.prompt}". Only make this specific adjustment: ${enhancedPrompt}. Do not change the overall design, just modify the requested aspect while maintaining everything else identical.`;
 
       // Only use images that are actively selected for adjustment mode
       const activeSubjectImageUrl = subjectImage ? subjectImageUrl : null;
@@ -382,18 +350,25 @@ export default function GenerateScreen() {
 
       // Get the new image URL
       const newImageUrl = data?.variation1?.imageUrl || data?.imageUrl;
-      if (!newImageUrl) {
+      if (!newImageUrl || !newImageUrl.trim()) {
         Alert.alert('Error', 'No adjusted image was generated. Please try again.');
+        return;
+      }
+
+      // Validate the URL is properly formed
+      if (!newImageUrl.startsWith('http') && !newImageUrl.startsWith('file://')) {
+        console.error('Invalid image URL:', newImageUrl);
+        Alert.alert('Error', 'Invalid image URL received. Please try again.');
         return;
       }
 
       // Update the current generation in the list with the new URL
       setAllGenerations(prev => prev.map(gen => {
         if (gen.id === currentGeneration.id) {
-          // Update the URL that was being edited
-          if (gen.url1 === modalImageUrl) {
+          // Update the URL that was being edited, but only if the new URL is valid
+          if (gen.url1 === modalImageUrl && newImageUrl) {
             return { ...gen, url1: newImageUrl };
-          } else if (gen.url2 === modalImageUrl) {
+          } else if (gen.url2 === modalImageUrl && newImageUrl) {
             return { ...gen, url2: newImageUrl };
           }
         }
@@ -405,12 +380,8 @@ export default function GenerateScreen() {
 
       // Clear the edits for the new image
       setThumbnailEdits({
-        imageUrl: newImageUrl,
-        drawings: [],
-        text: null
+        imageUrl: newImageUrl
       });
-      setDrawingPaths([]);
-      setFinalTextElement(null);
       setModalPrompt('');
 
       Alert.alert('Success!', 'Your thumbnail has been adjusted');
@@ -428,22 +399,10 @@ export default function GenerateScreen() {
     setModalPrompt('');
     setModalImageUrl('');
     setSelectedTool(null);
-    setDrawingPaths([]);
-    setCurrentPath('');
-    pathRef.current = '';
     setTextElements([]);
     setIsAddingText(false);
     setSelectedTextId(null);
-    setPlaceholderText('Enter text'); // Reset placeholder text
-    setTextPosition({ x: 0, y: 0 }); // Reset text position
-    setTextSize(16); // Reset text size
-    setFinalTextElement(null); // Clear final text element
-    setModalKeyboardHeight(0); // Reset modal keyboard height
-    textTranslateXValue.current.setValue(0);
-    textTranslateYValue.current.setValue(0);
-    textScaleValue.current.setValue(1);
-    textTranslateXValue.current.setOffset(0);
-    textTranslateYValue.current.setOffset(0);
+    setModalKeyboardHeight(0);
     // Reset zoom and pan
     setScale(1);
     setTranslateX(0);
@@ -454,62 +413,62 @@ export default function GenerateScreen() {
   };
 
   const getShortTitle = (prompt: string) => {
-    // Extract key words and create a 2-3 word title
-    const words = prompt.toLowerCase().split(' ').filter(word =>
-      word.length > 2 &&
-      !['the', 'and', 'for', 'with', 'about', 'thumbnail', 'image', 'picture'].includes(word)
+    // Clean and normalize the prompt
+    const cleanPrompt = prompt
+      .replace(/[.,!?;:]/g, '') // Remove punctuation
+      .trim();
+
+    const wordCount = cleanPrompt.split(/\s+/).length;
+
+    // If prompt is 2-3 words, just capitalize and use as is
+    if (wordCount <= 3) {
+      return cleanPrompt.split(/\s+/).map(word =>
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(' ');
+    }
+
+    // For longer prompts, summarize
+    const lowerPrompt = cleanPrompt.toLowerCase();
+
+    // Stop words to filter out
+    const stopWords = new Set([
+      'the', 'and', 'for', 'with', 'about', 'thumbnail', 'image', 'picture',
+      'create', 'make', 'generate', 'show', 'display', 'featuring', 'youtube',
+      'that', 'this', 'has', 'have', 'are', 'was', 'were', 'been', 'being',
+      'a', 'an', 'of', 'in', 'on', 'at', 'to', 'from', 'by', 'as'
+    ]);
+
+    // Split into words and filter
+    const words = lowerPrompt.split(/\s+/).filter(word =>
+      word.length > 2 && !stopWords.has(word)
     );
-    return words.slice(0, 3).map(word =>
+
+    // Remove duplicate consecutive words (e.g., "gamer vs gamer" -> "gamer vs")
+    const uniqueWords = words.filter((word, index) =>
+      index === 0 || word !== words[index - 1]
+    );
+
+    // Take first 3-4 unique words for title
+    const titleWords = uniqueWords.slice(0, 4);
+
+    // Capitalize each word properly
+    const title = titleWords.map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
+
+    // If title is too short after filtering, use first few words of original prompt
+    if (title.length < 5) {
+      const fallbackWords = lowerPrompt.split(/\s+/).slice(0, 3);
+      return fallbackWords.map(word =>
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ');
+    }
+
+    return title;
   };
 
-  const handleTextPlacement = () => {
-    if (selectedTool !== 'text') return;
 
-    Alert.prompt(
-      'Add Text',
-      'Enter your text:',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Add',
-          onPress: (userText) => {
-            if (userText && userText.trim()) {
-              // Replace the placeholder text with the user's text
-              setPlaceholderText(userText.trim());
-            }
-          },
-        },
-      ],
-      'plain-text',
-      '', // Default text
-      'default'
-    );
-  };
 
-  const handleTextSelection = (textId: string) => {
-    setSelectedTextId(selectedTextId === textId ? null : textId);
-  };
-
-  const moveText = (textId: string, deltaX: number, deltaY: number) => {
-    setTextElements(prev => prev.map(text =>
-      text.id === textId
-        ? { ...text, x: text.x + deltaX, y: text.y + deltaY }
-        : text
-    ));
-  };
-
-  const resizeText = (textId: string, scale: number) => {
-    setTextElements(prev => prev.map(text =>
-      text.id === textId
-        ? { ...text, fontSize: Math.max(12, Math.min(48, text.fontSize * scale)) }
-        : text
-    ));
-  };
 
   const onPinchGestureEvent = (event: any) => {
     const { scale: newScale } = event.nativeEvent;
@@ -527,7 +486,7 @@ export default function GenerateScreen() {
   };
 
   const onPanGestureEvent = (event: any) => {
-    if (selectedTool !== 'draw' && scale > 1) {
+    if (scale > 1) {
       const { translationX, translationY } = event.nativeEvent;
       translateXValue.current.setValue(translationX);
       translateYValue.current.setValue(translationY);
@@ -535,7 +494,7 @@ export default function GenerateScreen() {
   };
 
   const onPanHandlerStateChange = (event: any) => {
-    if (event.nativeEvent.state === State.END && selectedTool !== 'draw' && scale > 1) {
+    if (event.nativeEvent.state === State.END && scale > 1) {
       const { translationX, translationY } = event.nativeEvent;
       setTranslateX(prev => prev + translationX);
       setTranslateY(prev => prev + translationY);
@@ -545,76 +504,6 @@ export default function GenerateScreen() {
       translateYValue.current.setValue(0);
     }
   };
-
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => selectedTool === 'draw',
-    onMoveShouldSetPanResponder: () => selectedTool === 'draw',
-    onStartShouldSetPanResponderCapture: () => selectedTool === 'draw',
-    onMoveShouldSetPanResponderCapture: () => selectedTool === 'draw',
-    onPanResponderTerminationRequest: () => false, // Don't allow termination
-    onShouldBlockNativeResponder: () => true, // Block native responder
-
-    onPanResponderGrant: (evt) => {
-      console.log('PanResponder Grant - selectedTool:', selectedTool);
-      if (selectedTool !== 'draw') return;
-      const { locationX, locationY } = evt.nativeEvent;
-      console.log('Drawing started at:', locationX, locationY);
-      const newPath = `M${locationX.toFixed(2)},${locationY.toFixed(2)}`;
-      pathRef.current = newPath;
-      setCurrentPath(newPath);
-    },
-
-    onPanResponderMove: (evt) => {
-      if (selectedTool !== 'draw') return;
-      const { locationX, locationY } = evt.nativeEvent;
-      console.log('Drawing move to:', locationX, locationY);
-      const updatedPath = `${pathRef.current} L${locationX.toFixed(2)},${locationY.toFixed(2)}`;
-      pathRef.current = updatedPath;
-      setCurrentPath(updatedPath);
-    },
-
-    onPanResponderRelease: () => {
-      console.log('Drawing released');
-      if (selectedTool !== 'draw' || !pathRef.current) return;
-      const newDrawingPath = {
-        id: Date.now().toString(),
-        path: pathRef.current,
-        color: '#FFD700' // Yellow color
-      };
-      setDrawingPaths(prev => [...prev, newDrawingPath]);
-
-      // Update thumbnail edits state
-      setThumbnailEdits(prev => prev ? {
-        ...prev,
-        drawings: [...prev.drawings, newDrawingPath]
-      } : null);
-
-      setCurrentPath('');
-      pathRef.current = '';
-    },
-
-    onPanResponderTerminate: () => {
-      console.log('Drawing terminated');
-      // Handle forced termination - save current path
-      if (selectedTool === 'draw' && pathRef.current) {
-        const newDrawingPath = {
-          id: Date.now().toString(),
-          path: pathRef.current,
-          color: '#FFD700'
-        };
-        setDrawingPaths(prev => [...prev, newDrawingPath]);
-
-        // Update thumbnail edits state
-        setThumbnailEdits(prev => prev ? {
-          ...prev,
-          drawings: [...prev.drawings, newDrawingPath]
-        } : null);
-
-        setCurrentPath('');
-        pathRef.current = '';
-      }
-    },
-  });
 
   // kept from original for backwards-compat; do not change functionality
   const thumbnailStyles = [
@@ -709,10 +598,26 @@ export default function GenerateScreen() {
           timestamp: Date.now(),
         };
         setAllGenerations(prev => [newGeneration, ...prev]);
+
+        // Clear subject and reference images after successful generation
+        if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {
+          setSubjectImage(null);
+          setSubjectImageUrl(null);
+          setReferenceImages([]);
+          setReferenceImageUrls([]);
+        }
       } else if (data?.imageUrl) {
         // Fallback for backwards compatibility
         setGeneratedImageUrl(data.imageUrl);
         setGeneratedImageUrl2(''); // No second variation
+
+        // Clear subject and reference images after successful generation
+        if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {
+          setSubjectImage(null);
+          setSubjectImageUrl(null);
+          setReferenceImages([]);
+          setReferenceImageUrls([]);
+        }
       } else {
         Alert.alert('Error', 'No image was generated. Please try again.');
       }
@@ -779,7 +684,7 @@ export default function GenerateScreen() {
                       </Svg>
                     </View>
                     <View style={styles.loadingSkeleton}>
-                      <Animated.View style={[styles.loadingShimmer, { opacity: dot1Anim }]} />
+                      <Animated.View style={[styles.loadingShimmer, { opacity: shimmer1Anim }]} />
                     </View>
                   </View>
                 </View>
@@ -824,7 +729,7 @@ export default function GenerateScreen() {
                       </Svg>
                     </View>
                     <View style={styles.loadingSkeleton}>
-                      <Animated.View style={[styles.loadingShimmer, { opacity: dot2Anim }]} />
+                      <Animated.View style={[styles.loadingShimmer, { opacity: shimmer2Anim }]} />
                     </View>
                   </View>
                 </View>
@@ -849,10 +754,6 @@ export default function GenerateScreen() {
                     prompt={generation.prompt}
                     onEdit={() => openModal(generation.url1)}
                     style={styles}
-                    edits={thumbnailEdits?.imageUrl === generation.url1 ? {
-                      drawings: thumbnailEdits.drawings,
-                      text: thumbnailEdits.text
-                    } : null}
                   />
                 )}
 
@@ -862,12 +763,10 @@ export default function GenerateScreen() {
                     key={`${generation.id}-2`}
                     imageUrl={generation.url2}
                     prompt={generation.prompt}
-                    onEdit={() => openModal(generation.url2)}
+                    onEdit={() => {
+                      if (generation.url2) openModal(generation.url2);
+                    }}
                     style={styles}
-                    edits={thumbnailEdits?.imageUrl === generation.url2 ? {
-                      drawings: thumbnailEdits.drawings,
-                      text: thumbnailEdits.text
-                    } : null}
                   />
                 )}
 
@@ -914,8 +813,8 @@ export default function GenerateScreen() {
       <View style={[
         styles.fixedBottomContainer,
         {
-          bottom: keyboardHeight > 0 ? keyboardHeight - insets.bottom : 0,
-          paddingBottom: keyboardHeight > 0 ? 8 : Platform.select({ ios: 34, android: 16 }),
+          bottom: keyboardHeight > 0 ? keyboardHeight - insets.bottom - 41 : 0,
+          paddingBottom: keyboardHeight > 0 ? 16 : Platform.select({ ios: 34, android: 16 }),
         }
       ]}>
         {/* Action Cards (h-scroll) - fixed at bottom */}
@@ -1014,11 +913,7 @@ export default function GenerateScreen() {
                   top: 0,
                   left: 0,
                   right: 0,
-                  bottom: 0,
-                  // Disable scroll when drawing
-                  ...(selectedTool === 'draw' && {
-                    pointerEvents: 'box-none'
-                  })
+                  bottom: 0
                 }
               ]}>
           {/* Header with X icon */}
@@ -1032,22 +927,16 @@ export default function GenerateScreen() {
           </View>
 
           {/* Generated Image in the middle */}
-          <View style={[
-            styles.centeredImageContainer,
-            // Prevent scroll interference when drawing
-            selectedTool === 'draw' && { pointerEvents: 'box-none' }
-          ]}>
+          <View style={styles.centeredImageContainer}>
             <View style={styles.imageAndToolsGroup}>
               <View style={styles.imageWithDrawing}>
               <PinchGestureHandler
                 onGestureEvent={onPinchGestureEvent}
                 onHandlerStateChange={onPinchHandlerStateChange}
-                enabled={selectedTool !== 'draw' && selectedTool !== 'text'}
               >
                 <PanGestureHandler
                   onGestureEvent={onPanGestureEvent}
                   onHandlerStateChange={onPanHandlerStateChange}
-                  enabled={selectedTool !== 'draw' && selectedTool !== 'text'}
                 >
                   <Animated.View
                     style={[
@@ -1060,370 +949,40 @@ export default function GenerateScreen() {
                         ],
                       },
                     ]}
+                    onLayout={(event) => {
+                      const { width, height } = event.nativeEvent.layout;
+                      setImageContainerDimensions({ width, height });
+                    }}
                   >
                     <Image
                       source={{ uri: modalImageUrl }}
-                      style={styles.modalImage}
+                      style={styles.modalImage as any}
                       resizeMode="cover"
                     />
 
-                    {/* Persistent drawings overlay - always show completed drawings */}
-                    <View style={styles.persistentDrawingsOverlay} pointerEvents="none">
-                      <Svg style={StyleSheet.absoluteFillObject}>
-                        {drawingPaths.map((drawing) => (
-                          <Path
-                            key={drawing.id}
-                            d={drawing.path}
-                            stroke={drawing.color}
-                            strokeWidth="3"
-                            fill="transparent"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        ))}
-                      </Svg>
-                    </View>
-
-                    {/* Text elements overlay - only when not drawing */}
-                    {selectedTool !== 'draw' && textElements.map((textEl) => {
-                      const isSelected = selectedTextId === textEl.id;
-                      return (
-                        <PinchGestureHandler
-                          key={`pinch-${textEl.id}`}
-                          onGestureEvent={(event) => {
-                            if (isSelected) {
-                              const scale = event.nativeEvent.scale;
-                              resizeText(textEl.id, scale);
-                            }
-                          }}
-                          enabled={isSelected}
-                        >
-                          <PanGestureHandler
-                            key={`pan-${textEl.id}`}
-                            onGestureEvent={(event) => {
-                              if (isSelected) {
-                                const { translationX, translationY } = event.nativeEvent;
-                                moveText(textEl.id, translationX * 0.02, translationY * 0.02);
-                              }
-                            }}
-                            enabled={isSelected}
-                          >
-                            <View
-                              style={[
-                                styles.textElement,
-                                {
-                                  left: textEl.x - 50,
-                                  top: textEl.y - 15,
-                                }
-                              ]}
-                            >
-                              <TouchableOpacity
-                                onPress={() => handleTextSelection(textEl.id)}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={[
-                                  styles.textElementText,
-                                  { fontSize: textEl.fontSize }
-                                ]}>
-                                  {textEl.text}
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          </PanGestureHandler>
-                        </PinchGestureHandler>
-                      );
-                    })}
                   </Animated.View>
                 </PanGestureHandler>
               </PinchGestureHandler>
 
-              {/* Active drawing overlay - only when drawing */}
-              {selectedTool === 'draw' && (
-                <View
-                  style={[styles.drawingOverlay, { zIndex: 1000 }]}
-                  {...panResponder.panHandlers}
-                  pointerEvents="auto"
-                >
-                  <Svg style={StyleSheet.absoluteFillObject}>
-                    {/* Only show the current path being drawn */}
-                    {currentPath !== '' && (
-                      <Path
-                        d={currentPath}
-                        stroke="#FFD700"
-                        strokeWidth="3"
-                        fill="transparent"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    )}
-                  </Svg>
-                </View>
-              )}
-
-              {/* Final text element - visible when text tool is not active - draggable and resizable */}
-              {selectedTool !== 'text' && finalTextElement && (
-                <PinchGestureHandler
-                  onGestureEvent={(event) => {
-                    const { scale } = event.nativeEvent;
-                    const clampedScale = Math.max(0.5, Math.min(5, scale));
-                    finalTextScaleValue.current.setValue(clampedScale);
-                  }}
-                  onHandlerStateChange={(event) => {
-                    if (event.nativeEvent.state === State.BEGAN) {
-                      setIsScalingFinalText(true);
-                    } else if (event.nativeEvent.state === State.END) {
-                      const { scale } = event.nativeEvent;
-                      const clampedScale = Math.max(0.5, Math.min(5, scale));
-                      const newSize = Math.max(8, Math.min(120, finalTextElement.fontSize * clampedScale));
-
-                      // Update the final text element fontSize
-                      setFinalTextElement(prev => prev ? {
-                        ...prev,
-                        fontSize: newSize
-                      } : null);
-
-                      // Update thumbnail edits state
-                      setThumbnailEdits(prev => prev ? {
-                        ...prev,
-                        text: finalTextElement ? {
-                          ...finalTextElement,
-                          fontSize: newSize
-                        } : null
-                      } : null);
-
-                      // Delay the scale reset until after React re-renders with new fontSize
-                      requestAnimationFrame(() => {
-                        finalTextScaleValue.current.setValue(1);
-                        setIsScalingFinalText(false);
-                      });
-                    }
-                  }}
-                  enabled={true}
-                >
-                  <PanGestureHandler
-                  onGestureEvent={(event) => {
-                    const { translationX, translationY } = event.nativeEvent;
-                    finalTextTranslateX.current.setValue(translationX);
-                    finalTextTranslateY.current.setValue(translationY);
-                  }}
-                  onHandlerStateChange={(event) => {
-                    if (event.nativeEvent.state === State.END) {
-                      const { translationX, translationY } = event.nativeEvent;
-                      // Update the final text element position
-                      setFinalTextElement(prev => prev ? {
-                        ...prev,
-                        x: prev.x + translationX,
-                        y: prev.y + translationY
-                      } : null);
-
-                      // Update thumbnail edits state
-                      setThumbnailEdits(prev => prev ? {
-                        ...prev,
-                        text: finalTextElement ? {
-                          ...finalTextElement,
-                          x: finalTextElement.x + translationX,
-                          y: finalTextElement.y + translationY
-                        } : null
-                      } : null);
-
-                      // Reset animated values
-                      finalTextTranslateX.current.setValue(0);
-                      finalTextTranslateY.current.setValue(0);
-                    }
-                  }}
-                  enabled={true}
-                >
-                  <Animated.View
-                    style={{
-                      position: 'absolute',
-                      left: finalTextElement.x,
-                      top: finalTextElement.y,
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      transform: [
-                        { translateX: -50 },
-                        { translateY: -15 },
-                        { translateX: finalTextTranslateX.current },
-                        { translateY: finalTextTranslateY.current },
-                        ...(isScalingFinalText ? [{ scale: finalTextScaleValue.current }] : [])
-                      ],
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.textPlaceholderText,
-                        {
-                          fontSize: finalTextElement.fontSize,
-                          color: '#ffffff',
-                          fontWeight: 'bold',
-                        }
-                      ]}
-                    >
-                      {finalTextElement.text}
-                    </Text>
-                  </Animated.View>
-                </PanGestureHandler>
-                </PinchGestureHandler>
-              )}
-
-              {/* Text placement overlay - only when text tool active */}
-              {selectedTool === 'text' && (
-                <View style={styles.drawingOverlay}>
-                  {/* Centered "Enter text" placeholder - clickable, moveable, and resizable */}
-                  <PinchGestureHandler
-                    onGestureEvent={(event) => {
-                      const { scale } = event.nativeEvent;
-                      const clampedScale = Math.max(0.75, Math.min(5, scale));
-                      textScaleValue.current.setValue(clampedScale);
-                    }}
-                    onHandlerStateChange={(event) => {
-                      if (event.nativeEvent.state === State.END) {
-                        const { scale } = event.nativeEvent;
-                        const clampedScale = Math.max(0.75, Math.min(5, scale));
-                        const newSize = Math.max(12, Math.min(120, textSize * clampedScale));
-                        setTextSize(newSize);
-                        textScaleValue.current.setValue(1);
-                      }
-                    }}
-                    enabled={true}
-                  >
-                    <PanGestureHandler
-                      onGestureEvent={(event) => {
-                        const { translationX, translationY } = event.nativeEvent;
-                        textTranslateXValue.current.setValue(translationX);
-                        textTranslateYValue.current.setValue(translationY);
-                      }}
-                      onHandlerStateChange={(event) => {
-                        if (event.nativeEvent.state === State.END) {
-                          const { translationX, translationY } = event.nativeEvent;
-                          setTextPosition(prev => ({
-                            x: prev.x + translationX,
-                            y: prev.y + translationY
-                          }));
-                          textTranslateXValue.current.setOffset(textPosition.x + translationX);
-                          textTranslateYValue.current.setOffset(textPosition.y + translationY);
-                          textTranslateXValue.current.setValue(0);
-                          textTranslateYValue.current.setValue(0);
-                        }
-                      }}
-                      enabled={true}
-                    >
-                      <Animated.View
-                        style={[
-                          styles.textPlaceholder,
-                          {
-                            transform: [
-                              { translateX: textTranslateXValue.current },
-                              { translateY: textTranslateYValue.current },
-                              { scale: textScaleValue.current }
-                            ],
-                            borderWidth: 0,
-                            backgroundColor: 'transparent',
-                            padding: 8,
-                          }
-                        ]}
-                      >
-                        <TouchableOpacity
-                          onPress={handleTextPlacement}
-                          activeOpacity={0.7}
-                          style={{ alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <Text style={[styles.textPlaceholderText, { fontSize: textSize }]}>{placeholderText}</Text>
-                        </TouchableOpacity>
-                      </Animated.View>
-                    </PanGestureHandler>
-                  </PinchGestureHandler>
-                </View>
-              )}
             </View>
 
             {/* Edit Tools */}
             <View style={styles.editTools}>
               <TouchableOpacity
-                style={[
-                  styles.editToolIcon,
-                  selectedTool === 'text' && styles.editToolIconSelected
-                ]}
-                onPress={() => {
-                  if (selectedTool === 'text') {
-                    // Deselecting text tool - save current text as final element if it's not "Enter text"
-                    if (placeholderText !== 'Enter text') {
-                      // Calculate the actual final position including current animated transforms
-                      // Use the offset from the animated values which contains the total cumulative position
-                      const baseX = 150; // 50% of modal image width
-                      const baseY = 125; // 50% of modal image height
-                      const finalX = baseX + (textTranslateXValue.current._offset || 0) + (textTranslateXValue.current._value || 0);
-                      const finalY = baseY + (textTranslateYValue.current._offset || 0) + (textTranslateYValue.current._value || 0);
-
-                      const textElement = {
-                        text: placeholderText,
-                        x: finalX,
-                        y: finalY,
-                        fontSize: textSize
-                      };
-
-                      setFinalTextElement(textElement);
-
-                      // Update thumbnail edits state
-                      setThumbnailEdits(prev => prev ? {
-                        ...prev,
-                        text: textElement
-                      } : null);
-                    }
-
-                    // Reset editing state
-                    setSelectedTool(null);
-                    setPlaceholderText('Enter text');
-                    setTextPosition({ x: 0, y: 0 });
-                    setTextSize(16);
-                    textTranslateXValue.current.setValue(0);
-                    textTranslateYValue.current.setValue(0);
-                    textScaleValue.current.setValue(1);
-                    textTranslateXValue.current.setOffset(0);
-                    textTranslateYValue.current.setOffset(0);
-                  } else {
-                    // Selecting text tool - load existing text if available
-                    setSelectedTool('text');
-                    if (finalTextElement) {
-                      // Convert final position back to editable position
-                      const baseX = 150; // Center X of the image container
-                      const baseY = 125; // Center Y of the image container
-                      const editX = finalTextElement.x - baseX;
-                      const editY = finalTextElement.y - baseY;
-
-                      setPlaceholderText(finalTextElement.text);
-                      setTextPosition({ x: editX, y: editY });
-                      setTextSize(finalTextElement.fontSize);
-                      // Clear the final element since we're editing it again
-                      setFinalTextElement(null);
-                    }
-                  }
-                }}
-              >
-                <Text style={styles.editToolText}>Aa</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
                 style={styles.editToolIcon}
                 onPress={() => {
-                  setDrawingPaths([]);
-                  setCurrentPath('');
-                  pathRef.current = '';
-                  setTextElements([]);
-                  setFinalTextElement(null);
-
-                  // Clear thumbnail edits state
-                  setThumbnailEdits(prev => prev ? {
-                    ...prev,
-                    drawings: [],
-                    text: null
-                  } : null);
-
-                  Alert.alert('Erased', 'All edits cleared!');
+                  // TODO: Implement erase logic
                 }}
               >
-                <Text style={styles.editToolText}>↻</Text>
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M4.5 12.5l7-7a4.95 4.95 0 1 1 7 7l-7 7a4.95 4.95 0 1 1-7-7z"
+                    stroke="#ffffff"
+                    strokeWidth="2"
+                    fill="none"
+                  />
+                  <Path d="M8.5 8.5h1v1h-1zm5 0h1v1h-1zm-5 5h1v1h-1zm5 0h1v1h-1z" fill="#ffffff" />
+                </Svg>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -1432,7 +991,7 @@ export default function GenerateScreen() {
                 ]}
                 onPress={async () => {
                   // Check if user is in guest mode
-                  if (global?.isGuestMode) {
+                  if ((global as any)?.isGuestMode) {
                     Alert.alert(
                       'Upgrade to Pro',
                       'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
@@ -1451,13 +1010,7 @@ export default function GenerateScreen() {
                     );
 
                     if (currentGeneration) {
-                      // Get current edits for this image
-                      const currentEdits = thumbnailEdits?.imageUrl === modalImageUrl ? {
-                        drawings: thumbnailEdits.drawings,
-                        text: thumbnailEdits.text
-                      } : null;
-
-                      await saveThumbnail(currentGeneration.prompt, modalImageUrl, currentEdits);
+                      await saveThumbnail(currentGeneration.prompt, modalImageUrl, null);
                       Alert.alert('Saved!', 'Thumbnail saved to your history');
                     } else {
                       Alert.alert('Error', 'Could not find thumbnail to save');
@@ -1480,7 +1033,10 @@ export default function GenerateScreen() {
               styles.modalPromptContainer,
               {
                 paddingBottom: modalKeyboardHeight > 0
-                  ? Math.max(modalKeyboardHeight - insets.bottom + 60, Platform.select({ ios: 60, android: 70 }))
+                  ? Math.max(
+                      modalKeyboardHeight - insets.bottom + 60,
+                      Platform.select({ ios: 60, android: 70 }) ?? 60
+                    )
                   : Platform.select({ ios: 34, android: 16 })
               }
             ]}>
@@ -1493,10 +1049,12 @@ export default function GenerateScreen() {
                   onChangeText={setModalPrompt}
                   multiline
                   returnKeyType="send"
-                  blurOnSubmit={false}
+                  blurOnSubmit={true}
                   onKeyPress={({ nativeEvent }) => {
-                    if (nativeEvent.key === 'Enter' && modalPrompt.trim() && !isModalGenerating) {
-                      handleModalGenerate();
+                    if (nativeEvent.key === 'Enter') {
+                      if (modalPrompt.trim() && !isModalGenerating) {
+                        handleModalGenerate();
+                      }
                     }
                   }}
                   onSubmitEditing={() => {
@@ -1511,7 +1069,15 @@ export default function GenerateScreen() {
                   onPress={handleModalGenerate}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.sendArrow}>{isModalGenerating ? '...' : '↑'}</Text>
+                  {isModalGenerating ? (
+                    <View style={styles.loadingDots}>
+                      <Animated.View style={[styles.dot, { transform: [{ translateY: dot1Anim }] }]} />
+                      <Animated.View style={[styles.dot, { transform: [{ translateY: dot2Anim }] }]} />
+                      <Animated.View style={[styles.dot, { transform: [{ translateY: dot3Anim }] }]} />
+                    </View>
+                  ) : (
+                    <Text style={styles.sendArrow}>↑</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -1536,7 +1102,7 @@ export default function GenerateScreen() {
 
             {subjectImage ? (
               <View style={styles.imagePreviewContainer}>
-                <Image source={{ uri: subjectImage }} style={styles.imagePreview} />
+                <Image source={{ uri: subjectImage }} style={styles.imagePreview as any} />
                 <TouchableOpacity
                   style={styles.removeImageButton}
                   onPress={() => {
@@ -1636,7 +1202,7 @@ export default function GenerateScreen() {
             <View style={styles.referenceImagesContainer}>
               {referenceImages.map((imageUri, index) => (
                 <View key={index} style={styles.referenceImageItem}>
-                  <Image source={{ uri: imageUri }} style={styles.referenceImagePreview} />
+                  <Image source={{ uri: imageUri }} style={styles.referenceImagePreview as any} />
                   <TouchableOpacity
                     style={styles.removeReferenceButton}
                     onPress={() => {
@@ -1949,9 +1515,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: '#FFFFFF',
   },
   imageContainer: {

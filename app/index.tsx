@@ -1,12 +1,51 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const [step, setStep] = useState(1);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  // Check for existing session on mount
+  useEffect(() => {
+    checkSession();
+
+    // Start pulsing glow animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const checkSession = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // User is already logged in, redirect to main app
+        router.replace('/(tabs)/generate');
+      } else {
+        setIsCheckingAuth(false);
+      }
+    } catch (error) {
+      console.error('Error checking session:', error);
+      setIsCheckingAuth(false);
+    }
+  };
 
   const handleGetStarted = () => {
     try {
@@ -45,21 +84,47 @@ export default function WelcomeScreen() {
     outputRange: [-500, 0, 500],
   });
 
+  // Show loading spinner while checking auth
+  if (isCheckingAuth) {
+    return (
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <View style={[styles.content, { justifyContent: 'center' }]}>
+          <ActivityIndicator size="large" color="#6366f1" />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
       <View style={styles.content}>
-        <Animated.Image
-          source={require('../assets/homescreen.png')}
-          style={[
-            styles.heroImage,
-            {
-              transform: [{ translateX }],
-            },
-          ]}
-          resizeMode="contain"
-        />
+        <View style={styles.imageContainer}>
+          <Animated.View
+            style={[
+              styles.glow,
+              {
+                opacity: glowAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.4, 0.9],
+                }),
+                transform: [{ translateX }],
+              },
+            ]}
+          />
+          <Animated.Image
+            source={require('../assets/homescreen.png')}
+            style={[
+              styles.heroImage,
+              {
+                transform: [{ translateX }],
+              },
+            ]}
+            resizeMode="contain"
+          />
+        </View>
 
         <Animated.Text
           style={[
@@ -101,15 +166,37 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'space-evenly',
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingVertical: 40,
+  },
+  imageContainer: {
+    position: 'relative',
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glow: {
+    position: 'absolute',
+    width: '50%',
+    height: 400,
+    backgroundColor: '#b91c1c',
+    borderRadius: 200,
+    shadowColor: '#b91c1c',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 1,
+    shadowRadius: 100,
+    elevation: 20,
   },
   heroImage: {
     width: '100%',
-    height: 650,
-    marginTop: -80,
+    height: 600,
     marginBottom: 20,
+    zIndex: 1,
   },
   title: {
     fontSize: 32,
@@ -119,13 +206,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   getStartedButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#b91c1c',
     paddingVertical: 16,
     paddingHorizontal: 48,
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#6366f1',
+    shadowColor: '#b91c1c',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -151,7 +238,7 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     fontSize: 14,
-    color: '#6366f1',
+    color: '#fca5a5',
     fontWeight: '600',
   },
 });
