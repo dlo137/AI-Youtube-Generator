@@ -194,25 +194,39 @@ Focus on style matching and natural subject integration.` }];
   return enhancedPrompt;
 }
 
-async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string) {
+async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean) {
   // Create explicit prompt based on mode
   let promptText: string;
 
+  const hardRules = `IMPORTANT (obey strictly):
+• Full-bleed image: background must touch all four canvas edges.
+• Absolutely NO borders, frames, strokes, outlines, vignettes, drop-shadow rims, or poster margins.
+• Safe margins are INVISIBLE spacing only; do not draw lines/boxes to indicate them.
+• Keep a 6–8% safe margin for faces/text; never exceed 10%.
+• No letterboxing/pillarboxing.
+• No cropped faces or cropped text.
+• Main subject fills 60–75% of frame height (no tiny subject).
+• Headline spans 70–90% of frame width and stays inside safe area.
+• Avoid large empty areas or big white borders.
+• Balanced, center-weighted framing unless otherwise stated.`;
+
   if (baseImageUrl) {
-    promptText = `Edit image keeping 1280×720 frame. ${prompt}
+    promptText = `${hardRules}
 
-MANDATORY: Keep all content fully visible. No cropping. No borders or frames around the image - fill entire canvas edge to edge.`;
+Edit the given 1280×720 image. Keep all faces/text inside safe margins; if needed, tighten composition without creating any border or frame.
+${prompt}`;
   } else {
-    promptText = `Generate 1280×720 YouTube thumbnail. ${prompt}
+    promptText = `${hardRules}
 
-MANDATORY: Show complete subjects - no cropped faces, bodies, or text. Leave visible spacing on all sides so the subjects and content in the middle have breathing room compositionally. No borders or frames around the image - fill entire canvas edge to edge.`;
+Generate a 1280×720 YouTube thumbnail. Leave breathing room for faces/text but do not render any visible border.
+${prompt}`;
   }
 
   const parts: any[] = [{ text: promptText }];
 
   // Add base image first if provided (for adjustment mode)
   if (baseImageUrl) {
-    parts.push({ text: "BASE IMAGE (edit this exact image):" });
+    parts.push({ text: "BASE IMAGE (edit this exact image; maintain full-bleed with no borders):" });
     const baseImageData = await fetchImageAsBase64(baseImageUrl);
     parts.push({
       inlineData: {
@@ -225,7 +239,7 @@ MANDATORY: Show complete subjects - no cropped faces, bodies, or text. Leave vis
   // Add reference images if provided
   if (referenceImageUrls && referenceImageUrls.length > 0) {
     for (let i = 0; i < referenceImageUrls.length; i++) {
-      parts.push({ text: `REFERENCE IMAGE ${i + 1} (composition):` });
+      parts.push({ text: `REFERENCE IMAGE ${i + 1} (composition only; IGNORE any border/frame/outline in the reference; use interior content only):` });
       const imageData = await fetchImageAsBase64(referenceImageUrls[i]);
       parts.push({
         inlineData: {
@@ -238,7 +252,7 @@ MANDATORY: Show complete subjects - no cropped faces, bodies, or text. Leave vis
 
   // Add subject image if provided
   if (subjectImageUrl) {
-    parts.push({ text: "SUBJECT IMAGE (face/body to insert):" });
+    parts.push({ text: "SUBJECT IMAGE (face/body to insert; output must be full-bleed with no borders):" });
     const imageData = await fetchImageAsBase64(subjectImageUrl);
     parts.push({
       inlineData: {
@@ -336,6 +350,14 @@ serve(async (req: Request) => {
     if (!prompt || typeof prompt !== "string")
       return new Response("Missing prompt", { status: 400 });
 
+    // Use blank frame reference if not in adjustment mode and no base image provided
+    let blankFrameUrl: string | undefined;
+    if (!baseImageUrl && !adjustmentMode) {
+      // Use the pre-uploaded blank frame from Supabase assets bucket
+      blankFrameUrl = "https://zxklggjxauvvesqwqvgi.supabase.co/storage/v1/object/sign/assets/1280x720.jpg?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV8xZjhhYzAxYi05MTVjLTQ0YWItOGNmZi1iZTE1MGI3Y2IwNjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvMTI4MHg3MjAuanBnIiwiaWF0IjoxNzU5ODg4NzM5LCJleHAiOjQ5MTM0ODg3Mzl9.9hJa0Js0yoNpbaJACIsXtm_7QxSQLCZq-ZnpLsARsKw";
+      console.log('Using blank frame reference for proper framing');
+    }
+
     let finalPrompt = prompt;
 
     // Enhanced prompt for style transfer with subject integration
@@ -364,7 +386,11 @@ serve(async (req: Request) => {
       } else {
         console.log('Using Gemini Image Preview for text-only generation...');
       }
-      bytes1 = await callGeminiImagePreview(finalPrompt, subjectImageUrl, referenceImageUrls, baseImageUrl);
+
+      // Use blank frame as base image if available and no other base image
+      const effectiveBaseImage = baseImageUrl || blankFrameUrl;
+      const isUsingBlankFrame = !baseImageUrl && !!blankFrameUrl;
+      bytes1 = await callGeminiImagePreview(finalPrompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame);
     } catch (error) {
       console.error('Gemini Image Preview failed:', error);
       throw new Error(`Image generation failed: ${error.message}`);

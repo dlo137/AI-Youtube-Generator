@@ -3,13 +3,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef } from 'react';
 import Svg, { Path, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
-import { PinchGestureHandler, PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { PinchGestureHandler, PanGestureHandler, RotationGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../../lib/supabase';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
-import { saveThumbnail, addThumbnailToHistory } from '../../src/utils/thumbnailStorage';
+import { saveThumbnail, addThumbnailToHistory, getSavedThumbnails, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 
 // Create Animated SVG components
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -91,7 +91,27 @@ export default function GenerateScreen() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPrompt, setModalPrompt] = useState('');
   const [modalImageUrl, setModalImageUrl] = useState('');
-  const [selectedTool, setSelectedTool] = useState<'save' | null>(null);
+  const [selectedTool, setSelectedTool] = useState<'save' | 'erase' | 'text' | null>(null);
+  const [eraseMask, setEraseMask] = useState<string>('');
+  const [currentErasePath, setCurrentErasePath] = useState<string>('');
+  const erasePathRef = useRef<string>('');
+  const [showEraseConfirm, setShowEraseConfirm] = useState(false);
+  const [textSticker, setTextSticker] = useState<{
+    text: string;
+    x: number;
+    y: number;
+    scale: number;
+    rotation: number;
+  } | null>(null);
+  // Animated values for gesture deltas only
+  const textStickerPanDelta = useRef(new Animated.ValueXY()).current;
+  const textStickerScaleDelta = useRef(new Animated.Value(1)).current;
+  const textStickerRotationDelta = useRef(new Animated.Value(0)).current;
+  // Base animated values (updated from state)
+  const textStickerBaseX = useRef(new Animated.Value(0)).current;
+  const textStickerBaseY = useRef(new Animated.Value(0)).current;
+  const textStickerBaseScale = useRef(new Animated.Value(1)).current;
+  const textStickerBaseRotation = useRef(new Animated.Value(0)).current;
   const [textElements, setTextElements] = useState<Array<{id: string, text: string, x: number, y: number, color: string, fontSize: number}>>([]);
   const [isAddingText, setIsAddingText] = useState(false);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
@@ -103,6 +123,13 @@ export default function GenerateScreen() {
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
   const [thumbnailEdits, setThumbnailEdits] = useState<{
     imageUrl: string;
+    textOverlay?: {
+      text: string;
+      x: number;
+      y: number;
+      scale: number;
+      rotation: number;
+    };
   } | null>(null);
   const [scale, setScale] = useState(1);
   const [modalKeyboardHeight, setModalKeyboardHeight] = useState(0);
@@ -275,13 +302,34 @@ export default function GenerateScreen() {
     }
   };
 
-  const openModal = (imageUrl: string) => {
+  const openModal = async (imageUrl: string) => {
     setModalPrompt('');
     setModalImageUrl(imageUrl);
     setIsModalVisible(true);
 
-    // Initialize or load existing edits for this image
-    if (!thumbnailEdits || thumbnailEdits.imageUrl !== imageUrl) {
+    // Check if this image has existing saved edits
+    try {
+      const savedThumbnails = await getSavedThumbnails();
+      const existingThumbnail = savedThumbnails.find((thumb: SavedThumbnail) => 
+        thumb.imageUrl === imageUrl || 
+        thumb.imageUrl.includes(imageUrl.split('/').pop() || '')
+      );
+
+      if (existingThumbnail?.edits?.textOverlay) {
+        // Load existing text overlay
+        setThumbnailEdits({
+          imageUrl,
+          textOverlay: existingThumbnail.edits.textOverlay
+        });
+      } else {
+        // Initialize new edits for this image
+        setThumbnailEdits({
+          imageUrl
+        });
+      }
+    } catch (error) {
+      console.error('Error loading existing edits:', error);
+      // Fallback to initialize new edits
       setThumbnailEdits({
         imageUrl
       });
@@ -403,6 +451,9 @@ export default function GenerateScreen() {
     setIsAddingText(false);
     setSelectedTextId(null);
     setModalKeyboardHeight(0);
+    // Clear text overlay states
+    setTextSticker(null);
+    setThumbnailEdits(null);
     // Reset zoom and pan
     setScale(1);
     setTranslateX(0);
@@ -410,6 +461,16 @@ export default function GenerateScreen() {
     scaleValue.current.setValue(1);
     translateXValue.current.setValue(0);
     translateYValue.current.setValue(0);
+    // Reset text sticker animations
+    textStickerPanDelta.setValue({ x: 0, y: 0 });
+    textStickerScaleDelta.setValue(1);
+    textStickerRotationDelta.setValue(0);
+    textStickerBaseX.setOffset(0);
+    textStickerBaseY.setOffset(0);
+    textStickerBaseX.setValue(0);
+    textStickerBaseY.setValue(0);
+    textStickerBaseScale.setValue(1);
+    textStickerBaseRotation.setValue(0);
   };
 
   const getShortTitle = (prompt: string) => {
@@ -502,6 +563,139 @@ export default function GenerateScreen() {
       translateYValue.current.setOffset(translateY + translationY);
       translateXValue.current.setValue(0);
       translateYValue.current.setValue(0);
+    }
+  };
+
+  const erasePanResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => selectedTool === 'erase',
+    onMoveShouldSetPanResponder: () => selectedTool === 'erase',
+    onStartShouldSetPanResponderCapture: () => selectedTool === 'erase',
+    onMoveShouldSetPanResponderCapture: () => selectedTool === 'erase',
+    onPanResponderTerminationRequest: () => false,
+    onShouldBlockNativeResponder: () => true,
+
+    onPanResponderGrant: (evt) => {
+      if (selectedTool !== 'erase') return;
+      const { locationX, locationY } = evt.nativeEvent;
+      const newPath = `M${locationX.toFixed(2)},${locationY.toFixed(2)}`;
+      erasePathRef.current = newPath;
+      setCurrentErasePath(newPath);
+      setShowEraseConfirm(false);
+    },
+
+    onPanResponderMove: (evt) => {
+      if (selectedTool !== 'erase') return;
+      const { locationX, locationY } = evt.nativeEvent;
+      const updatedPath = `${erasePathRef.current} L${locationX.toFixed(2)},${locationY.toFixed(2)}`;
+      erasePathRef.current = updatedPath;
+      setCurrentErasePath(updatedPath);
+    },
+
+    onPanResponderRelease: () => {
+      if (selectedTool !== 'erase' || !erasePathRef.current) return;
+      setEraseMask(erasePathRef.current);
+      setShowEraseConfirm(true);
+    },
+
+    onPanResponderTerminate: () => {
+      if (selectedTool === 'erase' && erasePathRef.current) {
+        setEraseMask(erasePathRef.current);
+        setShowEraseConfirm(true);
+      }
+    },
+  });
+
+  // Text sticker gesture handlers - only write to delta values during gesture
+  const onTextPanGestureEvent = Animated.event(
+    [{ nativeEvent: { translationX: textStickerPanDelta.x, translationY: textStickerPanDelta.y } }],
+    { useNativeDriver: false }
+  );
+
+  const onTextPinchGestureEvent = Animated.event(
+    [{ nativeEvent: { scale: textStickerScaleDelta } }],
+    { useNativeDriver: false }
+  );
+
+  const onTextRotationGestureEvent = Animated.event(
+    [{ nativeEvent: { rotation: textStickerRotationDelta } }],
+    { useNativeDriver: false }
+  );
+
+  // On gesture end, commit deltas to state once, then reset deltas
+  const onTextPanStateChange = (event: any) => {
+    if (event.nativeEvent.state === State.END && textSticker) {
+      const { translationX, translationY } = event.nativeEvent;
+
+      // Get current offset values (the actual position)
+      const currentX = (textStickerBaseX as any)._offset || 0;
+      const currentY = (textStickerBaseY as any)._offset || 0;
+
+      // Calculate new position from current offset + translation
+      let newX = currentX + translationX;
+      let newY = currentY + translationY;
+
+      // Clamp to image bounds (with minimal padding)
+      const padding = 10;
+      const estimatedTextWidth = 200; // Approximate width of text element
+      const estimatedTextHeight = 80; // Approximate height of text element
+
+      if (imageContainerDimensions.width > 0) {
+        // Allow text to go closer to edges
+        newX = Math.max(-estimatedTextWidth / 2, Math.min(newX, imageContainerDimensions.width - estimatedTextWidth / 2));
+      }
+      if (imageContainerDimensions.height > 0) {
+        newY = Math.max(-estimatedTextHeight / 2, Math.min(newY, imageContainerDimensions.height - estimatedTextHeight / 2));
+      }
+
+      // Commit to state
+      setTextSticker(prev => prev ? {
+        ...prev,
+        x: newX,
+        y: newY
+      } : null);
+
+      // IMPORTANT: Set offset before setting value to prevent jumping
+      textStickerBaseX.setOffset(newX);
+      textStickerBaseY.setOffset(newY);
+
+      // Reset the base values and delta to 0
+      textStickerBaseX.setValue(0);
+      textStickerBaseY.setValue(0);
+      textStickerPanDelta.setValue({ x: 0, y: 0 });
+    }
+  };
+
+  const onTextPinchStateChange = (event: any) => {
+    if (event.nativeEvent.state === State.END && textSticker) {
+      const scaleDelta = event.nativeEvent.scale;
+      const newScale = textSticker.scale * scaleDelta;
+
+      // Commit to state
+      setTextSticker(prev => prev ? {
+        ...prev,
+        scale: newScale
+      } : null);
+
+      // Update base value and reset delta
+      textStickerBaseScale.setValue(newScale);
+      textStickerScaleDelta.setValue(1);
+    }
+  };
+
+  const onTextRotationStateChange = (event: any) => {
+    if (event.nativeEvent.state === State.END && textSticker) {
+      const rotationDelta = event.nativeEvent.rotation;
+      const newRotation = textSticker.rotation + rotationDelta;
+
+      // Commit to state
+      setTextSticker(prev => prev ? {
+        ...prev,
+        rotation: newRotation
+      } : null);
+
+      // Update base value and reset delta
+      textStickerBaseRotation.setValue(newRotation);
+      textStickerRotationDelta.setValue(0);
     }
   };
 
@@ -933,10 +1127,12 @@ export default function GenerateScreen() {
               <PinchGestureHandler
                 onGestureEvent={onPinchGestureEvent}
                 onHandlerStateChange={onPinchHandlerStateChange}
+                enabled={selectedTool !== 'erase'}
               >
                 <PanGestureHandler
                   onGestureEvent={onPanGestureEvent}
                   onHandlerStateChange={onPanHandlerStateChange}
+                  enabled={selectedTool !== 'erase'}
                 >
                   <Animated.View
                     style={[
@@ -960,69 +1156,526 @@ export default function GenerateScreen() {
                       resizeMode="cover"
                     />
 
+                    {/* Text overlay display */}
+                    {thumbnailEdits?.textOverlay && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          left: thumbnailEdits.textOverlay.x,
+                          top: thumbnailEdits.textOverlay.y,
+                          transform: [
+                            { scale: thumbnailEdits.textOverlay.scale },
+                            { rotate: `${thumbnailEdits.textOverlay.rotation}deg` }
+                          ],
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 24,
+                            fontWeight: 'bold',
+                            color: 'white',
+                            textShadowColor: 'black',
+                            textShadowOffset: { width: 1, height: 1 },
+                            textShadowRadius: 2,
+                          }}
+                        >
+                          {thumbnailEdits.textOverlay.text}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Erase mask overlay */}
+                    {selectedTool === 'erase' && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                        }}
+                        {...erasePanResponder.panHandlers}
+                      >
+                        <Svg style={{ width: '100%', height: '100%' }}>
+                          {/* Draw completed mask */}
+                          {eraseMask && (
+                            <Path
+                              d={eraseMask}
+                              stroke="rgba(255, 0, 0, 0.6)"
+                              strokeWidth="20"
+                              fill="transparent"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          )}
+                          {/* Draw current path being drawn */}
+                          {currentErasePath && (
+                            <Path
+                              d={currentErasePath}
+                              stroke="rgba(255, 0, 0, 0.6)"
+                              strokeWidth="20"
+                              fill="transparent"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          )}
+                        </Svg>
+                      </View>
+                    )}
+
+                    {/* Text sticker overlay - inside the transformed container */}
+                    {textSticker && selectedTool === 'text' && (
+                      <RotationGestureHandler
+                        onGestureEvent={onTextRotationGestureEvent}
+                        onHandlerStateChange={onTextRotationStateChange}
+                      >
+                        <PinchGestureHandler
+                          onGestureEvent={onTextPinchGestureEvent}
+                          onHandlerStateChange={onTextPinchStateChange}
+                        >
+                          <PanGestureHandler
+                            onGestureEvent={onTextPanGestureEvent}
+                            onHandlerStateChange={onTextPanStateChange}
+                          >
+                            <Animated.View
+                              style={{
+                                position: 'absolute',
+                                left: Animated.add(textStickerBaseX, textStickerPanDelta.x),
+                                top: Animated.add(textStickerBaseY, textStickerPanDelta.y),
+                                transform: [
+                                  { scale: Animated.multiply(textStickerBaseScale, textStickerScaleDelta) },
+                                  { rotate: Animated.add(textStickerBaseRotation, textStickerRotationDelta).interpolate({
+                                    inputRange: [0, 2 * Math.PI],
+                                    outputRange: ['0rad', `${2 * Math.PI}rad`]
+                                  }) }
+                                ]
+                              }}
+                            >
+                              <View
+                                style={{
+                                  padding: 10,
+                                  backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                                  borderRadius: 8,
+                                  borderWidth: 2,
+                                  borderColor: '#FFD700',
+                                  borderStyle: 'dashed'
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontSize: 40,
+                                    fontWeight: 'bold',
+                                    color: '#ffffff',
+                                    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+                                    textShadowOffset: { width: 2, height: 2 },
+                                    textShadowRadius: 4
+                                  }}
+                                >
+                                  {textSticker.text}
+                                </Text>
+                              </View>
+                            </Animated.View>
+                          </PanGestureHandler>
+                        </PinchGestureHandler>
+                      </RotationGestureHandler>
+                    )}
+
                   </Animated.View>
                 </PanGestureHandler>
               </PinchGestureHandler>
 
             </View>
 
-            {/* Edit Tools */}
-            <View style={styles.editTools}>
+            {/* Check button for confirming erase selection */}
+            {showEraseConfirm && selectedTool === 'erase' && !isModalGenerating && (
               <TouchableOpacity
-                style={styles.editToolIcon}
-                onPress={() => {
-                  // TODO: Implement erase logic
+                style={{
+                  position: 'absolute',
+                  bottom: 100,
+                  alignSelf: 'center',
+                  backgroundColor: '#4CAF50',
+                  width: 60,
+                  height: 60,
+                  borderRadius: 30,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 4,
+                  elevation: 5,
                 }}
-              >
-                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M4.5 12.5l7-7a4.95 4.95 0 1 1 7 7l-7 7a4.95 4.95 0 1 1-7-7z"
-                    stroke="#ffffff"
-                    strokeWidth="2"
-                    fill="none"
-                  />
-                  <Path d="M8.5 8.5h1v1h-1zm5 0h1v1h-1zm-5 5h1v1h-1zm5 0h1v1h-1z" fill="#ffffff" />
-                </Svg>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.editToolIcon,
-                  selectedTool === 'save' && styles.editToolIconSelected
-                ]}
                 onPress={async () => {
-                  // Check if user is in guest mode
-                  if ((global as any)?.isGuestMode) {
-                    Alert.alert(
-                      'Upgrade to Pro',
-                      'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
-                      [
-                        { text: 'Maybe Later', style: 'cancel' },
-                        { text: 'Upgrade to Pro', style: 'default' }
-                      ]
-                    );
-                    return;
-                  }
+                  setIsModalGenerating(true);
 
                   try {
-                    // Find the generation that matches the current modal image
+                    // Find the current generation
                     const currentGeneration = allGenerations.find(gen =>
                       gen.url1 === modalImageUrl || gen.url2 === modalImageUrl
                     );
 
-                    if (currentGeneration) {
-                      await saveThumbnail(currentGeneration.prompt, modalImageUrl, null);
-                      Alert.alert('Saved!', 'Thumbnail saved to your history');
+                    if (!currentGeneration) {
+                      Alert.alert('Error', 'Could not find original prompt');
+                      setIsModalGenerating(false);
+                      return;
+                    }
+
+                    // Create explicit inpainting prompt that emphasizes preservation and surgical removal
+                    const inpaintPrompt = `You are performing a SURGICAL EDIT on this image. Your task:
+
+STEP 1 - PRESERVE (MOST IMPORTANT):
+- Keep the ENTIRE image exactly as is
+- DO NOT remove, change, or modify ANYTHING except what is explicitly marked
+- All people, objects, text, backgrounds NOT marked must remain UNCHANGED
+- Only make changes where the red marking appears
+
+STEP 2 - REMOVE ONLY MARKED AREA:
+- Look for the red line/marking on the image
+- ONLY remove what is directly under or within that red marking
+- If marked area is at image edge, extend background to fill that edge naturally
+- Fill removed area with logical background continuation
+
+STEP 3 - VERIFICATION:
+- Ensure no unmarked elements were altered
+- Ensure the rest of the image is pixel-perfect identical
+
+Context: ${currentGeneration.prompt}`;
+
+                    let attempts = 0;
+                    const maxAttempts = 2;
+                    let success = false;
+                    let finalImageUrl = '';
+
+                    // Retry logic to ensure object removal
+                    while (attempts < maxAttempts && !success) {
+                      attempts++;
+
+                      // Call the generate function
+                      const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
+                        body: {
+                          prompt: inpaintPrompt,
+                          baseImageUrl: modalImageUrl,
+                          adjustmentMode: true,
+                          seed: Date.now() + attempts, // Different seed for each attempt
+                        }
+                      });
+
+                      if (error) {
+                        if (attempts >= maxAttempts) throw error;
+                        continue;
+                      }
+
+                      if (data?.imageUrl) {
+                        finalImageUrl = data.imageUrl;
+                        success = true;
+                        break;
+                      }
+                    }
+
+                    if (success && finalImageUrl) {
+                      // Update the modal image
+                      setModalImageUrl(finalImageUrl);
+
+                      // Update the generation in the list
+                      setAllGenerations(prev => prev.map(gen => {
+                        if (gen.id === currentGeneration.id) {
+                          if (gen.url1 === modalImageUrl) {
+                            return { ...gen, url1: finalImageUrl };
+                          } else if (gen.url2 === modalImageUrl) {
+                            return { ...gen, url2: finalImageUrl };
+                          }
+                        }
+                        return gen;
+                      }));
+
+                      // Reset erase state
+                      setSelectedTool(null);
+                      setEraseMask('');
+                      setCurrentErasePath('');
+                      erasePathRef.current = '';
+                      setShowEraseConfirm(false);
+
+                      Alert.alert('Success', 'Object removed successfully!');
                     } else {
-                      Alert.alert('Error', 'Could not find thumbnail to save');
+                      throw new Error('Failed to generate image after multiple attempts');
                     }
                   } catch (error) {
-                    console.error('Save error:', error);
-                    Alert.alert('Error', 'Failed to save thumbnail');
+                    console.error('Inpainting error:', error);
+                    Alert.alert('Error', 'Failed to remove object. Please try again.');
+                    setShowEraseConfirm(true);
+                  } finally {
+                    setIsModalGenerating(false);
                   }
                 }}
               >
-                <Text style={styles.editToolText}>♡</Text>
+                <Text style={{ fontSize: 30, color: '#ffffff' }}>✓</Text>
               </TouchableOpacity>
+            )}
+
+            {/* Loading indicator for erase processing */}
+            {isModalGenerating && selectedTool === 'erase' && (
+              <View
+                style={{
+                  position: 'absolute',
+                  bottom: 100,
+                  alignSelf: 'center',
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  paddingHorizontal: 20,
+                  paddingVertical: 15,
+                  borderRadius: 20,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <View style={styles.loadingDots}>
+                  <Animated.View style={[styles.dot, { transform: [{ translateY: dot1Anim }] }]} />
+                  <Animated.View style={[styles.dot, { transform: [{ translateY: dot2Anim }] }]} />
+                  <Animated.View style={[styles.dot, { transform: [{ translateY: dot3Anim }] }]} />
+                </View>
+                <Text style={{ color: '#ffffff', marginTop: 10, fontSize: 12 }}>
+                  Removing object...
+                </Text>
+              </View>
+            )}
+
+            {/* Edit Tools */}
+            <View style={styles.editTools}>
+              {selectedTool === 'text' && textSticker ? (
+                <>
+                  {/* Text editing tools: -, +, ✓ */}
+                  <TouchableOpacity
+                    style={styles.editToolIcon}
+                    onPress={() => {
+                      if (textSticker) {
+                        const newScale = Math.max(0.5, textSticker.scale - 0.1);
+                        setTextSticker(prev => prev ? { ...prev, scale: newScale } : null);
+                        textStickerBaseScale.setValue(newScale);
+                      }
+                    }}
+                  >
+                    <Text style={styles.editToolText}>−</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.editToolIcon}
+                    onPress={() => {
+                      if (textSticker) {
+                        const newScale = Math.min(3, textSticker.scale + 0.1);
+                        setTextSticker(prev => prev ? { ...prev, scale: newScale } : null);
+                        textStickerBaseScale.setValue(newScale);
+                      }
+                    }}
+                  >
+                    <Text style={styles.editToolText}>+</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.editToolIcon}
+                    onPress={async () => {
+                      if (!textSticker) return;
+
+                      try {
+                        setIsModalGenerating(true);
+
+                        // Store the text overlay information with the thumbnail
+                        const textOverlay = {
+                          text: textSticker.text,
+                          x: textSticker.x,
+                          y: textSticker.y,
+                          scale: textSticker.scale,
+                          rotation: textSticker.rotation
+                        };
+
+                        // Update thumbnail edits to include text overlay
+                        setThumbnailEdits(prev => ({
+                          imageUrl: modalImageUrl,
+                          textOverlay: textOverlay
+                        }));
+
+                        // Clear text sticker and deselect tool
+                        setTextSticker(null);
+                        setSelectedTool(null);
+                        textStickerPanDelta.setValue({ x: 0, y: 0 });
+                        textStickerScaleDelta.setValue(1);
+                        textStickerRotationDelta.setValue(0);
+                        textStickerBaseX.setOffset(0);
+                        textStickerBaseY.setOffset(0);
+                        textStickerBaseX.setValue(0);
+                        textStickerBaseY.setValue(0);
+                        textStickerBaseScale.setValue(1);
+                        textStickerBaseRotation.setValue(0);
+
+                        Alert.alert('Success', 'Text added to thumbnail!');
+                      } catch (error) {
+                        console.error('Text overlay error:', error);
+                        Alert.alert('Error', 'Failed to add text. Please try again.');
+                      } finally {
+                        setIsModalGenerating(false);
+                      }
+                    }}
+                  >
+                    <Text style={styles.editToolText}>✓</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  {/* Normal editing tools: erase, text, save */}
+                  <TouchableOpacity
+                    style={[
+                      styles.editToolIcon,
+                      selectedTool === 'erase' && styles.editToolIconSelected
+                    ]}
+                    onPress={() => {
+                      if (selectedTool === 'erase') {
+                        setSelectedTool(null);
+                        setEraseMask('');
+                        setCurrentErasePath('');
+                        erasePathRef.current = '';
+                        setShowEraseConfirm(false);
+                      } else {
+                        setSelectedTool('erase');
+                      }
+                    }}
+                  >
+                    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                      <Path
+                        d="M4.5 12.5l7-7a4.95 4.95 0 1 1 7 7l-7 7a4.95 4.95 0 1 1-7-7z"
+                        stroke="#ffffff"
+                        strokeWidth="2"
+                        fill="none"
+                      />
+                      <Path d="M8.5 8.5h1v1h-1zm5 0h1v1h-1zm-5 5h1v1h-1zm5 0h1v1h-1z" fill="#ffffff" />
+                    </Svg>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.editToolIcon,
+                      selectedTool === 'text' && styles.editToolIconSelected
+                    ]}
+                    onPress={() => {
+                      if (selectedTool === 'text' && textSticker) {
+                        // Deselect text tool
+                        setSelectedTool(null);
+                        setTextSticker(null);
+                        textStickerPanDelta.setValue({ x: 0, y: 0 });
+                        textStickerScaleDelta.setValue(1);
+                        textStickerRotationDelta.setValue(0);
+                        textStickerBaseX.setOffset(0);
+                        textStickerBaseY.setOffset(0);
+                        textStickerBaseX.setValue(0);
+                        textStickerBaseY.setValue(0);
+                        textStickerBaseScale.setValue(1);
+                        textStickerBaseRotation.setValue(0);
+                      } else {
+                        // Show text input prompt
+                        Alert.prompt(
+                          'Add Text',
+                          'Enter your text:',
+                          [
+                            {
+                              text: 'Cancel',
+                              style: 'cancel'
+                            },
+                            {
+                              text: 'Add',
+                              onPress: (text?: string) => {
+                                if (text && text.trim()) {
+                                  setSelectedTool('text');
+                                  // Center text in image container
+                                  const centerX = imageContainerDimensions.width > 0
+                                    ? imageContainerDimensions.width / 2 - 100 // Approximate half text width
+                                    : 0;
+                                  const centerY = imageContainerDimensions.height > 0
+                                    ? imageContainerDimensions.height / 2 - 30 // Approximate half text height
+                                    : 0;
+
+                                  setTextSticker({
+                                    text: text.trim(),
+                                    x: centerX,
+                                    y: centerY,
+                                    scale: 1,
+                                    rotation: 0
+                                  });
+
+                                  // Initialize with offset instead of value
+                                  textStickerBaseX.setOffset(centerX);
+                                  textStickerBaseY.setOffset(centerY);
+                                  textStickerBaseX.setValue(0);
+                                  textStickerBaseY.setValue(0);
+                                  textStickerBaseScale.setValue(1);
+                                  textStickerBaseRotation.setValue(0);
+
+                                  // Reset deltas
+                                  textStickerPanDelta.setValue({ x: 0, y: 0 });
+                                  textStickerScaleDelta.setValue(1);
+                                  textStickerRotationDelta.setValue(0);
+                                }
+                              }
+                            }
+                          ],
+                          'plain-text'
+                        );
+                      }
+                    }}
+                  >
+                    <Text style={{ fontSize: 16, color: '#ffffff', fontWeight: '600' }}>Aa</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.editToolIcon,
+                      selectedTool === 'save' && styles.editToolIconSelected
+                    ]}
+                    onPress={async () => {
+                      // Check if user is in guest mode
+                      if ((global as any)?.isGuestMode) {
+                        Alert.alert(
+                          'Upgrade to Pro',
+                          'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
+                          [
+                            { text: 'Maybe Later', style: 'cancel' },
+                            { text: 'Upgrade to Pro', style: 'default' }
+                          ]
+                        );
+                        return;
+                      }
+
+                      try {
+                        // Check if there's an active text sticker that hasn't been confirmed yet
+                        if (textSticker && selectedTool === 'text') {
+                          Alert.alert(
+                            'Unsaved Text',
+                            'You have text that hasn\'t been confirmed yet. Please click the checkmark (✓) to apply the text before saving.',
+                            [{ text: 'OK', style: 'default' }]
+                          );
+                          return;
+                        }
+
+                        // Find the generation that matches the current modal image
+                        const currentGeneration = allGenerations.find(gen =>
+                          gen.url1 === modalImageUrl || gen.url2 === modalImageUrl
+                        );
+
+                        if (currentGeneration) {
+                          const editsToSave = thumbnailEdits?.textOverlay ? {
+                            textOverlay: thumbnailEdits.textOverlay
+                          } : null;
+                          
+                          // Always use the current modalImageUrl for saving, not the original generation URL
+                          await saveThumbnail(currentGeneration.prompt, modalImageUrl, editsToSave);
+                          Alert.alert('Saved!', 'Thumbnail saved to your history');
+                        } else {
+                          Alert.alert('Error', 'Could not find thumbnail to save');
+                        }
+                      } catch (error) {
+                        console.error('Save error:', error);
+                        Alert.alert('Error', 'Failed to save thumbnail');
+                      }
+                    }}
+                  >
+                    <Text style={styles.editToolText}>♡</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
             </View>
           </View>
@@ -1102,7 +1755,7 @@ export default function GenerateScreen() {
 
             {subjectImage ? (
               <View style={styles.imagePreviewContainer}>
-                <Image source={{ uri: subjectImage }} style={styles.imagePreview as any} />
+                <Image source={{ uri: subjectImage as string }} style={styles.imagePreview as any} />
                 <TouchableOpacity
                   style={styles.removeImageButton}
                   onPress={() => {

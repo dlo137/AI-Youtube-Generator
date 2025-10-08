@@ -9,8 +9,13 @@ interface ThumbnailCardProps {
   imageUrl?: string;
   isFavorited?: boolean;
   edits?: {
-    drawings: Array<{id: string, path: string, color: string}>;
-    text: {text: string, x: number, y: number, fontSize: number} | null;
+    textOverlay?: {
+      text: string;
+      x: number;
+      y: number;
+      scale: number;
+      rotation: number;
+    };
   } | null;
   onDownload?: () => void;
   onShare?: () => void;
@@ -96,8 +101,8 @@ export default function ThumbnailCard({
               resizeMode="cover"
             />
 
-            {/* Render edits overlay */}
-            {edits && (
+            {/* Render text overlay */}
+            {edits?.textOverlay && (
               <View style={{
                 position: 'absolute',
                 top: 0,
@@ -106,54 +111,9 @@ export default function ThumbnailCard({
                 bottom: 0,
                 pointerEvents: 'none'
               }}>
-                {/* Drawings overlay */}
-                {edits.drawings.length > 0 && (
-                  <Svg style={{
-                    position: 'absolute',
-                    width: '100%',
-                    height: '100%'
-                  }}>
-                    {edits.drawings.map((drawing) => {
-                      // Scale drawing paths for smaller thumbnail
-                      // Modal image: width: '100%' (typically ~350px on phone), height: 250px
-                      // Thumbnail: width: '65%' with 16:9 aspect ratio
-
-                      // Assuming container width is ~350px on typical phone
-                      const containerWidth = 350;
-                      const modalWidth = containerWidth; // Modal image is 100% width
-                      const modalHeight = 250; // From styles.modalImage
-
-                      // Thumbnail is 65% width with 16:9 aspect ratio
-                      const thumbnailWidth = containerWidth * 0.65; // ~227px
-                      const thumbnailHeight = thumbnailWidth / (16/9); // ~128px
-
-                      const scaleX = thumbnailWidth / modalWidth;   // ~0.65
-                      const scaleY = thumbnailHeight / modalHeight; // ~0.51
-
-                      const scaledPath = drawing.path.replace(/M([\d.-]+),([\d.-]+)/g, (match, x, y) => {
-                        return `M${(parseFloat(x) * scaleX).toFixed(2)},${(parseFloat(y) * scaleY).toFixed(2)}`;
-                      }).replace(/L([\d.-]+),([\d.-]+)/g, (match, x, y) => {
-                        return `L${(parseFloat(x) * scaleX).toFixed(2)},${(parseFloat(y) * scaleY).toFixed(2)}`;
-                      });
-
-                      return (
-                        <Path
-                          key={drawing.id}
-                          d={scaledPath}
-                          stroke={drawing.color}
-                          strokeWidth="1.5"
-                          fill="transparent"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      );
-                    })}
-                  </Svg>
-                )}
-
                 {/* Text overlay */}
-                {edits.text && (() => {
-                  // Use same scaling factors as drawings
+                {(() => {
+                  // Use same scaling factors as thumbnail size
                   const containerWidth = 350;
                   const modalWidth = containerWidth; // Modal image is 100% width
                   const modalHeight = 250; // From styles.modalImage
@@ -166,22 +126,30 @@ export default function ThumbnailCard({
                   const scaleY = thumbnailHeight / modalHeight; // ~0.51
 
                   return (
-                    <Text
+                    <View
                       style={{
                         position: 'absolute',
-                        left: edits.text.x * scaleX, // Use calculated scale
-                        top: edits.text.y * scaleY, // Use calculated scale
-                        fontSize: edits.text.fontSize * scaleX, // Scale font size proportionally
-                        color: '#ffffff',
-                        fontWeight: 'bold',
+                        left: edits.textOverlay.x * scaleX,
+                        top: edits.textOverlay.y * scaleY,
                         transform: [
-                          { translateX: -25 * scaleX },
-                          { translateY: -15 * scaleY }
-                        ], // Scale the centering transforms too
+                          { scale: edits.textOverlay.scale * scaleX },
+                          { rotate: `${edits.textOverlay.rotation}deg` }
+                        ],
                       }}
                     >
-                      {edits.text.text}
-                    </Text>
+                      <Text
+                        style={{
+                          fontSize: 24 * scaleX,
+                          fontWeight: 'bold',
+                          color: 'white',
+                          textShadowColor: 'black',
+                          textShadowOffset: { width: 1, height: 1 },
+                          textShadowRadius: 2,
+                        }}
+                      >
+                        {edits.textOverlay.text}
+                      </Text>
+                    </View>
                   );
                 })()}
               </View>

@@ -10,7 +10,15 @@ export interface SavedThumbnail {
   status: 'completed' | 'processing' | 'failed';
   timestamp: number;
   isFavorited: boolean;
-  edits?: null;
+  edits?: {
+    textOverlay?: {
+      text: string;
+      x: number;
+      y: number;
+      scale: number;
+      rotation: number;
+    };
+  } | null;
 }
 
 const STORAGE_KEY = 'saved_thumbnails';
@@ -57,7 +65,15 @@ const downloadImageToLocal = async (remoteUrl: string, thumbnailId: string): Pro
 export const saveThumbnail = async (
   prompt: string,
   imageUrl: string,
-  edits?: null
+  edits?: {
+    textOverlay?: {
+      text: string;
+      x: number;
+      y: number;
+      scale: number;
+      rotation: number;
+    };
+  } | null
 ): Promise<SavedThumbnail> => {
   try {
     const existingThumbnails = await getSavedThumbnails();
@@ -75,7 +91,7 @@ export const saveThumbnail = async (
       const updatedThumbnail = {
         ...existingThumbnails[existingIndex],
         isFavorited: true,
-        edits: null,
+        edits: edits,
       };
 
       const updatedThumbnails = [...existingThumbnails];
@@ -98,7 +114,7 @@ export const saveThumbnail = async (
       status: 'completed',
       timestamp: Date.now(),
       isFavorited: true,
-      edits: null,
+      edits: edits,
     };
 
     const updatedThumbnails = [newThumbnail, ...existingThumbnails];
@@ -115,7 +131,15 @@ export const saveThumbnail = async (
 export const addThumbnailToHistory = async (
   prompt: string,
   imageUrl: string,
-  edits?: null
+  edits?: {
+    textOverlay?: {
+      text: string;
+      x: number;
+      y: number;
+      scale: number;
+      rotation: number;
+    };
+  } | null
 ): Promise<SavedThumbnail> => {
   try {
     const existingThumbnails = await getSavedThumbnails();
@@ -146,7 +170,7 @@ export const addThumbnailToHistory = async (
       status: 'completed',
       timestamp: Date.now(),
       isFavorited: false, // Not favorited by default for history
-      edits: null,
+      edits: edits,
     };
 
     const updatedThumbnails = [newThumbnail, ...existingThumbnails];
