@@ -199,11 +199,12 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
   let promptText: string;
 
   const hardRules = `IMPORTANT (obey strictly):
-• Full-bleed image: background must touch all four canvas edges.
+• Native 16:9 aspect ratio (1280×720 pixels). Do NOT generate a different ratio and add black/white bars.
+• Full-bleed image: background must touch all four canvas edges - top, bottom, left, and right.
 • Absolutely NO borders, frames, strokes, outlines, vignettes, drop-shadow rims, or poster margins.
+• NO black bars, white bars, letterboxing, or pillarboxing at top/bottom or left/right.
 • Safe margins are INVISIBLE spacing only; do not draw lines/boxes to indicate them.
 • Keep a 6–8% safe margin for faces/text; never exceed 10%.
-• No letterboxing/pillarboxing.
 • No cropped faces or cropped text.
 • Main subject fills 60–75% of frame height (no tiny subject).
 • Headline spans 70–90% of frame width and stays inside safe area.
@@ -375,53 +376,62 @@ serve(async (req: Request) => {
     console.log('Base image URL (adjustment mode):', baseImageUrl);
     console.log('Adjustment mode:', adjustmentMode);
 
-    let bytes1: Uint8Array;
-
     // Always use Gemini Image Preview for image generation
-    try {
-      if (baseImageUrl) {
-        console.log('Using Gemini Image Preview for adjustment mode with base image...');
-      } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
-        console.log('Using Gemini Image Preview for direct image generation with images...');
-      } else {
-        console.log('Using Gemini Image Preview for text-only generation...');
-      }
+    if (baseImageUrl) {
+      console.log('Using Gemini Image Preview for adjustment mode with base image...');
+    } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
+      console.log('Using Gemini Image Preview for direct image generation with images...');
+    } else {
+      console.log('Using Gemini Image Preview for text-only generation...');
+    }
 
-      // Use blank frame as base image if available and no other base image
-      const effectiveBaseImage = baseImageUrl || blankFrameUrl;
-      const isUsingBlankFrame = !baseImageUrl && !!blankFrameUrl;
-      bytes1 = await callGeminiImagePreview(finalPrompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame);
+    // Use blank frame as base image if available and no other base image
+    const effectiveBaseImage = baseImageUrl || blankFrameUrl;
+    const isUsingBlankFrame = !baseImageUrl && !!blankFrameUrl;
+
+    // Create 3 distinct variation prompts
+    const variation1Prompt = `${finalPrompt} Style: Bold and dramatic with high contrast colors.`;
+    const variation2Prompt = `${finalPrompt} Style: Vibrant and energetic with dynamic composition and bright colors.`;
+    const variation3Prompt = `${finalPrompt} Style: Clean and minimal with soft colors and simple composition.`;
+
+    // Generate 3 variations in parallel with different prompts
+    let bytes1: Uint8Array, bytes2: Uint8Array, bytes3: Uint8Array;
+    try {
+      [bytes1, bytes2, bytes3] = await Promise.all([
+        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
+        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
+        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame)
+      ]);
     } catch (error) {
       console.error('Gemini Image Preview failed:', error);
       throw new Error(`Image generation failed: ${error.message}`);
     }
-    // const [bytes1, bytes2] = await Promise.all([
-    //   callImagen(variation1Prompt),
-    //   callImagen(variation2Prompt)
-    // ]);
 
-    // Store one image to Supabase Storage
+    // Store 3 images to Supabase Storage
     const filename1 = `${crypto.randomUUID()}.png`;
-    // const filename2 = `${crypto.randomUUID()}.png`;
+    const filename2 = `${crypto.randomUUID()}.png`;
+    const filename3 = `${crypto.randomUUID()}.png`;
 
-    const upload1 = await supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true });
-    // const [upload1, upload2] = await Promise.all([
-    //   supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
-    //   supabase.storage.from("thumbnails").upload(filename2, bytes2, { contentType: "image/png", upsert: true })
-    // ]);
+    const [upload1, upload2, upload3] = await Promise.all([
+      supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
+      supabase.storage.from("thumbnails").upload(filename2, bytes2, { contentType: "image/png", upsert: true }),
+      supabase.storage.from("thumbnails").upload(filename3, bytes3, { contentType: "image/png", upsert: true })
+    ]);
 
     if (upload1.error) throw upload1.error;
-    // if (upload2.error) throw upload2.error;
+    if (upload2.error) throw upload2.error;
+    if (upload3.error) throw upload3.error;
 
-    // Generate signed URL for one image
-    const signed1 = await supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60);
-    // const [signed1, signed2] = await Promise.all([
-    //   supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60),
-    //   supabase.storage.from("thumbnails").createSignedUrl(filename2, 60 * 60)
-    // ]);
+    // Generate signed URLs for 3 images
+    const [signed1, signed2, signed3] = await Promise.all([
+      supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60),
+      supabase.storage.from("thumbnails").createSignedUrl(filename2, 60 * 60),
+      supabase.storage.from("thumbnails").createSignedUrl(filename3, 60 * 60)
+    ]);
 
     if (signed1.error) throw signed1.error;
-    // if (signed2.error) throw signed2.error;
+    if (signed2.error) throw signed2.error;
+    if (signed3.error) throw signed3.error;
 
     return new Response(JSON.stringify({
       imageUrl: signed1.data?.signedUrl, // keep for compatibility
@@ -435,14 +445,21 @@ serve(async (req: Request) => {
         height: HEIGHT,
         file: filename1,
         prompt: finalPrompt
+      },
+      variation2: {
+        imageUrl: signed2.data?.signedUrl,
+        width: WIDTH,
+        height: HEIGHT,
+        file: filename2,
+        prompt: finalPrompt
+      },
+      variation3: {
+        imageUrl: signed3.data?.signedUrl,
+        width: WIDTH,
+        height: HEIGHT,
+        file: filename3,
+        prompt: finalPrompt
       }
-      // variation2: {
-      //   imageUrl: signed2.data?.signedUrl,
-      //   width: WIDTH,
-      //   height: HEIGHT,
-      //   file: filename2,
-      //   prompt: variation2Prompt
-      // }
     }), { headers: { "Content-Type": "application/json" } });
 
   } catch (e) {

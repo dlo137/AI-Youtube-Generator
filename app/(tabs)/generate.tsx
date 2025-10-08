@@ -83,11 +83,14 @@ export default function GenerateScreen() {
   const dot3Anim = useRef(new Animated.Value(0)).current;
   const shimmer1Anim = useRef(new Animated.Value(0.3)).current;
   const shimmer2Anim = useRef(new Animated.Value(0.3)).current;
+  const shimmer3Anim = useRef(new Animated.Value(0.3)).current;
   const borderOffset1 = useRef(new Animated.Value(0)).current;
   const borderOffset2 = useRef(new Animated.Value(0)).current;
+  const borderOffset3 = useRef(new Animated.Value(0)).current;
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [generatedImageUrl, setGeneratedImageUrl] = useState('');
   const [generatedImageUrl2, setGeneratedImageUrl2] = useState('');
+  const [generatedImageUrl3, setGeneratedImageUrl3] = useState('');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPrompt, setModalPrompt] = useState('');
   const [modalImageUrl, setModalImageUrl] = useState('');
@@ -145,6 +148,7 @@ export default function GenerateScreen() {
     prompt: string;
     url1: string;
     url2?: string;
+    url3?: string;
     timestamp: number;
   }>>([]);
   const [imageContainerDimensions, setImageContainerDimensions] = useState({ width: 0, height: 0 });
@@ -207,17 +211,21 @@ export default function GenerateScreen() {
 
       const shimmer1 = createShimmerAnimation(shimmer1Anim, 0);
       const shimmer2 = createShimmerAnimation(shimmer2Anim, 200);
+      const shimmer3 = createShimmerAnimation(shimmer3Anim, 400);
 
       const borderAnim1 = createBorderOffsetAnimation(borderOffset1);
       const borderAnim2 = createBorderOffsetAnimation(borderOffset2);
+      const borderAnim3 = createBorderOffsetAnimation(borderOffset3);
 
       animation1.start();
       animation2.start();
       animation3.start();
       shimmer1.start();
       shimmer2.start();
+      shimmer3.start();
       borderAnim1.start();
       borderAnim2.start();
+      borderAnim3.start();
 
       return () => {
         animation1.stop();
@@ -225,13 +233,16 @@ export default function GenerateScreen() {
         animation3.stop();
         shimmer1.stop();
         shimmer2.stop();
+        shimmer3.stop();
         borderAnim1.stop();
         borderAnim2.stop();
+        borderAnim3.stop();
         dot1Anim.setValue(0);
         dot2Anim.setValue(0);
         dot3Anim.setValue(0);
         borderOffset1.setValue(0);
         borderOffset2.setValue(0);
+        borderOffset3.setValue(0);
       };
     }
   }, [isLoading, isModalGenerating]);
@@ -348,7 +359,7 @@ export default function GenerateScreen() {
     try {
       // Find the current generation to get the original prompt
       const currentGeneration = allGenerations.find(gen =>
-        gen.url1 === modalImageUrl || gen.url2 === modalImageUrl
+        gen.url1 === modalImageUrl || gen.url2 === modalImageUrl || gen.url3 === modalImageUrl
       );
 
       if (!currentGeneration) {
@@ -767,10 +778,11 @@ export default function GenerateScreen() {
         return;
       }
 
-      if (data?.variation1?.imageUrl || data?.variation2?.imageUrl) {
+      if (data?.variation1?.imageUrl || data?.variation2?.imageUrl || data?.variation3?.imageUrl) {
         // Success! Display variations
         const url1 = data.variation1?.imageUrl;
         const url2 = data.variation2?.imageUrl;
+        const url3 = data.variation3?.imageUrl;
 
         if (url1) {
           setGeneratedImageUrl(url1);
@@ -782,6 +794,11 @@ export default function GenerateScreen() {
           // Automatically add to history (not favorited)
           await addThumbnailToHistory(promptToUse, url2);
         }
+        if (url3) {
+          setGeneratedImageUrl3(url3);
+          // Automatically add to history (not favorited)
+          await addThumbnailToHistory(promptToUse, url3);
+        }
 
         // Add to all generations list
         const newGeneration = {
@@ -789,6 +806,7 @@ export default function GenerateScreen() {
           prompt: promptToUse,
           url1: url1 || '',
           url2: url2,
+          url3: url3,
           timestamp: Date.now(),
         };
         setAllGenerations(prev => [newGeneration, ...prev]);
@@ -928,6 +946,51 @@ export default function GenerateScreen() {
                   </View>
                 </View>
 
+                {/* Third loading skeleton */}
+                <View style={styles.loadingThumbnailContainer}>
+                  <View style={styles.loadingSkeletonWrapper}>
+                    <View style={styles.loadingBorderAnimated}>
+                      <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
+                        <Defs>
+                          <LinearGradient id="borderGrad3">
+                            <Stop offset="0%" stopColor="transparent" stopOpacity="0" />
+                            <Stop offset="30%" stopColor="#1e40af" stopOpacity="0.6" />
+                            <Stop offset="50%" stopColor="#3b82f6" stopOpacity="1" />
+                            <Stop offset="70%" stopColor="#60a5fa" stopOpacity="1" />
+                            <Stop offset="85%" stopColor="#3b82f6" stopOpacity="0.6" />
+                            <Stop offset="100%" stopColor="transparent" stopOpacity="0" />
+                          </LinearGradient>
+                        </Defs>
+                        <Rect
+                          x="2"
+                          y="2"
+                          width="346"
+                          height="196"
+                          rx="12"
+                          stroke="#232932"
+                          strokeWidth="1"
+                          fill="none"
+                        />
+                        <AnimatedRect
+                          x="2"
+                          y="2"
+                          width="346"
+                          height="196"
+                          rx="12"
+                          stroke="url(#borderGrad3)"
+                          strokeWidth="3"
+                          fill="none"
+                          strokeDasharray="200 800"
+                          strokeDashoffset={borderOffset3}
+                        />
+                      </Svg>
+                    </View>
+                    <View style={styles.loadingSkeleton}>
+                      <Animated.View style={[styles.loadingShimmer, { opacity: shimmer3Anim }]} />
+                    </View>
+                  </View>
+                </View>
+
                 {allGenerations.length > 0 && (
                   <View style={styles.generationSeparator} />
                 )}
@@ -959,6 +1022,19 @@ export default function GenerateScreen() {
                     prompt={generation.prompt}
                     onEdit={() => {
                       if (generation.url2) openModal(generation.url2);
+                    }}
+                    style={styles}
+                  />
+                )}
+
+                {/* Third Generated Image - Different Variation */}
+                {generation.url3 && (
+                  <GeneratedThumbnail
+                    key={`${generation.id}-3`}
+                    imageUrl={generation.url3}
+                    prompt={generation.prompt}
+                    onEdit={() => {
+                      if (generation.url3) openModal(generation.url3);
                     }}
                     style={styles}
                   />
@@ -1311,7 +1387,7 @@ export default function GenerateScreen() {
                   try {
                     // Find the current generation
                     const currentGeneration = allGenerations.find(gen =>
-                      gen.url1 === modalImageUrl || gen.url2 === modalImageUrl
+                      gen.url1 === modalImageUrl || gen.url2 === modalImageUrl || gen.url3 === modalImageUrl
                     );
 
                     if (!currentGeneration) {
@@ -1652,7 +1728,7 @@ Context: ${currentGeneration.prompt}`;
 
                         // Find the generation that matches the current modal image
                         const currentGeneration = allGenerations.find(gen =>
-                          gen.url1 === modalImageUrl || gen.url2 === modalImageUrl
+                          gen.url1 === modalImageUrl || gen.url2 === modalImageUrl || gen.url3 === modalImageUrl
                         );
 
                         if (currentGeneration) {
