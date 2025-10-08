@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, Linking } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
@@ -164,9 +164,19 @@ export default function SignUpScreen() {
           <View style={styles.termsContainer}>
             <Text style={styles.termsText}>
               By creating an account, you indicate that you have read and agreed to the{' '}
-              <Text style={styles.termsLink}>privacy policy</Text>
+              <Text
+                style={styles.termsLink}
+                onPress={() => Linking.openURL('https://dlo137.github.io/Privacy-Policy-Thumbnail-Generator/')}
+              >
+                privacy policy
+              </Text>
               {' '}and{' '}
-              <Text style={styles.termsLink}>terms of use</Text>
+              <Text
+                style={styles.termsLink}
+                onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}
+              >
+                terms of use
+              </Text>
             </Text>
           </View>
         </View>

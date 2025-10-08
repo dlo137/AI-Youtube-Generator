@@ -123,7 +123,7 @@ export default function WelcomeScreen() {
             ]}
           />
           <Animated.Image
-            source={require('../assets/homescreen.png')}
+            source={require('../assets/home.png')}
             style={[
               styles.heroImage,
               {

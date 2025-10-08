@@ -236,7 +236,7 @@ export default function SubscriptionScreen() {
           <View style={styles.logoGlow}>
             <View style={styles.logo}>
               <Image
-                source={require('../assets/Thumbnail-Icon2.png')}
+                source={require('../assets/App-Icon.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
