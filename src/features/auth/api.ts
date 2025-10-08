@@ -1,11 +1,29 @@
 import { supabase, redirectTo } from "../../../lib/supabase";
 
-export async function signUpEmail(email: string, password: string) {
+export async function signUpEmail(email: string, password: string, fullName?: string) {
   const { data, error } = await supabase.auth.signUp({
     email, password,
-    options: { emailRedirectTo: redirectTo }, // for email confirmations
+    options: {
+      emailRedirectTo: redirectTo,
+      data: {
+        full_name: fullName
+      }
+    },
   });
   if (error) throw error;
+
+  // Update profile table with the name if user was created
+  if (data.user && fullName) {
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ full_name: fullName })
+      .eq('id', data.user.id);
+
+    if (profileError) {
+      console.error('Error updating profile:', profileError);
+    }
+  }
+
   return data;
 }
 
@@ -54,4 +72,15 @@ export async function getCurrentUser() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error) throw error;
   return user;
+}
+
+export async function signInWithApple() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'apple',
+    options: {
+      redirectTo: redirectTo,
+    },
+  });
+  if (error) throw error;
+  return data;
 }

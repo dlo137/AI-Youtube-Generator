@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvo
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { signUpEmail } from '../src/features/auth/api';
+import { signUpEmail, signInWithApple } from '../src/features/auth/api';
 
 export default function SignUpScreen() {
   const [name, setName] = useState('');
@@ -26,7 +26,7 @@ export default function SignUpScreen() {
     setIsLoading(true);
 
     try {
-      const data = await signUpEmail(email, password);
+      const data = await signUpEmail(email, password, name);
 
       if (data.user) {
         router.push('/loadingaccount');
@@ -35,6 +35,26 @@ export default function SignUpScreen() {
     } catch (error: any) {
       console.error('Sign up error:', error);
       Alert.alert('Sign Up Error', error.message || 'Something went wrong. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setIsLoading(true);
+
+    try {
+      const data = await signInWithApple();
+
+      if (data.url) {
+        // On web/mobile, this will open the OAuth flow
+        // The user will be redirected back after authentication
+        console.log('Opening Apple sign in...');
+      }
+
+    } catch (error: any) {
+      console.error('Apple sign in error:', error);
+      Alert.alert('Sign In Error', error.message || 'Failed to sign in with Apple. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -124,8 +144,14 @@ export default function SignUpScreen() {
             <View style={styles.dividerLine} />
           </View>
 
-          <TouchableOpacity style={styles.appleButton}>
-            <Text style={styles.appleButtonText}>Continue with Apple</Text>
+          <TouchableOpacity
+            style={styles.appleButton}
+            onPress={handleAppleSignIn}
+            disabled={isLoading}
+          >
+            <Text style={styles.appleButtonText}>
+              {isLoading ? 'Signing in...' : 'Continue with Apple'}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.loginContainer}>
@@ -229,16 +255,16 @@ const styles = StyleSheet.create({
   },
   eyeIconText: {
     fontSize: 14,
-    color: '#6366f1',
+    color: '#93c5fd',
     fontWeight: '600',
   },
   signUpButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#1e40af',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 20,
-    shadowColor: '#6366f1',
+    shadowColor: '#1e40af',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -267,7 +293,7 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     fontSize: 16,
-    color: '#6366f1',
+    color: '#93c5fd',
     fontWeight: '600',
   },
   backButton: {
@@ -280,7 +306,7 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 16,
-    color: '#6366f1',
+    color: '#93c5fd',
     fontWeight: '600',
   },
   dividerContainer: {

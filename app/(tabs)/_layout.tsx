@@ -1,11 +1,38 @@
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs, useRouter, useFocusEffect } from 'expo-router';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { ModalProvider, useModal } from '../../src/contexts/ModalContext';
 import HeaderLeft from '../../src/components/HeaderLeft';
+import { useState, useEffect, useCallback } from 'react';
+import { getSubscriptionInfo, SubscriptionInfo, getCredits } from '../../src/utils/subscriptionStorage';
 
 function TabsContent() {
   const router = useRouter();
   const { setIsBillingModalVisible } = useModal();
+  const [subscriptionInfo, setSubscriptionInfo] = useState<SubscriptionInfo | null>(null);
+  const [credits, setCredits] = useState({ current: 10, max: 10 });
+
+  useEffect(() => {
+    loadSubscriptionInfo();
+    loadCredits();
+  }, []);
+
+  // Refresh credits when any tab gains focus
+  useFocusEffect(
+    useCallback(() => {
+      loadCredits();
+    }, [])
+  );
+
+  const loadSubscriptionInfo = async () => {
+    const subInfo = await getSubscriptionInfo();
+    setSubscriptionInfo(subInfo);
+  };
+
+  const loadCredits = async () => {
+    const creditsInfo = await getCredits();
+    setCredits(creditsInfo);
+  };
+
 
   const handleGetPro = () => {
     router.push('/(tabs)/profile');
@@ -33,27 +60,27 @@ function TabsContent() {
         },
         headerLeft: () => <HeaderLeft />,
         headerRight: () => (
-          <TouchableOpacity
+          <View
             style={{
               marginRight: 15,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderWidth: 1,
-              borderColor: '#FFD700',
+              paddingHorizontal: 10,
+              paddingVertical: 5,
               borderRadius: 16,
+              borderWidth: 1.5,
+              borderColor: 'rgba(0, 122, 255, 0.5)',
               backgroundColor: 'transparent',
             }}
-            onPress={handleGetPro}
           >
             <Text style={{
-              color: '#FFD700',
-              fontSize: 12,
+              color: '#ffffff',
+              fontSize: 11,
               fontWeight: '600',
-              textAlign: 'center'
+              textAlign: 'center',
+              letterSpacing: 0.2,
             }}>
-              Rate App
+              {credits.current}/{credits.max} credits
             </Text>
-          </TouchableOpacity>
+          </View>
         ),
       }}
     >

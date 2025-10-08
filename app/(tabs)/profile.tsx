@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, TouchableWithoutFeedback, Keyboard, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, TouchableWithoutFeedback, Keyboard, Animated, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -41,7 +41,6 @@ export default function ProfileScreen() {
 
   const settings = [
     { id: 'about', title: 'About', subtitle: 'App information' },
-    { id: 'rate', title: 'Rate the App', subtitle: 'Share your feedback on the app store' },
     { id: 'help', title: 'Help & Support', subtitle: 'Get assistance' },
     { id: 'upgrade', title: 'Upgrade Your Plan', subtitle: 'Choose a subscription plan' },
     { id: 'billing', title: 'Billing & Subscription', subtitle: 'Manage your current subscription' },
@@ -68,6 +67,23 @@ export default function ProfileScreen() {
       description: 'Billed weekly at $2.99.\nCancel anytime'
     }
   ];
+
+  // Get credits based on subscription plan
+  const getCreditsDisplay = () => {
+    if (!subscriptionInfo || !subscriptionInfo.isActive) {
+      return { current: 10, max: 10 }; // Free plan: 10/10 credits for life
+    }
+
+    if (subscriptionInfo.productId === 'thumbnail.pro.yearly') {
+      return { current: 300, max: 300 }; // Yearly: 300 credits
+    } else if (subscriptionInfo.productId === 'thumbnail.pro.monthly') {
+      return { current: 200, max: 200 }; // Monthly: 200 credits
+    } else if (subscriptionInfo.productId === 'thumbnail.pro.weekly') {
+      return { current: 100, max: 100 }; // Weekly: 100 credits
+    }
+
+    return { current: 10, max: 10 }; // Default to free
+  };
 
   // Get current subscription data from state
   const getCurrentSubscriptionDisplay = () => {
@@ -411,9 +427,6 @@ export default function ProfileScreen() {
 
   const handleSettingPress = (settingId: string) => {
     switch (settingId) {
-      case 'rate':
-        handleRateApp();
-        break;
       case 'upgrade':
         setIsBillingModalVisible(true);
         break;
@@ -660,11 +673,6 @@ export default function ProfileScreen() {
             <Text style={styles.modalCloseText}>✕</Text>
           </TouchableOpacity>
 
-          {/* Decorative Shapes */}
-          <View style={[styles.shape, styles.triangle, { top: 100, left: 30 }]} />
-          <View style={[styles.shape, styles.square, { top: 200, right: 40 }]} />
-          <View style={[styles.shape, styles.triangle, { bottom: 150, left: 50 }]} />
-          <View style={[styles.shape, styles.square, { top: 400, left: 20 }]} />
 
           <ScrollView
             contentContainerStyle={styles.gradientScrollContainer}
@@ -674,16 +682,20 @@ export default function ProfileScreen() {
             <View style={styles.logoContainer}>
               <View style={styles.logoGlow}>
                 <View style={styles.logo}>
-                  <Text style={styles.logoText}>📸</Text>
+                  <Image
+                    source={require('../../assets/Thumbnail-Icon2.png')}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                  />
                 </View>
               </View>
             </View>
 
             {/* Header */}
             <View style={styles.header}>
-              <Text style={styles.billingTitle}>Get access to ThumbnailPro with no limits!</Text>
+              <Text style={styles.billingTitle}>Turn Thumbnails Into Paychecks.</Text>
               <Text style={styles.billingSubtitle}>
-                Achieve your goals and build lasting habits with our ultimate suite for a healthier routine.
+                Every click counts. Create and save eye-catching thumbnails that grow your channel, build your audience, and boost your revenue.
               </Text>
             </View>
 
@@ -728,7 +740,7 @@ export default function ProfileScreen() {
               onPress={() => handleSubscribe(selectedPlan)}
             >
               <LinearGradient
-                colors={['#5b6ef5', '#3b4fd9']}
+                colors={['#1e40af', '#1e3a8a']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.continueGradient}
@@ -865,6 +877,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
+  },
+  creditsContainer: {
+    marginTop: 16,
+    backgroundColor: '#1e40af',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    shadowColor: '#1e40af',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  creditsText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: 0.5,
   },
   settingsSection: {
     marginBottom: 32,
@@ -1013,7 +1046,7 @@ const styles = StyleSheet.create({
     color: MUTED,
   },
   aboutCloseButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#1e40af',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -1058,7 +1091,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   contactSubmitButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#1e40af',
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
@@ -1135,7 +1168,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   logoGlow: {
-    shadowColor: '#5b6ef5',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 30,
@@ -1144,12 +1177,12 @@ const styles = StyleSheet.create({
   logo: {
     width: 100,
     height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(91, 110, 245, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(91, 110, 245, 0.3)',
+  },
+  logoImage: {
+    width: 100,
+    height: 100,
   },
   logoText: {
     fontSize: 50,
@@ -1188,9 +1221,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   selectedPlan: {
-    borderColor: '#5b6ef5',
-    backgroundColor: 'rgba(91, 110, 245, 0.1)',
-    shadowColor: '#5b6ef5',
+    borderColor: '#1e40af',
+    backgroundColor: 'rgba(30, 64, 175, 0.1)',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 15,
@@ -1203,11 +1236,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -10,
     alignSelf: 'center',
-    backgroundColor: '#5b6ef5',
+    backgroundColor: '#1e40af',
     paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 10,
-    shadowColor: '#5b6ef5',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
@@ -1233,7 +1266,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#5b6ef5',
+    backgroundColor: '#1e40af',
   },
   planContent: {
     flex: 1,
@@ -1263,7 +1296,7 @@ const styles = StyleSheet.create({
   continueButton: {
     borderRadius: 30,
     overflow: 'hidden',
-    shadowColor: '#5b6ef5',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5,
     shadowRadius: 15,
@@ -1351,7 +1384,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   upgradeButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#1e40af',
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',

@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { saveSubscriptionInfo } from '../src/utils/subscriptionStorage';
+import Svg, { Path } from 'react-native-svg';
 
 // Conditionally import InAppPurchases to handle Expo Go limitation
 let InAppPurchases: any = null;
@@ -225,12 +226,6 @@ export default function SubscriptionScreen() {
         <Text style={styles.alreadyPurchasedText}>Restore Purchases</Text>
       </TouchableOpacity>
 
-      {/* Decorative Shapes */}
-      <View style={[styles.shape, styles.triangle, { top: 100, left: 30 }]} />
-      <View style={[styles.shape, styles.square, { top: 200, right: 40 }]} />
-      <View style={[styles.shape, styles.triangle, { bottom: 150, left: 50 }]} />
-      <View style={[styles.shape, styles.square, { top: 400, left: 20 }]} />
-
       <Animated.ScrollView
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
@@ -240,16 +235,20 @@ export default function SubscriptionScreen() {
         <View style={styles.logoContainer}>
           <View style={styles.logoGlow}>
             <View style={styles.logo}>
-              <Text style={styles.logoText}>📸</Text>
+              <Image
+                source={require('../assets/Thumbnail-Icon2.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </View>
           </View>
         </View>
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Get access to ThumbnailPro with no limits!</Text>
+          <Text style={styles.title}>Turn Thumbnails Into Paychecks.</Text>
           <Text style={styles.subtitle}>
-            Achieve your goals and build lasting habits with our ultimate suite for a healthier routine.
+            Every click counts. Create and save eye-catching thumbnails that grow your channel, build your audience, and boost your revenue.
           </Text>
         </View>
 
@@ -275,7 +274,7 @@ export default function SubscriptionScreen() {
             <View style={styles.planContent}>
               <Text style={styles.planName}>Yearly</Text>
             </View>
-            <Text style={styles.planPrice}>{formatPrice('yearly', '$0.38/week')}</Text>
+            <Text style={styles.planPrice}>{formatPrice('yearly', '$0.96/week')}</Text>
           </TouchableOpacity>
 
           {/* Monthly Plan */}
@@ -315,7 +314,7 @@ export default function SubscriptionScreen() {
 
         {/* Trial Info */}
         <Text style={styles.trialInfo}>
-          {selectedPlan === 'yearly' && 'Free for 3 days, then $19.99 / year.\nNo payment now'}
+          {selectedPlan === 'yearly' && 'Free for 3 days, then $49.99 / year.\nNo payment now'}
           {selectedPlan === 'monthly' && 'Billed monthly at $5.99.\nCancel anytime'}
           {selectedPlan === 'weekly' && 'Billed weekly at $2.99.\nCancel anytime'}
         </Text>
@@ -329,7 +328,7 @@ export default function SubscriptionScreen() {
           disabled={loading}
         >
           <LinearGradient
-            colors={['#5b6ef5', '#3b4fd9']}
+            colors={['#1e40af', '#1e3a8a']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.continueGradient}
@@ -392,12 +391,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 25,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: '#5b6ef5',
+    borderBottomColor: '#1e40af',
   },
   square: {
     width: 20,
     height: 20,
-    backgroundColor: '#3b4fd9',
+    backgroundColor: '#1e3a8a',
     transform: [{ rotate: '45deg' }],
   },
   scrollContainer: {
@@ -417,7 +416,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   logoGlow: {
-    shadowColor: '#5b6ef5',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 30,
@@ -426,15 +425,12 @@ const styles = StyleSheet.create({
   logo: {
     width: 100,
     height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(91, 110, 245, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(91, 110, 245, 0.3)',
   },
-  logoText: {
-    fontSize: 50,
+  logoImage: {
+    width: 100,
+    height: 100,
   },
   header: {
     marginBottom: 40,
@@ -477,9 +473,9 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   selectedPlan: {
-    borderColor: '#5b6ef5',
-    backgroundColor: 'rgba(91, 110, 245, 0.1)',
-    shadowColor: '#5b6ef5',
+    borderColor: '#1e40af',
+    backgroundColor: 'rgba(30, 64, 175, 0.1)',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 15,
@@ -492,11 +488,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -10,
     alignSelf: 'center',
-    backgroundColor: '#5b6ef5',
+    backgroundColor: '#1e40af',
     paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 10,
-    shadowColor: '#5b6ef5',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
@@ -522,7 +518,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#5b6ef5',
+    backgroundColor: '#1e40af',
   },
   planContent: {
     flex: 1,
@@ -546,7 +542,7 @@ const styles = StyleSheet.create({
   continueButton: {
     borderRadius: 30,
     overflow: 'hidden',
-    shadowColor: '#5b6ef5',
+    shadowColor: '#1e40af',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5,
     shadowRadius: 15,

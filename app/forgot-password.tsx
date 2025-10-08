@@ -176,12 +176,12 @@ const styles = StyleSheet.create({
     color: TEXT,
   },
   resetButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: '#1e40af',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 20,
-    shadowColor: '#6366f1',
+    shadowColor: '#1e40af',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     fontSize: 16,
-    color: '#6366f1',
+    color: '#93c5fd',
     fontWeight: '600',
   },
   backButton: {
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 16,
-    color: '#6366f1',
+    color: '#93c5fd',
     fontWeight: '600',
   },
 });

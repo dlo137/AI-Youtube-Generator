@@ -4,7 +4,7 @@
     "slug": "ai-youtube-generator",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/App-Icon-1.0.0.png",
+    "icon": "./assets/Thumbnail-Icon2.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
     "scheme": "ai-youtube-generator",
@@ -24,6 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "jsEngine": "jsc",
+      "icon": "./assets/Thumbnail-Icon2.png",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to save generated thumbnails."
       }

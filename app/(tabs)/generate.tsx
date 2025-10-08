@@ -10,6 +10,7 @@ import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
 import { saveThumbnail, addThumbnailToHistory, getSavedThumbnails, SavedThumbnail } from '../../src/utils/thumbnailStorage';
+import { getCredits, deductCredit } from '../../src/utils/subscriptionStorage';
 
 // Create Animated SVG components
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -353,6 +354,17 @@ export default function GenerateScreen() {
       return;
     }
 
+    // Check credits before generating edit
+    const credits = await getCredits();
+    if (credits.current <= 0) {
+      Alert.alert(
+        'No Credits',
+        'You have run out of credits. Please upgrade your plan to continue editing thumbnails.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setIsModalGenerating(true);
     Keyboard.dismiss();
 
@@ -442,6 +454,9 @@ export default function GenerateScreen() {
         imageUrl: newImageUrl
       });
       setModalPrompt('');
+
+      // Deduct 1 credit for successful edit
+      await deductCredit();
 
       Alert.alert('Success!', 'Your thumbnail has been adjusted');
 
@@ -728,6 +743,17 @@ export default function GenerateScreen() {
       return;
     }
 
+    // Check credits before generating
+    const credits = await getCredits();
+    if (credits.current <= 0) {
+      Alert.alert(
+        'No Credits',
+        'You have run out of credits. Please upgrade your plan to continue generating thumbnails.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     // Store the prompt for title display BEFORE clearing
     let promptToUse = topic.trim();
 
@@ -810,6 +836,9 @@ export default function GenerateScreen() {
           timestamp: Date.now(),
         };
         setAllGenerations(prev => [newGeneration, ...prev]);
+
+        // Deduct 1 credit for successful generation (3 images = 1 credit)
+        await deductCredit();
 
         // Clear subject and reference images after successful generation
         if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {

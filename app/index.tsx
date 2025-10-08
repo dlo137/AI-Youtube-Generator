@@ -20,12 +20,12 @@ export default function WelcomeScreen() {
       Animated.sequence([
         Animated.timing(glowAnim, {
           toValue: 1,
-          duration: 1500,
+          duration: 1200,
           useNativeDriver: true,
         }),
         Animated.timing(glowAnim, {
           toValue: 0,
-          duration: 1500,
+          duration: 1200,
           useNativeDriver: true,
         }),
       ])
@@ -108,9 +108,17 @@ export default function WelcomeScreen() {
               {
                 opacity: glowAnim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0.4, 0.9],
+                  outputRange: [0.5, 1],
                 }),
-                transform: [{ translateX }],
+                transform: [
+                  { translateX },
+                  {
+                    scale: glowAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.9, 1],
+                    }),
+                  },
+                ],
               },
             ]}
           />
@@ -134,7 +142,7 @@ export default function WelcomeScreen() {
             },
           ]}
         >
-          {step === 1 ? 'Youtube Thumbnails\nMade Easy' : step === 2 ? 'Save Your Perfect Thumbnail' : 'Tweak & Edit Easier'}
+          {step === 1 ? 'Edit Faster. Upload Sooner. Grow Quicker.' : step === 2 ? 'Save Your Best Ideas \n Before They Disappear' : 'Unlock the Secret Behind Every Viral Thumbnail'}
         </Animated.Text>
 
         <TouchableOpacity
@@ -179,18 +187,18 @@ const styles = StyleSheet.create({
   },
   glow: {
     position: 'absolute',
-    width: '50%',
+    width: '55%',
     height: 400,
-    backgroundColor: '#b91c1c',
+    backgroundColor: '#1e3a8a',
     borderRadius: 200,
-    shadowColor: '#b91c1c',
+    shadowColor: '#1e3a8a',
     shadowOffset: {
       width: 0,
       height: 0,
     },
     shadowOpacity: 1,
-    shadowRadius: 100,
-    elevation: 20,
+    shadowRadius: 200,
+    elevation: 40,
   },
   heroImage: {
     width: '100%',
@@ -206,13 +214,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   getStartedButton: {
-    backgroundColor: '#b91c1c',
+    backgroundColor: '#1e40af',
     paddingVertical: 16,
     paddingHorizontal: 48,
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#b91c1c',
+    shadowColor: '#1e40af',
     shadowOffset: {
       width: 0,
       height: 4,
@@ -238,7 +246,7 @@ const styles = StyleSheet.create({
   },
   loginLink: {
     fontSize: 14,
-    color: '#fca5a5',
+    color: '#93c5fd',
     fontWeight: '600',
   },
 });
