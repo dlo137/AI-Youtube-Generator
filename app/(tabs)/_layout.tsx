@@ -1,36 +1,33 @@
 import { Tabs, useRouter, useFocusEffect } from 'expo-router';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { ModalProvider, useModal } from '../../src/contexts/ModalContext';
+import { CreditsProvider, useCredits } from '../../src/contexts/CreditsContext';
 import HeaderLeft from '../../src/components/HeaderLeft';
 import { useState, useEffect, useCallback } from 'react';
-import { getSubscriptionInfo, SubscriptionInfo, getCredits } from '../../src/utils/subscriptionStorage';
+import { getSubscriptionInfo, SubscriptionInfo, initializeCredits } from '../../src/utils/subscriptionStorage';
 
 function TabsContent() {
   const router = useRouter();
   const { setIsBillingModalVisible } = useModal();
+  const { credits, refreshCredits } = useCredits();
   const [subscriptionInfo, setSubscriptionInfo] = useState<SubscriptionInfo | null>(null);
-  const [credits, setCredits] = useState({ current: 10, max: 10 });
 
   useEffect(() => {
+    initializeCredits();
     loadSubscriptionInfo();
-    loadCredits();
+    refreshCredits();
   }, []);
 
   // Refresh credits when any tab gains focus
   useFocusEffect(
     useCallback(() => {
-      loadCredits();
+      refreshCredits();
     }, [])
   );
 
   const loadSubscriptionInfo = async () => {
     const subInfo = await getSubscriptionInfo();
     setSubscriptionInfo(subInfo);
-  };
-
-  const loadCredits = async () => {
-    const creditsInfo = await getCredits();
-    setCredits(creditsInfo);
   };
 
 
@@ -78,7 +75,7 @@ function TabsContent() {
               textAlign: 'center',
               letterSpacing: 0.2,
             }}>
-              {credits.current}/{credits.max} credits
+              {credits.current}/{credits.max} images
             </Text>
           </View>
         ),
@@ -174,8 +171,10 @@ function TabsContent() {
 
 export default function TabsLayout() {
   return (
-    <ModalProvider>
-      <TabsContent />
-    </ModalProvider>
+    <CreditsProvider>
+      <ModalProvider>
+        <TabsContent />
+      </ModalProvider>
+    </CreditsProvider>
   );
 }

@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvo
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { signInEmail } from '../src/features/auth/api';
+import { signInEmail, signInWithApple } from '../src/features/auth/api';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -28,6 +28,29 @@ export default function LoginScreen() {
     } catch (error: any) {
       console.error('Login error:', error);
       Alert.alert('Login Error', error.message || 'Invalid email or password.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    setIsLoading(true);
+
+    try {
+      const data = await signInWithApple();
+
+      if (data.user) {
+        // Successfully signed in, navigate to main app
+        router.push('/(tabs)/generate');
+      }
+
+    } catch (error: any) {
+      console.error('Apple sign in error:', error);
+      if (error.message === 'Sign in was canceled') {
+        // User canceled, don't show error
+        return;
+      }
+      Alert.alert('Sign In Error', error.message || 'Failed to sign in with Apple. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -89,6 +112,22 @@ export default function LoginScreen() {
               <Text style={styles.forgotPasswordLink}>Forgot Password?</Text>
             </TouchableOpacity>
           </View>
+
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.appleButton}
+            onPress={handleAppleSignIn}
+            disabled={isLoading}
+          >
+            <Text style={styles.appleButtonText}>
+              {isLoading ? 'Signing in...' : 'Sign in With Apple'}
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.backButton}
@@ -202,6 +241,36 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 16,
     color: '#93c5fd',
+    fontWeight: '600',
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: BORDER,
+  },
+  dividerText: {
+    color: MUTED,
+    fontSize: 14,
+    marginHorizontal: 16,
+  },
+  appleButton: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  appleButtonText: {
+    color: TEXT,
+    fontSize: 16,
     fontWeight: '600',
   },
 });

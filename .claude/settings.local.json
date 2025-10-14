@@ -28,7 +28,10 @@
       "Bash(eas env:list:*)",
       "Bash(cat:*)",
       "Bash(git checkout:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(node fix-credits.js)",
+      "Bash(export:*)",
+      "Bash(node check-and-fix-all.js)"
     ],
     "deny": [],
     "ask": []

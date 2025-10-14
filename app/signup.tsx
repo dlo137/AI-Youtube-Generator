@@ -46,14 +46,17 @@ export default function SignUpScreen() {
     try {
       const data = await signInWithApple();
 
-      if (data.url) {
-        // On web/mobile, this will open the OAuth flow
-        // The user will be redirected back after authentication
-        console.log('Opening Apple sign in...');
+      if (data.user) {
+        // Successfully signed in, navigate to loading account screen
+        router.push('/loadingaccount');
       }
 
     } catch (error: any) {
       console.error('Apple sign in error:', error);
+      if (error.message === 'Sign in was canceled') {
+        // User canceled, don't show error
+        return;
+      }
       Alert.alert('Sign In Error', error.message || 'Failed to sign in with Apple. Please try again.');
     } finally {
       setIsLoading(false);
@@ -150,7 +153,7 @@ export default function SignUpScreen() {
             disabled={isLoading}
           >
             <Text style={styles.appleButtonText}>
-              {isLoading ? 'Signing in...' : 'Continue with Apple'}
+              {isLoading ? 'Signing up...' : 'Sign Up With Apple'}
             </Text>
           </TouchableOpacity>
 

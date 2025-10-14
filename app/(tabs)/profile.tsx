@@ -3,11 +3,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
-import { getCurrentUser, getMyProfile, updateMyProfile, signOut } from '../../src/features/auth/api';
+import { getCurrentUser, getMyProfile, updateMyProfile, signOut, deleteAccount } from '../../src/features/auth/api';
 import { useModal } from '../../src/contexts/ModalContext';
 import { supabase } from '../../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getSubscriptionInfo, SubscriptionInfo } from '../../src/utils/subscriptionStorage';
+import { getSubscriptionInfo, SubscriptionInfo, getCredits, CreditsInfo } from '../../src/utils/subscriptionStorage';
+import { getSubscriptionInfo as getSupabaseSubscriptionInfo, changePlan, SubscriptionPlan } from '../../src/features/subscription/api';
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
@@ -19,6 +20,13 @@ export default function ProfileScreen() {
   });
   const [subscriptionInfo, setSubscriptionInfo] = useState<SubscriptionInfo | null>(null);
   const [currentPlan, setCurrentPlan] = useState('Free');
+  const [credits, setCredits] = useState<CreditsInfo>({ current: 100, max: 100 });
+  const [subscriptionDisplay, setSubscriptionDisplay] = useState({
+    plan: 'Free Plan',
+    price: '$0.00',
+    renewalDate: null as string | null,
+    status: 'free'
+  });
   const {
     isAboutModalVisible,
     setIsAboutModalVisible,
@@ -48,45 +56,58 @@ export default function ProfileScreen() {
 
   const subscriptionPlans = [
     {
-      id: 'yearly',
-      name: 'Yearly',
-      price: '$0.38/week',
-      description: 'Free for 3 days, then $19.99 / year.\nNo payment now',
-      hasTrial: true
+      id: 'weekly',
+      name: 'Weekly',
+      price: '$2.99/week',
+      imageLimit: '30 images per month',
+      description: 'Billed weekly at $2.99.\nCancel anytime'
     },
     {
       id: 'monthly',
       name: 'Monthly',
       price: '$1.50/week',
+      imageLimit: '75 images per month',
       description: 'Billed monthly at $5.99.\nCancel anytime'
     },
     {
-      id: 'weekly',
-      name: 'Weekly',
-      price: '$2.99/week',
-      description: 'Billed weekly at $2.99.\nCancel anytime'
+      id: 'yearly',
+      name: 'Yearly',
+      price: '$1.15/week',
+      imageLimit: '90 images per month',
+      description: 'Billed yearly at $59.99.\nCancel anytime'
     }
   ];
 
-  // Get credits based on subscription plan
-  const getCreditsDisplay = () => {
-    if (!subscriptionInfo || !subscriptionInfo.isActive) {
-      return { current: 10, max: 10 }; // Free plan: 10/10 credits for life
-    }
-
-    if (subscriptionInfo.productId === 'thumbnail.pro.yearly') {
-      return { current: 300, max: 300 }; // Yearly: 300 credits
-    } else if (subscriptionInfo.productId === 'thumbnail.pro.monthly') {
-      return { current: 200, max: 200 }; // Monthly: 200 credits
-    } else if (subscriptionInfo.productId === 'thumbnail.pro.weekly') {
-      return { current: 100, max: 100 }; // Weekly: 100 credits
-    }
-
-    return { current: 10, max: 10 }; // Default to free
-  };
 
   // Get current subscription data from state
-  const getCurrentSubscriptionDisplay = () => {
+  const getCurrentSubscriptionDisplay = async () => {
+    // Try to get from Supabase first
+    const supabaseSubInfo = await getSupabaseSubscriptionInfo();
+
+    if (supabaseSubInfo && supabaseSubInfo.is_pro_version) {
+      let price = '';
+      let planName = currentPlan;
+
+      if (supabaseSubInfo.subscription_plan === 'yearly') {
+        price = '$59.99/year';
+        planName = 'Yearly Plan';
+      } else if (supabaseSubInfo.subscription_plan === 'monthly') {
+        price = '$5.99/month';
+        planName = 'Monthly Plan';
+      } else if (supabaseSubInfo.subscription_plan === 'weekly') {
+        price = '$2.99/week';
+        planName = 'Weekly Plan';
+      }
+
+      return {
+        plan: planName,
+        price: price,
+        renewalDate: supabaseSubInfo.purchase_time,
+        status: 'active'
+      };
+    }
+
+    // Fallback to local storage
     if (!subscriptionInfo || !subscriptionInfo.isActive) {
       return {
         plan: 'Free Plan',
@@ -100,7 +121,7 @@ export default function ProfileScreen() {
     let planName = currentPlan;
 
     if (subscriptionInfo.productId === 'thumbnail.pro.yearly') {
-      price = '$19.99/year';
+      price = '$49.99/year';
     } else if (subscriptionInfo.productId === 'thumbnail.pro.monthly') {
       price = '$5.99/month';
     } else if (subscriptionInfo.productId === 'thumbnail.pro.weekly') {
@@ -163,23 +184,78 @@ export default function ProfileScreen() {
         });
       }
 
-      // Load subscription info
+      // Load subscription info from Supabase profile
+      const supabaseSubInfo = await getSupabaseSubscriptionInfo();
+
+      // Load local subscription info as fallback
       const subInfo = await getSubscriptionInfo();
       setSubscriptionInfo(subInfo);
 
-      // Determine current plan based on product ID
-      if (subInfo && subInfo.isActive) {
-        if (subInfo.productId === 'thumbnail.pro.yearly') {
-          setCurrentPlan('Yearly Pro');
-        } else if (subInfo.productId === 'thumbnail.pro.monthly') {
-          setCurrentPlan('Monthly Pro');
-        } else if (subInfo.productId === 'thumbnail.pro.weekly') {
-          setCurrentPlan('Weekly Pro');
+      // Load credits
+      const creditsInfo = await getCredits();
+      setCredits(creditsInfo);
+
+      // Determine current plan based on Supabase profile first, then fallback to local storage
+      if (supabaseSubInfo && supabaseSubInfo.is_pro_version) {
+        const plan = supabaseSubInfo.subscription_plan;
+        let planName = '';
+        let price = '';
+
+        if (plan === 'yearly') {
+          planName = 'Yearly Plan';
+          price = '$59.99/year';
+        } else if (plan === 'monthly') {
+          planName = 'Monthly Plan';
+          price = '$5.99/month';
+        } else if (plan === 'weekly') {
+          planName = 'Weekly Plan';
+          price = '$2.99/week';
         } else {
-          setCurrentPlan('Pro');
+          planName = 'Pro Plan';
+          price = '$0.00';
         }
+
+        setCurrentPlan(planName);
+        setSubscriptionDisplay({
+          plan: planName,
+          price: price,
+          renewalDate: supabaseSubInfo.purchase_time,
+          status: 'active'
+        });
+      } else if (subInfo && subInfo.isActive) {
+        // Fallback to local storage
+        let planName = '';
+        let price = '';
+
+        if (subInfo.productId === 'thumbnail.pro.yearly') {
+          planName = 'Yearly Plan';
+          price = '$59.99/year';
+        } else if (subInfo.productId === 'thumbnail.pro.monthly') {
+          planName = 'Monthly Plan';
+          price = '$5.99/month';
+        } else if (subInfo.productId === 'thumbnail.pro.weekly') {
+          planName = 'Weekly Plan';
+          price = '$2.99/week';
+        } else {
+          planName = 'Pro Plan';
+          price = '$0.00';
+        }
+
+        setCurrentPlan(planName);
+        setSubscriptionDisplay({
+          plan: planName,
+          price: price,
+          renewalDate: subInfo.expiryDate || subInfo.purchaseDate,
+          status: 'active'
+        });
       } else {
         setCurrentPlan('Free');
+        setSubscriptionDisplay({
+          plan: 'Free Plan',
+          price: '$0.00',
+          renewalDate: null,
+          status: 'free'
+        });
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -235,21 +311,19 @@ export default function ProfileScreen() {
                   style: 'destructive',
                   onPress: async () => {
                     try {
-                      // Here you would call your delete account API
-                      // await deleteAccount();
-                      Alert.alert(
-                        'Account Deleted',
-                        'Your account has been permanently deleted.',
-                        [
-                          {
-                            text: 'OK',
-                            onPress: () => {
-                              // Clear any local data and redirect to login
-                              router.push('/');
-                            }
-                          }
-                        ]
-                      );
+                      // Delete the account from Supabase
+                      await deleteAccount();
+
+                      // Redirect to index
+                      router.replace('/');
+
+                      // Show confirmation after redirect
+                      setTimeout(() => {
+                        Alert.alert(
+                          'Account Deleted',
+                          'Your account has been permanently deleted.'
+                        );
+                      }, 500);
                     } catch (error) {
                       console.error('Delete account error:', error);
                       Alert.alert('Error', 'Failed to delete account. Please try again or contact support.');
@@ -363,30 +437,69 @@ export default function ProfileScreen() {
     if (!plan) return;
 
     try {
-      // Here you would integrate with your payment processor (Stripe, RevenueCat, etc.)
-      Alert.alert(
-        'Subscribe to ' + plan.name,
-        `You selected the ${plan.name} plan for ${plan.price}${plan.period}. This will redirect to the payment processor.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Continue',
-            onPress: () => {
-              setIsBillingModalVisible(false);
-              // Here you would redirect to payment processor
-              Alert.alert('Payment', 'Payment integration would happen here!');
+      // Check if user already has an active subscription
+      const hasActiveSub = subscriptionDisplay.status === 'active';
+
+      if (hasActiveSub) {
+        // This is a plan change (upgrade or downgrade)
+        const currentPlanType = subscriptionDisplay.plan.toLowerCase();
+        const isDowngrade =
+          (currentPlanType.includes('yearly') && (planId === 'monthly' || planId === 'weekly')) ||
+          (currentPlanType.includes('monthly') && planId === 'weekly');
+
+        Alert.alert(
+          isDowngrade ? 'Downgrade Plan' : 'Change Plan',
+          `Are you sure you want to ${isDowngrade ? 'downgrade' : 'change'} to the ${plan.name} plan? Your new plan will take effect on your next billing cycle. No charge will be applied now.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Confirm',
+              onPress: async () => {
+                try {
+                  // Change the plan in Supabase without charging
+                  await changePlan(planId as SubscriptionPlan);
+
+                  setIsBillingModalVisible(false);
+
+                  // Reload user data to reflect changes
+                  await loadUserData();
+
+                  Alert.alert(
+                    'Plan Changed',
+                    `Your plan has been updated to ${plan.name}. You will be charged ${plan.price.split('/')[0]} starting next billing cycle.`
+                  );
+                } catch (error) {
+                  console.error('Error changing plan:', error);
+                  Alert.alert('Error', 'Failed to change plan. Please try again.');
+                }
+              }
             }
-          }
-        ]
-      );
+          ]
+        );
+      } else {
+        // New subscription - would integrate with payment processor
+        Alert.alert(
+          'Subscribe to ' + plan.name,
+          `You selected the ${plan.name} plan for ${plan.price}. This will redirect to the payment processor.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Continue',
+              onPress: () => {
+                setIsBillingModalVisible(false);
+                // Here you would redirect to payment processor
+                Alert.alert('Payment', 'Payment integration would happen here!');
+              }
+            }
+          ]
+        );
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to process subscription. Please try again.');
     }
   };
 
   const handleCancelSubscription = async () => {
-    const currentSub = getCurrentSubscriptionDisplay();
-
     Alert.alert(
       'Cancel Subscription',
       'Are you sure you want to cancel your subscription? You will lose access to Pro features at the end of your current billing period.',
@@ -398,8 +511,8 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               // Here you would call your cancel subscription API
-              const renewalDateStr = currentSub.renewalDate
-                ? new Date(currentSub.renewalDate).toLocaleDateString('en-US', {
+              const renewalDateStr = subscriptionDisplay.renewalDate
+                ? new Date(subscriptionDisplay.renewalDate).toLocaleDateString('en-US', {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric'
@@ -464,7 +577,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
           <Text style={styles.email}>{user?.isGuest ? 'Guest' : user?.email}</Text>
-          <Text style={styles.plan}>{currentPlan} Plan</Text>
+          <Text style={styles.plan}>{currentPlan}</Text>
           <Text style={styles.name}>{user?.isGuest ? '' : (profile?.full_name || '')}</Text>
         </View>
 
@@ -683,7 +796,7 @@ export default function ProfileScreen() {
               <View style={styles.logoGlow}>
                 <View style={styles.logo}>
                   <Image
-                    source={require('../../assets/App-Icon.png')}
+                    source={require('../../assets/Thumbnail-Icon2.png')}
                     style={styles.logoImage}
                     resizeMode="contain"
                   />
@@ -701,30 +814,43 @@ export default function ProfileScreen() {
 
             {/* Plans */}
             <View style={styles.plansContainer}>
-              {subscriptionPlans.map((plan) => (
-                <TouchableOpacity
-                  key={plan.id}
-                  style={[
-                    styles.planCard,
-                    selectedPlan === plan.id && styles.selectedPlan,
-                    plan.hasTrial && styles.popularPlan,
-                  ]}
-                  onPress={() => setSelectedPlan(plan.id)}
-                >
-                  {plan.hasTrial && selectedPlan === plan.id && (
-                    <View style={styles.popularBadge}>
-                      <Text style={styles.popularText}>3 DAY FREE TRIAL</Text>
+              {subscriptionPlans.map((plan) => {
+                // Check if this is the user's active plan
+                const isActivePlan = subscriptionDisplay.status === 'active' && (
+                  (plan.id === 'yearly' && subscriptionDisplay.plan.includes('Yearly')) ||
+                  (plan.id === 'monthly' && subscriptionDisplay.plan.includes('Monthly')) ||
+                  (plan.id === 'weekly' && subscriptionDisplay.plan.includes('Weekly'))
+                );
+
+                return (
+                  <TouchableOpacity
+                    key={plan.id}
+                    style={[
+                      styles.planCard,
+                      selectedPlan === plan.id && styles.selectedPlan,
+                      isActivePlan && styles.disabledPlan,
+                    ]}
+                    onPress={() => !isActivePlan && setSelectedPlan(plan.id)}
+                    disabled={isActivePlan}
+                  >
+                    {isActivePlan && (
+                      <View style={styles.activeBadge}>
+                        <Text style={styles.activeText}>CURRENT PLAN</Text>
+                      </View>
+                    )}
+                    <View style={[styles.planRadio, isActivePlan && styles.disabledRadio]}>
+                      {selectedPlan === plan.id && !isActivePlan && <View style={styles.planRadioSelected} />}
                     </View>
-                  )}
-                  <View style={styles.planRadio}>
-                    {selectedPlan === plan.id && <View style={styles.planRadioSelected} />}
-                  </View>
-                  <View style={styles.planContent}>
-                    <Text style={styles.planName}>{plan.name}</Text>
-                  </View>
-                  <Text style={styles.planPrice}>{plan.price}</Text>
-                </TouchableOpacity>
-              ))}
+                    <View style={styles.planContent}>
+                      <Text style={[styles.planName, isActivePlan && styles.disabledText]}>{plan.name}</Text>
+                    </View>
+                    <View style={styles.planPricing}>
+                      <Text style={[styles.planPrice, isActivePlan && styles.disabledText]}>{plan.price}</Text>
+                      <Text style={[styles.planSubtext, isActivePlan && styles.disabledText]}>{plan.imageLimit}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* Trial Info */}
@@ -768,21 +894,21 @@ export default function ProfileScreen() {
                 <Text style={styles.currentPlanTitle}>Current Plan</Text>
                 <View style={styles.planDetailsCard}>
                   <View style={styles.planInfo}>
-                    <Text style={styles.planNameText}>{getCurrentSubscriptionDisplay().plan}</Text>
-                    <Text style={styles.planPriceText}>{getCurrentSubscriptionDisplay().price}</Text>
+                    <Text style={styles.planNameText}>{subscriptionDisplay.plan}</Text>
+                    <Text style={styles.planPriceText}>{subscriptionDisplay.price}</Text>
                   </View>
-                  {getCurrentSubscriptionDisplay().status === 'active' && (
+                  {subscriptionDisplay.status === 'active' && (
                     <View style={styles.statusBadge}>
                       <Text style={styles.statusText}>Active</Text>
                     </View>
                   )}
                 </View>
 
-                {getCurrentSubscriptionDisplay().renewalDate && (
+                {subscriptionDisplay.renewalDate && (
                   <View style={styles.renewalInfo}>
                     <Text style={styles.renewalLabel}>Next Billing Date</Text>
                     <Text style={styles.renewalDate}>
-                      {new Date(getCurrentSubscriptionDisplay().renewalDate).toLocaleDateString('en-US', {
+                      {new Date(subscriptionDisplay.renewalDate).toLocaleDateString('en-US', {
                         weekday: 'long',
                         year: 'numeric',
                         month: 'long',
@@ -797,7 +923,9 @@ export default function ProfileScreen() {
                     style={styles.upgradeButton}
                     onPress={handleUpgradeFromBilling}
                   >
-                    <Text style={styles.upgradeButtonText}>Upgrade Plan</Text>
+                    <Text style={styles.upgradeButtonText}>
+                      {subscriptionDisplay.plan.includes('Yearly') ? 'Downgrade Plan' : 'Upgrade Plan'}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -1252,6 +1380,37 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 1,
   },
+  disabledPlan: {
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    opacity: 0.5,
+  },
+  disabledRadio: {
+    borderColor: '#5a6069',
+  },
+  disabledText: {
+    color: '#5a6069',
+  },
+  activeBadge: {
+    position: 'absolute',
+    top: -10,
+    alignSelf: 'center',
+    backgroundColor: '#059669',
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 10,
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  activeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
   planRadio: {
     width: 24,
     height: 24,
@@ -1276,10 +1435,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
   },
+  planPricing: {
+    alignItems: 'flex-end',
+  },
   planPrice: {
     fontSize: 14,
     fontWeight: '500',
     color: '#a0a8b8',
+  },
+  planSubtext: {
+    fontSize: 12,
+    color: '#a0a8b8',
+    opacity: 0.7,
+    marginTop: 2,
   },
   trialInfo: {
     fontSize: 13,
@@ -1361,6 +1529,17 @@ const styles = StyleSheet.create({
   planPriceText: {
     fontSize: 16,
     color: MUTED,
+  },
+  statusBadge: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  statusText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   renewalInfo: {
     backgroundColor: BG,

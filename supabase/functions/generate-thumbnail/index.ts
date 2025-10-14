@@ -390,8 +390,8 @@ serve(async (req: Request) => {
     const isUsingBlankFrame = !baseImageUrl && !!blankFrameUrl;
 
     // Create 3 distinct variation prompts
-    const variation1Prompt = `${finalPrompt} Style: Bold and dramatic with high contrast colors.`;
-    const variation2Prompt = `${finalPrompt} Style: Vibrant and energetic with dynamic composition and bright colors.`;
+    const variation1Prompt = `${finalPrompt} Style: Bold and dramatic, high contrast colors with a sleek modern design.`;
+    const variation2Prompt = `${finalPrompt} Style: Energetic with dynamic composition and aesthetic colors.`;
     const variation3Prompt = `${finalPrompt} Style: Clean and minimal with soft colors and simple composition.`;
 
     // Generate 3 variations in parallel with different prompts

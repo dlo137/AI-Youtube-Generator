@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { saveSubscriptionInfo } from '../src/utils/subscriptionStorage';
+import { updateSubscriptionInProfile } from '../src/features/subscription/api';
 import Svg, { Path } from 'react-native-svg';
 
 // Conditionally import InAppPurchases to handle Expo Go limitation
@@ -63,16 +64,28 @@ export default function SubscriptionScreen() {
               if (!purchase.acknowledged) {
                 console.log('Purchase successful:', purchase);
 
-                // Save subscription info
+                // Save subscription info to local storage
                 try {
                   await saveSubscriptionInfo({
                     isActive: true,
                     productId: purchase.productId,
                     purchaseDate: new Date().toISOString(),
-                    // For subscriptions, you'd calculate expiry based on product type
                   });
                 } catch (error) {
-                  console.error('Error saving subscription info:', error);
+                  console.error('Error saving subscription info to local storage:', error);
+                }
+
+                // Update subscription in Supabase profile
+                try {
+                  await updateSubscriptionInProfile(
+                    purchase.productId,
+                    purchase.transactionId || purchase.orderId || 'unknown',
+                    purchase.purchaseTime ? new Date(purchase.purchaseTime).toISOString() : undefined
+                  );
+                  console.log('Successfully updated subscription in Supabase profile');
+                } catch (error) {
+                  console.error('Error updating subscription in Supabase profile:', error);
+                  // Continue anyway - user purchased successfully
                 }
 
                 // Acknowledge the purchase
@@ -105,14 +118,32 @@ export default function SubscriptionScreen() {
 
   const handleSubscribe = async (plan: string) => {
     if (loading) return;
-    
+
     // Handle development mode (Expo Go)
     if (!InAppPurchases) {
       Alert.alert(
-        'Development Mode', 
+        'Development Mode',
         'In-app purchases are not available in Expo Go. This will work in a development build or production.',
         [
-          { text: 'Continue Anyway', onPress: () => router.replace('/(tabs)/generate') },
+          {
+            text: 'Continue Anyway',
+            onPress: async () => {
+              // Update Supabase profile with mock subscription data for testing
+              try {
+                const productId = PRODUCT_IDS[plan as keyof typeof PRODUCT_IDS];
+                await updateSubscriptionInProfile(
+                  productId,
+                  'dev-test-' + Date.now(),
+                  new Date().toISOString()
+                );
+                console.log('Successfully updated subscription in Supabase profile (dev mode)');
+              } catch (error) {
+                console.error('Error updating subscription in dev mode:', error);
+              }
+
+              router.replace('/(tabs)/generate');
+            }
+          },
           { text: 'Cancel', style: 'cancel' }
         ]
       );
@@ -156,7 +187,7 @@ export default function SubscriptionScreen() {
         );
         
         if (validPurchase) {
-          // Save restored subscription info
+          // Save restored subscription info to local storage
           try {
             await saveSubscriptionInfo({
               isActive: true,
@@ -164,9 +195,22 @@ export default function SubscriptionScreen() {
               purchaseDate: validPurchase.purchaseTime?.toString() || new Date().toISOString(),
             });
           } catch (error) {
-            console.error('Error saving restored subscription info:', error);
+            console.error('Error saving restored subscription info to local storage:', error);
           }
-          
+
+          // Update subscription in Supabase profile
+          try {
+            await updateSubscriptionInProfile(
+              validPurchase.productId,
+              validPurchase.transactionId || validPurchase.orderId || 'restored',
+              validPurchase.purchaseTime?.toString()
+            );
+            console.log('Successfully restored subscription in Supabase profile');
+          } catch (error) {
+            console.error('Error restoring subscription in Supabase profile:', error);
+            // Continue anyway - user has valid purchase
+          }
+
           Alert.alert('Success!', 'Your purchases have been restored!', [
             { text: 'OK', onPress: () => router.replace('/(tabs)/generate') }
           ]);
@@ -236,7 +280,7 @@ export default function SubscriptionScreen() {
           <View style={styles.logoGlow}>
             <View style={styles.logo}>
               <Image
-                source={require('../assets/App-Icon.png')}
+                source={require('../assets/Thumbnail-Icon2.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
@@ -254,27 +298,24 @@ export default function SubscriptionScreen() {
 
         {/* Plans */}
         <View style={styles.plansContainer}>
-          {/* Yearly Plan - Most Popular */}
+          {/* Weekly Plan */}
           <TouchableOpacity
             style={[
               styles.planCard,
-              selectedPlan === 'yearly' && styles.selectedPlan,
-              styles.popularPlan,
+              selectedPlan === 'weekly' && styles.selectedPlan,
             ]}
-            onPress={() => setSelectedPlan('yearly')}
+            onPress={() => setSelectedPlan('weekly')}
           >
-            {selectedPlan === 'yearly' && (
-              <View style={styles.popularBadge}>
-                <Text style={styles.popularText}>3 DAY FREE TRIAL</Text>
-              </View>
-            )}
             <View style={styles.planRadio}>
-              {selectedPlan === 'yearly' && <View style={styles.planRadioSelected} />}
+              {selectedPlan === 'weekly' && <View style={styles.planRadioSelected} />}
             </View>
             <View style={styles.planContent}>
-              <Text style={styles.planName}>Yearly</Text>
+              <Text style={styles.planName}>Weekly</Text>
             </View>
-            <Text style={styles.planPrice}>{formatPrice('yearly', '$0.96/week')}</Text>
+            <View style={styles.planPricing}>
+              <Text style={styles.planPrice}>{formatPrice('weekly', '$2.99/week')}</Text>
+              <Text style={styles.planSubtext}>30 images per month</Text>
+            </View>
           </TouchableOpacity>
 
           {/* Monthly Plan */}
@@ -291,30 +332,42 @@ export default function SubscriptionScreen() {
             <View style={styles.planContent}>
               <Text style={styles.planName}>Monthly</Text>
             </View>
-            <Text style={styles.planPrice}>{formatPrice('monthly', '$1.50/week')}</Text>
+            <View style={styles.planPricing}>
+              <Text style={styles.planPrice}>{formatPrice('monthly', '$1.50/week')}</Text>
+              <Text style={styles.planSubtext}>75 images per month</Text>
+            </View>
           </TouchableOpacity>
 
-          {/* Weekly Plan */}
+          {/* Yearly Plan - Most Popular */}
           <TouchableOpacity
             style={[
               styles.planCard,
-              selectedPlan === 'weekly' && styles.selectedPlan,
+              selectedPlan === 'yearly' && styles.selectedPlan,
+              styles.popularPlan,
             ]}
-            onPress={() => setSelectedPlan('weekly')}
+            onPress={() => setSelectedPlan('yearly')}
           >
+            {/* {selectedPlan === 'yearly' && (
+              <View style={styles.popularBadge}>
+                <Text style={styles.popularText}>3 DAY FREE TRIAL</Text>
+              </View>
+            )} */}
             <View style={styles.planRadio}>
-              {selectedPlan === 'weekly' && <View style={styles.planRadioSelected} />}
+              {selectedPlan === 'yearly' && <View style={styles.planRadioSelected} />}
             </View>
             <View style={styles.planContent}>
-              <Text style={styles.planName}>Weekly</Text>
+              <Text style={styles.planName}>Yearly</Text>
             </View>
-            <Text style={styles.planPrice}>{formatPrice('weekly', '$2.99/week')}</Text>
+            <View style={styles.planPricing}>
+              <Text style={styles.planPrice}>{formatPrice('yearly', '$1.15/week')}</Text>
+              <Text style={styles.planSubtext}>90 images per month</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
         {/* Trial Info */}
         <Text style={styles.trialInfo}>
-          {selectedPlan === 'yearly' && 'Free for 3 days, then $49.99 / year.\nNo payment now'}
+          {selectedPlan === 'yearly' && 'Billed yearly at $59.99.\nCancel anytime'}
           {selectedPlan === 'monthly' && 'Billed monthly at $5.99.\nCancel anytime'}
           {selectedPlan === 'weekly' && 'Billed weekly at $2.99.\nCancel anytime'}
         </Text>
@@ -527,6 +580,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: TEXT,
+  },
+  planPricing: {
+    alignItems: 'flex-end',
   },
   planPrice: {
     fontSize: 14,

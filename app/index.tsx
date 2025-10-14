@@ -123,7 +123,7 @@ export default function WelcomeScreen() {
             ]}
           />
           <Animated.Image
-            source={require('../assets/home.png')}
+            source={step === 1 ? require('../assets/home.png') : step === 2 ? require('../assets/history.png') : require('../assets/home.png')}
             style={[
               styles.heroImage,
               {
@@ -149,7 +149,7 @@ export default function WelcomeScreen() {
           style={styles.getStartedButton}
           onPress={handleGetStarted}
         >
-          <Text style={styles.getStartedButtonText}>Continue</Text>
+          <Text style={styles.getStartedButtonText}>{step === 3 ? "Let's get started" : "Continue"}</Text>
         </TouchableOpacity>
 
         <View style={styles.loginContainer}>
@@ -174,10 +174,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: 'space-evenly',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 40,
+    paddingVertical: 20,
+    gap: 20,
   },
   imageContainer: {
     position: 'relative',
@@ -203,14 +204,15 @@ const styles = StyleSheet.create({
   heroImage: {
     width: '100%',
     height: 600,
-    marginBottom: 20,
+    marginTop: -30,
+    marginBottom: -30,
     zIndex: 1,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
     color: TEXT,
-    marginBottom: 24,
+    marginBottom: 6,
     textAlign: 'center',
   },
   getStartedButton: {
@@ -219,7 +221,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 48,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 0,
     shadowColor: '#1e40af',
     shadowOffset: {
       width: 0,

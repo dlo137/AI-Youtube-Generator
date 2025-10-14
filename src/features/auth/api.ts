@@ -1,4 +1,6 @@
 import { supabase, redirectTo } from "../../../lib/supabase";
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 
 export async function signUpEmail(email: string, password: string, fullName?: string) {
   const { data, error } = await supabase.auth.signUp({
@@ -74,13 +76,106 @@ export async function getCurrentUser() {
   return user;
 }
 
+/**
+ * Delete the current user's account from Supabase
+ */
+export async function deleteAccount(): Promise<void> {
+  try {
+    // Get current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Delete user's profile data first
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', user.id);
+
+    if (profileError) {
+      console.error('Error deleting profile:', profileError);
+      // Continue anyway - profile might not exist or might be cascade deleted
+    }
+
+    // Try to delete via edge function first (if deployed)
+    try {
+      const { error: deleteError } = await supabase.functions.invoke('delete-user', {
+        body: { userId: user.id }
+      });
+
+      if (!deleteError) {
+        // Successfully deleted via edge function
+        await supabase.auth.signOut();
+        return;
+      }
+    } catch (edgeFunctionError) {
+      console.log('Edge function not available, continuing with sign out');
+    }
+
+    // If edge function fails or isn't available, just sign out the user
+    // The account will remain in Supabase but the user will be logged out
+    // They can contact support to fully delete if needed
+    await supabase.auth.signOut();
+
+    console.log('User signed out. Note: Account data may still exist in Supabase. Contact support for full deletion.');
+  } catch (error) {
+    console.error('Delete account error:', error);
+    throw error;
+  }
+}
+
 export async function signInWithApple() {
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'apple',
-    options: {
-      redirectTo: redirectTo,
-    },
-  });
-  if (error) throw error;
-  return data;
+  try {
+    // Request Apple authentication
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+
+    // Extract the necessary data
+    const { identityToken, authorizationCode, fullName } = credential;
+
+    if (!identityToken) {
+      throw new Error('No identity token returned from Apple');
+    }
+
+    // Use Supabase OAuth with Apple - pass the token for server-side validation
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: 'apple',
+      token: identityToken,
+      options: {
+        captchaToken: authorizationCode || undefined,
+      }
+    });
+
+    if (error) throw error;
+
+    // Update profile with full name if provided by Apple
+    if (data.user && fullName) {
+      const fullNameString = [
+        fullName.givenName,
+        fullName.familyName,
+      ]
+        .filter(Boolean)
+        .join(' ');
+
+      if (fullNameString) {
+        await supabase
+          .from('profiles')
+          .update({ full_name: fullNameString })
+          .eq('id', data.user.id);
+      }
+    }
+
+    return data;
+  } catch (error: any) {
+    if (error.code === 'ERR_REQUEST_CANCELED') {
+      throw new Error('Sign in was canceled');
+    }
+    throw error;
+  }
 }

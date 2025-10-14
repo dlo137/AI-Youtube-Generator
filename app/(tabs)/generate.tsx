@@ -11,6 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
 import { saveThumbnail, addThumbnailToHistory, getSavedThumbnails, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 import { getCredits, deductCredit } from '../../src/utils/subscriptionStorage';
+import { useCredits } from '../../src/contexts/CreditsContext';
 
 // Create Animated SVG components
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -75,6 +76,7 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
 };
 
 export default function GenerateScreen() {
+  const { refreshCredits } = useCredits();
   const [topic, setTopic] = useState('');
   const [duration, setDuration] = useState(''); // kept for existing logic
   const [style, setStyle] = useState('educational'); // kept for existing logic
@@ -455,8 +457,11 @@ export default function GenerateScreen() {
       });
       setModalPrompt('');
 
-      // Deduct 1 credit for successful edit
-      await deductCredit();
+      // Deduct 1 credit for successful edit (only 1 image generated in edit mode)
+      await deductCredit(1);
+
+      // Refresh credits display immediately
+      await refreshCredits();
 
       Alert.alert('Success!', 'Your thumbnail has been adjusted');
 
@@ -747,8 +752,8 @@ export default function GenerateScreen() {
     const credits = await getCredits();
     if (credits.current <= 0) {
       Alert.alert(
-        'No Credits',
-        'You have run out of credits. Please upgrade your plan to continue generating thumbnails.',
+        'Subscription Required',
+        'You need an active subscription to generate thumbnails. Please subscribe to continue.',
         [{ text: 'OK' }]
       );
       return;
@@ -837,8 +842,11 @@ export default function GenerateScreen() {
         };
         setAllGenerations(prev => [newGeneration, ...prev]);
 
-        // Deduct 1 credit for successful generation (3 images = 1 credit)
-        await deductCredit();
+        // Deduct 3 credits for successful generation (1 credit per image, 3 images generated)
+        await deductCredit(3);
+
+        // Refresh credits display immediately
+        await refreshCredits();
 
         // Clear subject and reference images after successful generation
         if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {
@@ -1160,14 +1168,8 @@ export default function GenerateScreen() {
             value={topic}
             onChangeText={setTopic}
             multiline
-            onSubmitEditing={handleGenerate}
             blurOnSubmit={true}
             returnKeyType="send"
-            onKeyPress={({ nativeEvent }) => {
-              if (nativeEvent.key === 'Enter' && topic.trim()) {
-                handleGenerate();
-              }
-            }}
           />
           <TouchableOpacity
             style={[styles.sendBtn, (!topic || isLoading) && styles.sendBtnDisabled]}
