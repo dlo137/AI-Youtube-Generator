@@ -13,6 +13,7 @@ const PRODUCT_IDS = {
 
 export default function SubscriptionScreen() {
   const router = useRouter();
+  const routerRef = useRef(router);
   const [selectedPlan, setSelectedPlan] = useState<'yearly' | 'monthly' | 'weekly'>('yearly');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [products, setProducts] = useState<any[]>([]);
@@ -21,8 +22,63 @@ export default function SubscriptionScreen() {
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
   const hasProcessedOrphansRef = useRef<boolean>(false);
 
+  // Keep router ref updated
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+
+  // Debug state
+  const [debugInfo, setDebugInfo] = useState<any>({
+    listenerStatus: 'Not started',
+    connectionStatus: { isConnected: false, hasListener: false },
+    lastPurchaseResult: null,
+    timestamp: new Date().toISOString()
+  });
+  const [showDebug, setShowDebug] = useState(true); // Set to false to hide debug panel
+
   // Check if IAP is available
   const isIAPAvailable = IAPService.isAvailable();
+
+  // Stable callback for IAP events
+  const handleIAPCallback = useCallback((info: any) => {
+    console.log('[SUBSCRIPTION] IAP Debug:', info);
+
+    // Update debug info
+    setDebugInfo((prev: any) => ({
+      ...prev,
+      ...info,
+      connectionStatus: IAPService.getConnectionStatus(),
+      timestamp: new Date().toISOString()
+    }));
+
+    // Handle successful purchase - navigate to generate screen
+    if (info.listenerStatus?.includes('SUCCESS') || info.listenerStatus?.includes('Navigating')) {
+      console.log('[SUBSCRIPTION] Purchase successful! Navigating to generate screen...');
+      setCurrentPurchaseAttempt(null);
+
+      // Use router ref to ensure we have the latest router instance
+      const currentRouter = routerRef.current;
+      if (currentRouter && typeof currentRouter.replace === 'function') {
+        console.log('[SUBSCRIPTION] Router available, navigating now...');
+        setTimeout(() => {
+          currentRouter.replace('/(tabs)/generate');
+        }, 500);
+      } else {
+        console.error('[SUBSCRIPTION] Router not available or replace function missing!', currentRouter);
+        // Fallback: try direct navigation
+        try {
+          router.replace('/(tabs)/generate');
+        } catch (err) {
+          console.error('[SUBSCRIPTION] Fallback navigation failed:', err);
+        }
+      }
+    }
+
+    // Update loading state based on listener status
+    if (info.listenerStatus?.includes('CANCELLED') || info.listenerStatus?.includes('FAILED') || info.listenerStatus?.includes('TIMEOUT')) {
+      setCurrentPurchaseAttempt(null);
+    }
+  }, [router]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -33,6 +89,14 @@ export default function SubscriptionScreen() {
 
     initializeIAP();
   }, []);
+
+  // Re-register callback whenever it changes
+  useEffect(() => {
+    if (iapReady) {
+      console.log('[SUBSCRIPTION] Re-registering IAP callback');
+      IAPService.setDebugCallback(handleIAPCallback);
+    }
+  }, [handleIAPCallback, iapReady]);
 
   const initializeIAP = async () => {
     if (!isIAPAvailable) {
@@ -45,14 +109,8 @@ export default function SubscriptionScreen() {
       setIapReady(initialized);
 
       if (initialized) {
-        // Set up debug callback
-        IAPService.setDebugCallback((info) => {
-          console.log('[SUBSCRIPTION] IAP Debug:', info);
-          // Update loading state based on listener status
-          if (info.listenerStatus?.includes('CANCELLED') || info.listenerStatus?.includes('FAILED') || info.listenerStatus?.includes('TIMEOUT')) {
-            setCurrentPurchaseAttempt(null);
-          }
-        });
+        // Set up debug callback using the stable callback
+        IAPService.setDebugCallback(handleIAPCallback);
 
         // Check for orphaned transactions on startup
         if (!hasProcessedOrphansRef.current) {
@@ -340,6 +398,105 @@ export default function SubscriptionScreen() {
           </LinearGradient>
         </TouchableOpacity>
       </View>
+
+      {/* Debug Panel */}
+      {showDebug && (
+        <View style={styles.debugPanel}>
+          <View style={styles.debugHeader}>
+            <Text style={styles.debugTitle}>🔧 IAP Debug Monitor</Text>
+            <TouchableOpacity onPress={() => setShowDebug(false)} style={styles.debugCloseButton}>
+              <Text style={styles.debugCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.debugContent} showsVerticalScrollIndicator={true}>
+            {/* Status Indicator */}
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Current Status</Text>
+              <View style={styles.debugRow}>
+                <View style={[styles.statusIndicator, currentPurchaseAttempt ? styles.statusActive : styles.statusInactive]} />
+                <Text style={styles.debugText}>{debugInfo.listenerStatus || 'Idle'}</Text>
+              </View>
+            </View>
+
+            {/* Connection Info */}
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Connection</Text>
+              <Text style={styles.debugText}>
+                IAP Available: {isIAPAvailable ? '✅' : '❌'}
+              </Text>
+              <Text style={styles.debugText}>
+                Connected: {debugInfo.connectionStatus?.isConnected ? '✅' : '❌'}
+              </Text>
+              <Text style={styles.debugText}>
+                Listener Active: {debugInfo.connectionStatus?.hasListener ? '✅' : '❌'}
+              </Text>
+              <Text style={styles.debugText}>
+                IAP Ready: {iapReady ? '✅' : '❌'}
+              </Text>
+            </View>
+
+            {/* Purchase Info */}
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Purchase State</Text>
+              <Text style={styles.debugText}>
+                Current Attempt: {currentPurchaseAttempt || 'None'}
+              </Text>
+              <Text style={styles.debugText}>
+                Selected Plan: {selectedPlan}
+              </Text>
+              <Text style={styles.debugText}>
+                Products Loaded: {products.length}
+              </Text>
+            </View>
+
+            {/* Last Purchase Result */}
+            {debugInfo.lastPurchaseResult && (
+              <View style={styles.debugSection}>
+                <Text style={styles.debugSectionTitle}>Last Purchase Result</Text>
+                <Text style={[styles.debugText, styles.debugCode]}>
+                  {JSON.stringify(debugInfo.lastPurchaseResult, null, 2)}
+                </Text>
+              </View>
+            )}
+
+            {/* Timestamp */}
+            <View style={styles.debugSection}>
+              <Text style={styles.debugTextSmall}>
+                Last Update: {new Date(debugInfo.timestamp).toLocaleTimeString()}
+              </Text>
+            </View>
+
+            {/* Manual Check Button */}
+            <TouchableOpacity
+              style={styles.debugButton}
+              onPress={() => {
+                const status = IAPService.getConnectionStatus();
+                const lastResult = IAPService.getLastPurchaseResult();
+                setDebugInfo((prev: any) => ({
+                  ...prev,
+                  connectionStatus: status,
+                  lastPurchaseResult: lastResult,
+                  timestamp: new Date().toISOString(),
+                  manualCheck: true
+                }));
+              }}
+            >
+              <Text style={styles.debugButtonText}>🔄 Refresh Debug Info</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Show Debug Button when panel is hidden */}
+      {!showDebug && (
+        <TouchableOpacity
+          style={styles.showDebugButton}
+          onPress={() => setShowDebug(true)}
+        >
+          <Text style={styles.showDebugText}>🔧</Text>
+        </TouchableOpacity>
+      )}
     </LinearGradient>
   );
 }
@@ -520,5 +677,140 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
     letterSpacing: 0.5,
+  },
+  // Debug Panel Styles
+  debugPanel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '40%',
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#1e40af',
+    shadowColor: '#1e40af',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  debugHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e40af',
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e40af',
+  },
+  debugCloseButton: {
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(30, 64, 175, 0.2)',
+    borderRadius: 15,
+  },
+  debugCloseText: {
+    fontSize: 18,
+    color: '#1e40af',
+  },
+  debugContent: {
+    flex: 1,
+    padding: 15,
+  },
+  debugSection: {
+    marginBottom: 15,
+    padding: 10,
+    backgroundColor: 'rgba(30, 64, 175, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 64, 175, 0.3)',
+  },
+  debugSectionTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#60a5fa',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  debugRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  statusIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  statusActive: {
+    backgroundColor: '#22c55e',
+    shadowColor: '#22c55e',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  statusInactive: {
+    backgroundColor: '#6b7280',
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#e5e7eb',
+    marginVertical: 3,
+    fontFamily: 'monospace',
+  },
+  debugTextSmall: {
+    fontSize: 10,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  debugCode: {
+    fontSize: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 8,
+    borderRadius: 4,
+    color: '#10b981',
+  },
+  debugButton: {
+    backgroundColor: '#1e40af',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  debugButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  showDebugButton: {
+    position: 'absolute',
+    bottom: 120,
+    right: 20,
+    width: 50,
+    height: 50,
+    backgroundColor: '#1e40af',
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#1e40af',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  showDebugText: {
+    fontSize: 24,
   },
 });

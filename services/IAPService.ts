@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as IAP from 'expo-in-app-purchases';
-import { router } from 'expo-router';
 import { Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 
@@ -162,6 +161,125 @@ class IAPService {
     }
   }
 
+  private longTermCheckTimer: NodeJS.Timeout | null = null;
+  private longTermCheckAttempt: number = 0;
+
+  private async startLongTermBackgroundCheck() {
+    // Clear any existing timer
+    if (this.longTermCheckTimer) {
+      clearTimeout(this.longTermCheckTimer);
+    }
+
+    const maxLongTermAttempts = 24; // 24 attempts * 5 seconds = 2 minutes
+    this.longTermCheckAttempt = 0;
+
+    const checkPeriodically = async () => {
+      this.longTermCheckAttempt++;
+      console.log(`[IAP-SERVICE] LONG-TERM CHECK: Attempt ${this.longTermCheckAttempt}/${maxLongTermAttempts}`);
+
+      try {
+        const history = await IAP.getPurchaseHistoryAsync();
+
+        if (history?.responseCode === IAP.IAPResponseCode.OK && history.results?.length) {
+          const matchingPurchases = history.results.filter((p: any) => {
+            const txId = p.transactionId || p.orderId;
+            const isCorrectProduct = p.productId === this.currentPurchaseProductId;
+            const isNotProcessed = !this.processedIds.has(txId);
+            return isCorrectProduct && isNotProcessed;
+          });
+
+          if (matchingPurchases.length > 0) {
+            console.log('[IAP-SERVICE] LONG-TERM CHECK: Found purchase! Processing...');
+
+            if (this.longTermCheckTimer) {
+              clearTimeout(this.longTermCheckTimer);
+              this.longTermCheckTimer = null;
+            }
+
+            await this.processPurchases(matchingPurchases, 'fallback');
+            return;
+          }
+        }
+
+        // Continue checking if we haven't hit max attempts
+        if (this.longTermCheckAttempt < maxLongTermAttempts) {
+          this.longTermCheckTimer = setTimeout(checkPeriodically, 5000);
+        } else {
+          console.log('[IAP-SERVICE] LONG-TERM CHECK: Max attempts reached - stopping');
+          await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+          this.currentPurchaseStartTime = null;
+          this.currentPurchaseProductId = null;
+
+          if (this.debugCallback) {
+            this.debugCallback({
+              listenerStatus: 'TIMEOUT ❌ (Purchase not confirmed)'
+            });
+          }
+
+          Alert.alert(
+            'Purchase Not Confirmed',
+            'We couldn\'t confirm your purchase with the App Store. If you were charged, please use "Restore Purchases" to activate your subscription.',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        console.error('[IAP-SERVICE] LONG-TERM CHECK: Error:', error);
+        // Continue checking even on errors
+        if (this.longTermCheckAttempt < maxLongTermAttempts) {
+          this.longTermCheckTimer = setTimeout(checkPeriodically, 5000);
+        }
+      }
+    };
+
+    // Start first check
+    this.longTermCheckTimer = setTimeout(checkPeriodically, 5000);
+  }
+
+  async manualPurchaseCheck() {
+    console.log('[IAP-SERVICE] MANUAL CHECK: User requested manual check');
+
+    try {
+      const history = await IAP.getPurchaseHistoryAsync();
+
+      if (history?.responseCode === IAP.IAPResponseCode.OK && history.results?.length) {
+        const matchingPurchases = history.results.filter((p: any) => {
+          const txId = p.transactionId || p.orderId;
+          const isCorrectProduct = p.productId === this.currentPurchaseProductId;
+          const isNotProcessed = !this.processedIds.has(txId);
+          return isCorrectProduct && isNotProcessed;
+        });
+
+        if (matchingPurchases.length > 0) {
+          console.log('[IAP-SERVICE] MANUAL CHECK: Found purchase!');
+
+          // Clear long-term check timer
+          if (this.longTermCheckTimer) {
+            clearTimeout(this.longTermCheckTimer);
+            this.longTermCheckTimer = null;
+          }
+
+          await this.processPurchases(matchingPurchases, 'fallback');
+          Alert.alert('Success!', 'Your purchase has been found and activated.');
+        } else {
+          Alert.alert(
+            'Still Checking',
+            'Purchase not found yet. This can take a few minutes. We\'re still checking in the background.',
+            [{ text: 'OK' }]
+          );
+        }
+      } else {
+        Alert.alert(
+          'Connection Issue',
+          'Could not connect to App Store. Please check your internet connection and try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[IAP-SERVICE] MANUAL CHECK: Error:', error);
+      Alert.alert('Error', 'Failed to check purchases. Please try again.');
+    }
+  }
+
   private async startEnhancedFallbackCheck() {
     let attempt = 0;
     const maxAttempts = 10;
@@ -227,29 +345,34 @@ class IAPService {
 
           setTimeout(checkForPurchase, checkIntervals[attempt]);
         } else {
-          console.log('[IAP-SERVICE] FALLBACK: All attempts exhausted');
-          await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+          console.log('[IAP-SERVICE] FALLBACK: All attempts exhausted - starting continuous background check');
 
-          // Clear session tracking
-          this.currentPurchaseStartTime = null;
-          this.currentPurchaseProductId = null;
+          // Don't clear the in-flight flag yet - we'll keep checking
+          // await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
 
           if (this.debugCallback) {
             this.debugCallback({
-              listenerStatus: 'TIMEOUT ❌ (Purchase not found)'
+              listenerStatus: 'CHECKING IN BACKGROUND... ⏳'
             });
           }
 
-          // Navigate to generate screen anyway - let user try restore purchases there
-          console.log('[IAP-SERVICE] TIMEOUT: Navigating to generate screen - user can restore purchases');
-          setTimeout(() => {
-            router.replace('/(tabs)/generate');
-          }, 100);
+          // Start a longer-term background check (every 5 seconds for 2 minutes)
+          this.startLongTermBackgroundCheck();
 
+          // Show error to user explaining the issue
           Alert.alert(
-            'Purchase Complete',
-            'Your purchase is being processed. If your subscription doesn\'t appear, please use "Restore Purchases" from your profile.',
-            [{ text: 'OK' }]
+            'Connection Issue',
+            'We\'re having trouble connecting to the App Store to confirm your purchase.\n\nPossible issues:\n• Slow internet connection\n• App Store server delay\n• Network timeout\n\nWe\'re still checking in the background. Your purchase is safe - if you were charged, your subscription will activate automatically within a few minutes.',
+            [
+              {
+                text: 'Check Again',
+                onPress: () => this.manualPurchaseCheck()
+              },
+              {
+                text: 'Wait',
+                style: 'cancel'
+              }
+            ]
           );
         }
 
@@ -318,9 +441,11 @@ class IAPService {
         });
 
         // Determine if we should grant entitlement
+        // IMPORTANT: orphan transactions should always be entitled (user already paid)
         const shouldEntitle =
           (source === 'listener' && inFlight) ||
           source === 'restore' ||
+          source === 'orphan' ||  // Always entitle orphaned transactions
           (source === 'fallback' && inFlight);
 
         console.log(`[IAP-SERVICE] Should entitle: ${shouldEntitle}`);
@@ -382,20 +507,16 @@ class IAPService {
           this.currentPurchaseStartTime = null;
           this.currentPurchaseProductId = null;
 
-          // Update debug callback for success
+          // Update debug callback for success - let the callback handler do the navigation
+          console.log(`[IAP-SERVICE] ✅ Purchase complete! Notifying UI from ${source}`);
+
           if (this.debugCallback) {
             this.debugCallback({
-              listenerStatus: 'PURCHASE SUCCESS! ✅ (Navigating...)'
+              listenerStatus: 'PURCHASE SUCCESS! ✅ (Navigating...)',
+              shouldNavigate: true,
+              purchaseComplete: true
             });
           }
-
-          // Navigate to home screen after successful purchase immediately
-          console.log(`[IAP-SERVICE] ✅ Purchase complete! Navigating to generate screen from ${source}`);
-
-          // Use setTimeout to ensure navigation happens after all state updates
-          setTimeout(() => {
-            router.replace('/(tabs)/generate');
-          }, 100);
         }
 
       } catch (error) {
