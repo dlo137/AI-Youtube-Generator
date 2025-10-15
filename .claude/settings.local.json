@@ -31,7 +31,9 @@
       "Bash(npx tsc:*)",
       "Bash(node fix-credits.js)",
       "Bash(export:*)",
-      "Bash(node check-and-fix-all.js)"
+      "Bash(node check-and-fix-all.js)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

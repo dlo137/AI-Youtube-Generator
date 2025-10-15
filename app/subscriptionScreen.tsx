@@ -36,6 +36,15 @@ export default function SubscriptionScreen() {
     }).start();
 
     initializeIAP();
+
+    // Cleanup on unmount
+    return () => {
+      if (InAppPurchases) {
+        InAppPurchases.disconnectAsync().catch((error: any) => {
+          console.log('Error disconnecting IAP:', error);
+        });
+      }
+    };
   }, []);
 
   const initializeIAP = async () => {
@@ -149,17 +158,60 @@ export default function SubscriptionScreen() {
       );
       return;
     }
-    
+
     setLoading(true);
+
+    // Set a timeout in case the purchase listener never fires
+    const purchaseTimeout = setTimeout(() => {
+      setLoading(false);
+      Alert.alert(
+        'Purchase Timeout',
+        'The purchase is taking longer than expected. Please check your purchases in the App Store or try again.',
+        [
+          {
+            text: 'Check Purchase History',
+            onPress: handleRestore
+          },
+          {
+            text: 'OK',
+            style: 'cancel'
+          }
+        ]
+      );
+    }, 60000); // 60 second timeout
+
     try {
       const productId = PRODUCT_IDS[plan as keyof typeof PRODUCT_IDS];
       console.log('Attempting to purchase:', productId);
-      
+
       // Request the purchase
-      await InAppPurchases.purchaseItemAsync(productId);
+      const result = await InAppPurchases.purchaseItemAsync(productId);
+      console.log('Purchase request result:', result);
+
+      // Clear timeout if purchase completes
+      clearTimeout(purchaseTimeout);
+
       // The purchase listener will handle the response
-    } catch (error) {
+      // But set a fallback in case listener doesn't fire
+      setTimeout(() => {
+        if (loading) {
+          console.log('Purchase listener did not respond, checking manually...');
+          setLoading(false);
+          handleRestore(); // Try to restore/verify purchase
+        }
+      }, 5000); // 5 second fallback
+
+    } catch (error: any) {
+      clearTimeout(purchaseTimeout);
       console.error('Error requesting purchase:', error);
+
+      // Check if user cancelled
+      if (error?.code === 'E_USER_CANCELLED' || error?.message?.includes('cancel')) {
+        console.log('User cancelled purchase');
+        setLoading(false);
+        return;
+      }
+
       Alert.alert('Error', 'Failed to start purchase. Please try again.');
       setLoading(false);
     }

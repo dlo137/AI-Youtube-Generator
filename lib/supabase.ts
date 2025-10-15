@@ -19,3 +19,22 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     storageKey: 'supabase.auth.token', // Custom storage key for persistence
   },
 });
+
+// Helper function to check and clear bad tokens
+export const checkAuthErrors = async () => {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+
+    if (error?.message?.includes('audience') || error?.message?.includes('id_token')) {
+      console.log('Invalid token detected, clearing session...');
+      await supabase.auth.signOut();
+      await AsyncStorage.removeItem('supabase.auth.token');
+      return false;
+    }
+
+    return !!session;
+  } catch (error) {
+    console.error('Error checking auth:', error);
+    return false;
+  }
+};
