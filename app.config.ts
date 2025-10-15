@@ -29,7 +29,8 @@ export default {
       icon: "./assets/icon.png",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
-        NSPhotoLibraryUsageDescription: "This app needs access to your photo library to save generated thumbnails."
+        NSPhotoLibraryUsageDescription: "This app needs access to your photo library to save generated thumbnails.",
+        NSPhotoLibraryAddUsageDescription: "This app needs permission to save thumbnails to your photo library."
       },
       usesAppleSignIn: true
     },

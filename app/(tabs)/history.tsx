@@ -1,10 +1,12 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Share, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import ThumbnailCard from '../../src/components/ThumbnailCard';
 import { getSavedThumbnails, deleteSavedThumbnail, SavedThumbnail } from '../../src/utils/thumbnailStorage';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system';
 
 export default function HistoryScreen() {
   const [thumbnails, setThumbnails] = useState<SavedThumbnail[]>([]);
@@ -30,12 +32,80 @@ export default function HistoryScreen() {
     }
   };
 
-  const handleDownload = (id: string) => {
-    Alert.alert('Download', `Downloading thumbnail ${id}`);
+  const handleDownload = async (id: string) => {
+    try {
+      // Find the thumbnail
+      const thumbnail = thumbnails.find(t => t.id === id);
+      if (!thumbnail || !thumbnail.imageUrl) {
+        Alert.alert('Error', 'Thumbnail not found');
+        return;
+      }
+
+      // Request media library permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'We need permission to save images to your photo library');
+        return;
+      }
+
+      // Download the image to a temporary location
+      const fileUri = FileSystem.documentDirectory + `thumbnail_${id}.jpg`;
+      const downloadResult = await FileSystem.downloadAsync(thumbnail.imageUrl, fileUri);
+
+      if (downloadResult.status !== 200) {
+        throw new Error('Failed to download image');
+      }
+
+      // Save to media library
+      const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+      await MediaLibrary.createAlbumAsync('Thumbnails', asset, false);
+
+      Alert.alert('Success', 'Thumbnail saved to your photo library!');
+    } catch (error) {
+      console.error('Error downloading thumbnail:', error);
+      Alert.alert('Error', 'Failed to save thumbnail to photo library');
+    }
   };
 
-  const handleShare = (id: string) => {
-    Alert.alert('Share', `Sharing thumbnail ${id}`);
+  const handleShare = async (id: string) => {
+    try {
+      const thumbnail = thumbnails.find(t => t.id === id);
+      if (!thumbnail) {
+        Alert.alert('Error', 'Thumbnail not found');
+        return;
+      }
+
+      // App Store URL - will be updated once app is published
+      const appStoreUrl = 'https://apps.apple.com/app/youtube-thumbnail-generator/id[YOUR_APP_ID]';
+      const shareMessage = `Check out this thumbnail I created with YouTube Thumbnail Generator!\n\nDownload the app: ${appStoreUrl}`;
+
+      const result = await Share.share(
+        {
+          message: shareMessage,
+          url: thumbnail.imageUrl, // iOS will include the image
+        },
+        {
+          subject: 'Check out my thumbnail!', // For email sharing
+          dialogTitle: 'Share Thumbnail', // Android only
+        }
+      );
+
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // Shared with activity type (iOS)
+          console.log('Shared with activity:', result.activityType);
+        } else {
+          // Shared (Android or iOS without activity type)
+          console.log('Thumbnail shared successfully');
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // Dismissed
+        console.log('Share dialog dismissed');
+      }
+    } catch (error) {
+      console.error('Error sharing thumbnail:', error);
+      Alert.alert('Error', 'Failed to share thumbnail');
+    }
   };
 
   const handleFavorite = async (id: string) => {
