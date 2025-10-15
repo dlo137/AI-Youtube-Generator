@@ -379,9 +379,13 @@ class IAPService {
             });
           }
 
-          // Navigate to home screen after successful purchase
-          console.log(`[IAP-SERVICE] Navigating to home screen from ${source}`);
-          router.replace('/(tabs)/generate');
+          // Navigate to home screen after successful purchase immediately
+          console.log(`[IAP-SERVICE] ✅ Purchase complete! Navigating to generate screen from ${source}`);
+
+          // Use setTimeout to ensure navigation happens after all state updates
+          setTimeout(() => {
+            router.replace('/(tabs)/generate');
+          }, 100);
         }
 
       } catch (error) {
