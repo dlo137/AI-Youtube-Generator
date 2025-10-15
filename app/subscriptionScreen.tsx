@@ -286,11 +286,11 @@ export default function SubscriptionScreen() {
     return product;
   };
 
-  // Helper function to format price
+  // Helper function to format price - always use fallback to show "/week" format
   const formatPrice = (plan: string, fallbackPrice: string) => {
-    const productId = PRODUCT_IDS[plan as keyof typeof PRODUCT_IDS];
-    const product = getProductInfo(productId);
-    return product?.price || fallbackPrice;
+    // Always return the fallback price to maintain consistent "/week" format
+    // Apple's IAP prices don't include the duration suffix
+    return fallbackPrice;
   };
 
   const handleContinue = () => {
