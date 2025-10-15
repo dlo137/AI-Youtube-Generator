@@ -477,7 +477,7 @@ class IAPService {
 
           const { error: supabaseError } = await supabase.from('profiles')
             .update(updateData)
-            .eq('user_id', userId);
+            .eq('id', userId);
 
           if (supabaseError) {
             console.error('[IAP-SERVICE] Supabase update error:', supabaseError);

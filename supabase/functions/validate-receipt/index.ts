@@ -77,7 +77,7 @@ serve(async (req) => {
         last_credit_reset: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('user_id', user.id)
+      .eq('id', user.id)
 
     if (updateError) {
       console.error('Error updating profile:', updateError)
