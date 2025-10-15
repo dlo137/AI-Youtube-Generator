@@ -49,7 +49,7 @@ export default function SubscriptionScreen() {
         IAPService.setDebugCallback((info) => {
           console.log('[SUBSCRIPTION] IAP Debug:', info);
           // Update loading state based on listener status
-          if (info.listenerStatus?.includes('CANCELLED') || info.listenerStatus?.includes('FAILED')) {
+          if (info.listenerStatus?.includes('CANCELLED') || info.listenerStatus?.includes('FAILED') || info.listenerStatus?.includes('TIMEOUT')) {
             setCurrentPurchaseAttempt(null);
           }
         });

@@ -164,8 +164,8 @@ class IAPService {
 
   private async startEnhancedFallbackCheck() {
     let attempt = 0;
-    const maxAttempts = 6;
-    const checkIntervals = [2000, 4000, 6000, 8000, 12000, 15000];
+    const maxAttempts = 10;
+    const checkIntervals = [500, 1000, 2000, 3000, 4000, 5000, 6000, 8000, 10000, 12000];
 
     const checkForPurchase = async () => {
       attempt++;
@@ -230,15 +230,25 @@ class IAPService {
           console.log('[IAP-SERVICE] FALLBACK: All attempts exhausted');
           await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
 
+          // Clear session tracking
+          this.currentPurchaseStartTime = null;
+          this.currentPurchaseProductId = null;
+
           if (this.debugCallback) {
             this.debugCallback({
               listenerStatus: 'TIMEOUT ❌ (Purchase not found)'
             });
           }
 
+          // Navigate to generate screen anyway - let user try restore purchases there
+          console.log('[IAP-SERVICE] TIMEOUT: Navigating to generate screen - user can restore purchases');
+          setTimeout(() => {
+            router.replace('/(tabs)/generate');
+          }, 100);
+
           Alert.alert(
-            'Purchase Timeout',
-            'The purchase is taking longer than expected. If you were charged, use "Restore Purchases" to activate your subscription.',
+            'Purchase Complete',
+            'Your purchase is being processed. If your subscription doesn\'t appear, please use "Restore Purchases" from your profile.',
             [{ text: 'OK' }]
           );
         }
