@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getSubscriptionInfo, SubscriptionInfo, getCredits, CreditsInfo } from '../../src/utils/subscriptionStorage';
 import { getSubscriptionInfo as getSupabaseSubscriptionInfo, changePlan, SubscriptionPlan } from '../../src/features/subscription/api';
+import * as StoreReview from 'expo-store-review';
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
@@ -48,6 +49,7 @@ export default function ProfileScreen() {
   const router = useRouter();
 
   const settings = [
+    { id: 'rate', title: 'Rate App', subtitle: 'Share your feedback on the App Store' },
     { id: 'about', title: 'About', subtitle: 'App information' },
     { id: 'help', title: 'Help & Support', subtitle: 'Get assistance' },
     { id: 'upgrade', title: 'Upgrade Your Plan', subtitle: 'Choose a subscription plan' },
@@ -340,28 +342,26 @@ export default function ProfileScreen() {
 
   const handleRateApp = async () => {
     try {
-      // App Store URLs - you'll need to replace with your actual app IDs when published
-      const iosAppId = 'YOUR_IOS_APP_ID'; // Replace with actual App Store ID
-      const androidPackageName = 'com.yourcompany.thumbnailgenerator'; // Replace with actual package name
-
-      let url = '';
-
       if (Platform.OS === 'ios') {
-        // iOS App Store URL
-        url = `itms-apps://itunes.apple.com/app/id${iosAppId}?action=write-review`;
-        // Fallback URL if the itms-apps doesn't work
-        const fallbackUrl = `https://itunes.apple.com/app/id${iosAppId}?action=write-review`;
+        // Use native iOS StoreReview API for in-app rating prompt
+        const isAvailable = await StoreReview.isAvailableAsync();
 
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
+        if (isAvailable) {
+          // This will show the native iOS rating dialog
+          await StoreReview.requestReview();
         } else {
-          await Linking.openURL(fallbackUrl);
+          // Fallback: Open App Store page (will work once app is published)
+          // For now, show a thank you message
+          Alert.alert(
+            'Thank You!',
+            'Thank you for wanting to rate our app! Once the app is published on the App Store, you can rate it there.',
+            [{ text: 'OK' }]
+          );
         }
-      } else {
+      } else if (Platform.OS === 'android') {
         // Android Play Store URL
-        url = `market://details?id=${androidPackageName}`;
-        // Fallback URL for web browsers
+        const androidPackageName = 'com.watsonsweb.thumbnail-generator';
+        const url = `market://details?id=${androidPackageName}`;
         const fallbackUrl = `https://play.google.com/store/apps/details?id=${androidPackageName}`;
 
         const supported = await Linking.canOpenURL(url);
@@ -372,10 +372,10 @@ export default function ProfileScreen() {
         }
       }
     } catch (error) {
-      console.error('Error opening app store:', error);
+      console.error('Error opening rating:', error);
       Alert.alert(
         'Rate the App',
-        'Thank you for wanting to rate our app! Please visit the app store manually to leave a review.',
+        'Thank you for wanting to rate our app! Please visit the app store to leave a review.',
         [{ text: 'OK' }]
       );
     }
@@ -540,6 +540,9 @@ export default function ProfileScreen() {
 
   const handleSettingPress = (settingId: string) => {
     switch (settingId) {
+      case 'rate':
+        handleRateApp();
+        break;
       case 'upgrade':
         setIsBillingModalVisible(true);
         break;
