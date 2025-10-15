@@ -34,7 +34,9 @@
       "Bash(node check-and-fix-all.js)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Read(//c/Users/aidaw/Desktop/**)"
+      "Read(//c/Users/aidaw/Desktop/**)",
+      "Bash(git push:*)",
+      "Bash(del nul)"
     ],
     "deny": [],
     "ask": []
