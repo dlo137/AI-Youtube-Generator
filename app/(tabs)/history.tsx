@@ -6,7 +6,7 @@ import { useCallback } from 'react';
 import ThumbnailCard from '../../src/components/ThumbnailCard';
 import { getSavedThumbnails, deleteSavedThumbnail, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export default function HistoryScreen() {
   const [thumbnails, setThumbnails] = useState<SavedThumbnail[]>([]);
