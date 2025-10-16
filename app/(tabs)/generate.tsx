@@ -742,8 +742,10 @@ export default function GenerateScreen() {
     { id: 'colorful', label: 'Colorful' },
   ];
 
-  const handleGenerate = async () => {
-    if (!topic.trim()) {
+  const handleGenerate = async (overrideTopic?: string) => {
+    const topicToUse = overrideTopic || topic;
+
+    if (!topicToUse.trim()) {
       Alert.alert('Error', 'Please enter a description for your thumbnail');
       return;
     }
@@ -760,7 +762,7 @@ export default function GenerateScreen() {
     }
 
     // Store the prompt for title display BEFORE clearing
-    let promptToUse = topic.trim();
+    let promptToUse = topicToUse.trim();
 
     // Only use images that are actively selected (have local images)
     const activeSubjectImageUrl = subjectImage ? subjectImageUrl : null;
@@ -775,7 +777,7 @@ export default function GenerateScreen() {
       promptToUse += '. Use the reference image(s) as inspiration for the style, composition, and overall look of the thumbnail.';
     }
 
-    setLastPrompt(topic.trim()); // Store original prompt for display
+    setLastPrompt(topicToUse.trim()); // Store original prompt for display
 
     // Dismiss keyboard when generating
     Keyboard.dismiss();
@@ -1158,6 +1160,31 @@ export default function GenerateScreen() {
             <Text style={styles.actionSubtitle}>Inspire the design</Text>
           </TouchableOpacity>
         </ScrollView>
+
+        {/* Suggestion Buttons */}
+        <View style={styles.suggestionContainer}>
+          <TouchableOpacity
+            style={styles.suggestionButton}
+            onPress={() => handleGenerate('Tech Review')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.suggestionText}>Tech Review</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.suggestionButton}
+            onPress={() => handleGenerate('Podcast')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.suggestionText}>Podcast</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.suggestionButton}
+            onPress={() => handleGenerate('Gamer vs Gamer')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.suggestionText}>Gamer vs Gamer</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Prompt Bar */}
         <View style={styles.inputBar}>
@@ -1733,19 +1760,6 @@ Context: ${currentGeneration.prompt}`;
                       selectedTool === 'save' && styles.editToolIconSelected
                     ]}
                     onPress={async () => {
-                      // Check if user is in guest mode
-                      if ((global as any)?.isGuestMode) {
-                        Alert.alert(
-                          'Upgrade to Pro',
-                          'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
-                          [
-                            { text: 'Maybe Later', style: 'cancel' },
-                            { text: 'Upgrade to Pro', style: 'default' }
-                          ]
-                        );
-                        return;
-                      }
-
                       try {
                         // Check if there's an active text sticker that hasn't been confirmed yet
                         if (textSticker && selectedTool === 'text') {
@@ -1779,7 +1793,14 @@ Context: ${currentGeneration.prompt}`;
                       }
                     }}
                   >
-                    <Text style={styles.editToolText}>♡</Text>
+                    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                      <Path
+                        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+                        stroke="#ffffff"
+                        strokeWidth="2"
+                        fill="none"
+                      />
+                    </Svg>
                   </TouchableOpacity>
                 </>
               )}
@@ -2747,5 +2768,25 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  suggestionContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 26,
+    marginBottom: 8,
+  },
+  suggestionButton: {
+    flex: 1,
+    paddingVertical:8,
+    paddingHorizontal: 6,
+    backgroundColor: '#2a2e35',
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
