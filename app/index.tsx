@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import FloatingParticles from '../src/components/FloatingParticles';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -99,6 +100,9 @@ export default function WelcomeScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+
+      {/* Floating Particles Background */}
+      <FloatingParticles />
 
       <View style={styles.content}>
         <View style={styles.imageContainer}>

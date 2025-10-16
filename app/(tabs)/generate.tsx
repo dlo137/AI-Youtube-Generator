@@ -560,58 +560,89 @@ export default function GenerateScreen() {
   };
 
   const getShortTitle = (prompt: string) => {
-    // Clean and normalize the prompt
-    const cleanPrompt = prompt
-      .replace(/[.,!?;:]/g, '') // Remove punctuation
+    // Clean the prompt
+    const cleanPrompt = prompt.trim();
+
+    // Words to remove at the start of prompts (imperatives/filler)
+    const prefixesToRemove = [
+      'create a', 'create an', 'make a', 'make an', 'generate a', 'generate an',
+      'design a', 'design an', 'show a', 'show an', 'i want a', 'i want an',
+      'i need a', 'i need an', 'give me a', 'give me an'
+    ];
+
+    // Remove common prefixes (case insensitive)
+    let workingPrompt = cleanPrompt.toLowerCase();
+    for (const prefix of prefixesToRemove) {
+      if (workingPrompt.startsWith(prefix)) {
+        workingPrompt = cleanPrompt.substring(prefix.length).trim();
+        break;
+      }
+    }
+
+    // If we removed a prefix, use the cleaned version, otherwise use original
+    const basePrompt = workingPrompt === cleanPrompt.toLowerCase() ? cleanPrompt : workingPrompt;
+
+    // Words that should be removed from anywhere in the title
+    const fillerWords = [
+      'thumbnail', 'youtube thumbnail', 'image', 'picture', 'photo',
+      'for youtube', 'for my', 'for a', 'that shows', 'that has',
+      'featuring', 'with a', 'with an'
+    ];
+
+    let processedPrompt = basePrompt;
+    for (const filler of fillerWords) {
+      processedPrompt = processedPrompt.replace(new RegExp(`\\b${filler}\\b`, 'gi'), '');
+    }
+
+    // Clean up extra spaces and punctuation
+    processedPrompt = processedPrompt
+      .replace(/\s+/g, ' ')
+      .replace(/[.,!?;:]+$/g, '')
       .trim();
 
-    const wordCount = cleanPrompt.split(/\s+/).length;
+    // Helper function to limit to 3 words max
+    const limitWords = (text: string, max: number = 3): string => {
+      const words = text.split(/\s+/).filter(w => w.length > 0);
+      return words.slice(0, max).join(' ');
+    };
 
-    // If prompt is 2-3 words, just capitalize and use as is
-    if (wordCount <= 3) {
-      return cleanPrompt.split(/\s+/).map(word =>
-        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-      ).join(' ');
+    // Helper function to capitalize
+    const capitalize = (text: string): string => {
+      return text
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    };
+
+    const words = processedPrompt.split(/\s+/);
+
+    // If already short enough, just capitalize
+    if (words.length <= 3) {
+      return capitalize(processedPrompt);
     }
 
-    // For longer prompts, summarize
-    const lowerPrompt = cleanPrompt.toLowerCase();
+    // For longer prompts, try to extract the core concept (max 3 words)
+    // Look for key patterns: "X vs Y", "X Review", etc.
+    const patterns = [
+      { regex: /(.+?)\s+vs\s+(.+)/i, format: (m: RegExpMatchArray) => limitWords(`${m[1]} vs ${m[2]}`, 3) },
+      { regex: /(.+?)\s+review/i, format: (m: RegExpMatchArray) => limitWords(`${m[1]} Review`, 2) },
+      { regex: /(.+?)\s+tutorial/i, format: (m: RegExpMatchArray) => limitWords(`${m[1]} Tutorial`, 2) },
+      { regex: /(.+?)\s+guide/i, format: (m: RegExpMatchArray) => limitWords(`${m[1]} Guide`, 2) },
+      { regex: /(.+?)\s+playing\s+(.+)/i, format: (m: RegExpMatchArray) => limitWords(`${m[1]} ${m[2]}`, 2) },
+      { regex: /(.+?)\s+in\s+(.+)/i, format: (m: RegExpMatchArray) => limitWords(`${m[1]} ${m[2]}`, 2) },
+    ];
 
-    // Stop words to filter out
-    const stopWords = new Set([
-      'the', 'and', 'for', 'with', 'about', 'thumbnail', 'image', 'picture',
-      'create', 'make', 'generate', 'show', 'display', 'featuring', 'youtube',
-      'that', 'this', 'has', 'have', 'are', 'was', 'were', 'been', 'being',
-      'a', 'an', 'of', 'in', 'on', 'at', 'to', 'from', 'by', 'as'
-    ]);
-
-    // Split into words and filter
-    const words = lowerPrompt.split(/\s+/).filter(word =>
-      word.length > 2 && !stopWords.has(word)
-    );
-
-    // Remove duplicate consecutive words (e.g., "gamer vs gamer" -> "gamer vs")
-    const uniqueWords = words.filter((word, index) =>
-      index === 0 || word !== words[index - 1]
-    );
-
-    // Take first 3-4 unique words for title
-    const titleWords = uniqueWords.slice(0, 4);
-
-    // Capitalize each word properly
-    const title = titleWords.map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
-
-    // If title is too short after filtering, use first few words of original prompt
-    if (title.length < 5) {
-      const fallbackWords = lowerPrompt.split(/\s+/).slice(0, 3);
-      return fallbackWords.map(word =>
-        word.charAt(0).toUpperCase() + word.slice(1)
-      ).join(' ');
+    for (const pattern of patterns) {
+      const match = processedPrompt.match(pattern.regex);
+      if (match) {
+        const title = pattern.format(match);
+        return capitalize(title);
+      }
     }
 
-    return title;
+    // If no pattern matched, take first 3 words as the title
+    const titleWords = words.slice(0, 3).join(' ');
+    return capitalize(titleWords);
   };
 
 
@@ -2707,7 +2738,7 @@ const styles = StyleSheet.create({
   },
   imageActions: {
     position: 'absolute',
-    top: 10,
+    bottom: 10,
     right: 10,
     flexDirection: 'row',
     gap: 8,

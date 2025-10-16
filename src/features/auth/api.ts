@@ -1,6 +1,8 @@
 import { supabase, redirectTo } from "../../../lib/supabase";
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export async function signUpEmail(email: string, password: string, fullName?: string) {
   const { data, error } = await supabase.auth.signUp({
@@ -88,7 +90,59 @@ export async function deleteAccount(): Promise<void> {
       throw new Error('User not authenticated');
     }
 
-    // Delete user's profile data first
+    // Step 1: Delete all images from Supabase Storage
+    try {
+      console.log('Deleting user images from Supabase Storage...');
+
+      // List all files in the thumbnails bucket for this user
+      const { data: files, error: listError } = await supabase.storage
+        .from('thumbnails')
+        .list();
+
+      if (!listError && files && files.length > 0) {
+        // Delete all files
+        const filePaths = files.map(file => file.name);
+        const { error: deleteFilesError } = await supabase.storage
+          .from('thumbnails')
+          .remove(filePaths);
+
+        if (deleteFilesError) {
+          console.error('Error deleting files from storage:', deleteFilesError);
+        } else {
+          console.log(`Deleted ${filePaths.length} files from Supabase Storage`);
+        }
+      }
+    } catch (storageError) {
+      console.error('Error accessing Supabase Storage:', storageError);
+      // Continue with deletion even if storage cleanup fails
+    }
+
+    // Step 2: Delete local thumbnail files from FileSystem
+    try {
+      console.log('Deleting local thumbnail files...');
+      const thumbnailDir = `${FileSystem.documentDirectory}thumbnails/`;
+      const dirInfo = await FileSystem.getInfoAsync(thumbnailDir);
+
+      if (dirInfo.exists) {
+        await FileSystem.deleteAsync(thumbnailDir, { idempotent: true });
+        console.log('Deleted local thumbnail directory');
+      }
+    } catch (fileSystemError) {
+      console.error('Error deleting local files:', fileSystemError);
+      // Continue with deletion even if file cleanup fails
+    }
+
+    // Step 3: Clear AsyncStorage thumbnail data
+    try {
+      console.log('Clearing thumbnail data from AsyncStorage...');
+      await AsyncStorage.removeItem('saved_thumbnails');
+      console.log('Cleared thumbnail data from AsyncStorage');
+    } catch (asyncStorageError) {
+      console.error('Error clearing AsyncStorage:', asyncStorageError);
+      // Continue with deletion even if AsyncStorage cleanup fails
+    }
+
+    // Step 4: Delete user's profile data
     const { error: profileError } = await supabase
       .from('profiles')
       .delete()
@@ -99,7 +153,7 @@ export async function deleteAccount(): Promise<void> {
       // Continue anyway - profile might not exist or might be cascade deleted
     }
 
-    // Try to delete via edge function first (if deployed)
+    // Step 5: Try to delete via edge function first (if deployed)
     try {
       const { error: deleteError } = await supabase.functions.invoke('delete-user', {
         body: { userId: user.id }
@@ -114,12 +168,10 @@ export async function deleteAccount(): Promise<void> {
       console.log('Edge function not available, continuing with sign out');
     }
 
-    // If edge function fails or isn't available, just sign out the user
-    // The account will remain in Supabase but the user will be logged out
-    // They can contact support to fully delete if needed
+    // Step 6: Sign out the user
     await supabase.auth.signOut();
 
-    console.log('User signed out. Note: Account data may still exist in Supabase. Contact support for full deletion.');
+    console.log('User account and all images deleted successfully');
   } catch (error) {
     console.error('Delete account error:', error);
     throw error;

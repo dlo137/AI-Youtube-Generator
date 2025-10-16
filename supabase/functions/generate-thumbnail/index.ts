@@ -195,7 +195,7 @@ Focus on style matching and natural subject integration.` }];
   return enhancedPrompt;
 }
 
-async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean) {
+async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean, seed?: number) {
   // Create explicit prompt based on mode
   let promptText: string;
 
@@ -275,11 +275,12 @@ ${prompt}`;
         parts: parts
       }],
       generationConfig: {
-        temperature: 0.7,
+        temperature: seed ? 0.9 : 0.7, // Higher temperature for more variation when seed is provided
         topK: 40,
         topP: 0.8,
         maxOutputTokens: 1000,
-        responseModalities: ["TEXT", "IMAGE"]
+        responseModalities: ["TEXT", "IMAGE"],
+        ...(seed && { seed }) // Add seed if provided for unique generations
       },
       systemInstruction: {
         parts: [{
@@ -417,18 +418,23 @@ serve(async (req: Request) => {
     const effectiveBaseImage = effectiveBaseImageUrl || blankFrameUrl;
     const isUsingBlankFrame = !effectiveBaseImageUrl && !!blankFrameUrl;
 
-    // Create 3 distinct variation prompts
-    const variation1Prompt = `${finalPrompt} Style: Bold and dramatic, high contrast colors with a sleek modern design.`;
-    const variation2Prompt = `${finalPrompt} Style: Energetic with dynamic composition and aesthetic colors.`;
-    const variation3Prompt = `${finalPrompt} Style: Clean and minimal with soft colors and simple composition.`;
+    // Create 3 distinct variation prompts with unique identifiers to prevent caching
+    const timestamp = Date.now();
+    const randomSeed1 = Math.floor(Math.random() * 1000000);
+    const randomSeed2 = Math.floor(Math.random() * 1000000);
+    const randomSeed3 = Math.floor(Math.random() * 1000000);
 
-    // Generate 3 variations in parallel with different prompts
+    const variation1Prompt = `${finalPrompt} Style: Bold and dramatic, high contrast colors with a sleek modern design. [Variation ID: ${timestamp}-${randomSeed1}]`;
+    const variation2Prompt = `${finalPrompt} Style: Energetic with dynamic composition and aesthetic colors. [Variation ID: ${timestamp}-${randomSeed2}]`;
+    const variation3Prompt = `${finalPrompt} Style: Clean and minimal with soft colors and simple composition. [Variation ID: ${timestamp}-${randomSeed3}]`;
+
+    // Generate 3 variations in parallel with different prompts and seeds
     let bytes1: Uint8Array, bytes2: Uint8Array, bytes3: Uint8Array;
     try {
       [bytes1, bytes2, bytes3] = await Promise.all([
-        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
-        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
-        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame)
+        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed1),
+        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed2),
+        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed3)
       ]);
     } catch (error) {
       console.error('Gemini Image Preview failed:', error);

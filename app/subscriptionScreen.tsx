@@ -316,7 +316,7 @@ export default function SubscriptionScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Turn Thumbnails Into Paychecks.</Text>
+          <Text style={styles.title}>Turn Ideas Into Clicks.</Text>
           <Text style={styles.subtitle}>
             Every click counts. Create and save eye-catching thumbnails that grow your channel, build your audience, and boost your revenue.
           </Text>
@@ -408,14 +408,14 @@ export default function SubscriptionScreen() {
             style={styles.continueGradient}
           >
             <Text style={styles.continueText}>
-              {!iapReady ? 'Connecting...' : loadingProducts ? 'Loading...' : currentPurchaseAttempt ? 'Processing...' : 'Continue'}
+              {!iapReady ? 'Connecting...' : loadingProducts ? 'Loading...' : currentPurchaseAttempt ? 'Processing...' : 'Get Started'}
             </Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>
 
       {/* Debug Panel */}
-      {showDebug && (
+      {/* {showDebug && (
         <View style={styles.debugPanel}>
           <View style={styles.debugHeader}>
             <Text style={styles.debugTitle}>🔧 IAP Debug Monitor</Text>
@@ -425,7 +425,6 @@ export default function SubscriptionScreen() {
           </View>
 
           <ScrollView style={styles.debugContent} showsVerticalScrollIndicator={true}>
-            {/* Status Indicator */}
             <View style={styles.debugSection}>
               <Text style={styles.debugSectionTitle}>Current Status</Text>
               <View style={styles.debugRow}>
@@ -434,7 +433,6 @@ export default function SubscriptionScreen() {
               </View>
             </View>
 
-            {/* Connection Info */}
             <View style={styles.debugSection}>
               <Text style={styles.debugSectionTitle}>Connection</Text>
               <Text style={styles.debugText}>
@@ -451,7 +449,6 @@ export default function SubscriptionScreen() {
               </Text>
             </View>
 
-            {/* Purchase Info */}
             <View style={styles.debugSection}>
               <Text style={styles.debugSectionTitle}>Purchase State</Text>
               <Text style={styles.debugText}>
@@ -465,7 +462,6 @@ export default function SubscriptionScreen() {
               </Text>
             </View>
 
-            {/* Last Purchase Result */}
             {debugInfo.lastPurchaseResult && (
               <View style={styles.debugSection}>
                 <Text style={styles.debugSectionTitle}>Last Purchase Result</Text>
@@ -475,14 +471,12 @@ export default function SubscriptionScreen() {
               </View>
             )}
 
-            {/* Timestamp */}
             <View style={styles.debugSection}>
               <Text style={styles.debugTextSmall}>
                 Last Update: {new Date(debugInfo.timestamp).toLocaleTimeString()}
               </Text>
             </View>
 
-            {/* Manual Check Button */}
             <TouchableOpacity
               style={styles.debugButton}
               onPress={() => {
@@ -501,17 +495,17 @@ export default function SubscriptionScreen() {
             </TouchableOpacity>
           </ScrollView>
         </View>
-      )}
+      )} */}
 
       {/* Show Debug Button when panel is hidden */}
-      {!showDebug && (
+      {/* {!showDebug && (
         <TouchableOpacity
           style={styles.showDebugButton}
           onPress={() => setShowDebug(true)}
         >
           <Text style={styles.showDebugText}>🔧</Text>
         </TouchableOpacity>
-      )}
+      )} */}
     </LinearGradient>
   );
 }
