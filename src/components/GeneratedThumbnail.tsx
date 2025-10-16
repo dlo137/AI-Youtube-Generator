@@ -80,20 +80,6 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style }: 
         <TouchableOpacity
           style={style.saveIcon}
           onPress={async () => {
-            // Check if user has subscription
-            const hasSubscription = await isUserSubscribed();
-            if (!hasSubscription) {
-              Alert.alert(
-                'Upgrade to Pro',
-                'Want to save your thumbnails? Upgrade to Pro to unlock unlimited saves and access your history across devices.',
-                [
-                  { text: 'Maybe Later', style: 'cancel' },
-                  { text: 'Upgrade to Pro', style: 'default' }
-                ]
-              );
-              return;
-            }
-
             try {
               await saveThumbnail(prompt, imageUrl, null);
               Alert.alert('Saved!', 'Thumbnail saved to your history');

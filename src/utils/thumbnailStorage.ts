@@ -81,9 +81,9 @@ export const saveThumbnail = async (
     // Generate ID first (we'll need it for download)
     const thumbnailId = Date.now().toString();
 
-    // Check if this thumbnail already exists (by imageUrl or local path)
+    // Check if this exact thumbnail already exists (by exact imageUrl match only)
     const existingIndex = existingThumbnails.findIndex(t =>
-      t.imageUrl === imageUrl || t.imageUrl.includes(`thumbnail_${t.id}.png`)
+      t.imageUrl === imageUrl
     );
 
     if (existingIndex !== -1) {

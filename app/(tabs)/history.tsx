@@ -42,13 +42,21 @@ export default function HistoryScreen() {
       }
 
       // Request media library permissions
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
+      const permissionResult = await MediaLibrary.requestPermissionsAsync();
+      if (!permissionResult || permissionResult.status !== 'granted') {
         Alert.alert('Permission Denied', 'We need permission to save images to your photo library');
         return;
       }
 
-      // Download the image to a temporary location
+      // If the image is already local, just save it directly
+      if (thumbnail.imageUrl.startsWith('file://')) {
+        const asset = await MediaLibrary.createAssetAsync(thumbnail.imageUrl);
+        await MediaLibrary.createAlbumAsync('Thumbnails', asset, false);
+        Alert.alert('Success', 'Thumbnail saved to your photo library!');
+        return;
+      }
+
+      // Download the image to a temporary location if it's a remote URL
       const fileUri = FileSystem.documentDirectory + `thumbnail_${id}.jpg`;
       const downloadResult = await FileSystem.downloadAsync(thumbnail.imageUrl, fileUri);
 

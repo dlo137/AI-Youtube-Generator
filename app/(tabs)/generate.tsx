@@ -76,7 +76,7 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
 };
 
 export default function GenerateScreen() {
-  const { refreshCredits } = useCredits();
+  const { credits, refreshCredits } = useCredits();
   const [topic, setTopic] = useState('');
   const [duration, setDuration] = useState(''); // kept for existing logic
   const [style, setStyle] = useState('educational'); // kept for existing logic
@@ -801,7 +801,21 @@ export default function GenerateScreen() {
 
       if (error) {
         console.error('Supabase function error:', error);
-        Alert.alert('Error', `Failed to generate thumbnail: ${error.message || 'Unknown error'}\n\nDetails: ${error.details || 'No details available'}`);
+        const errorMsg = error.message || 'Unknown error';
+
+        // Provide helpful error messages based on common issues
+        let userMessage = 'Failed to generate thumbnail. ';
+        if (errorMsg.includes('429') || errorMsg.includes('rate limit') || errorMsg.includes('quota')) {
+          userMessage += 'The AI service is currently at capacity. Please wait a minute and try again.';
+        } else if (errorMsg.includes('timeout') || errorMsg.includes('timed out')) {
+          userMessage += 'Request timed out. The server might be busy. Please try again.';
+        } else if (errorMsg.includes('503') || errorMsg.includes('unavailable')) {
+          userMessage += 'Service temporarily unavailable. Please try again in a few moments.';
+        } else {
+          userMessage += errorMsg;
+        }
+
+        Alert.alert('Generation Error', userMessage);
         return;
       }
 
@@ -1252,6 +1266,9 @@ export default function GenerateScreen() {
             >
               <Text style={styles.closeIcon}>✕</Text>
             </TouchableOpacity>
+            <View style={styles.modalCreditsContainer}>
+              <Text style={styles.modalCreditsText}>{credits.current}/{credits.max} images</Text>
+            </View>
           </View>
 
           {/* Generated Image in the middle */}
@@ -1454,26 +1471,8 @@ export default function GenerateScreen() {
                       return;
                     }
 
-                    // Create explicit inpainting prompt that emphasizes preservation and surgical removal
-                    const inpaintPrompt = `You are performing a SURGICAL EDIT on this image. Your task:
-
-STEP 1 - PRESERVE (MOST IMPORTANT):
-- Keep the ENTIRE image exactly as is
-- DO NOT remove, change, or modify ANYTHING except what is explicitly marked
-- All people, objects, text, backgrounds NOT marked must remain UNCHANGED
-- Only make changes where the red marking appears
-
-STEP 2 - REMOVE ONLY MARKED AREA:
-- Look for the red line/marking on the image
-- ONLY remove what is directly under or within that red marking
-- If marked area is at image edge, extend background to fill that edge naturally
-- Fill removed area with logical background continuation
-
-STEP 3 - VERIFICATION:
-- Ensure no unmarked elements were altered
-- Ensure the rest of the image is pixel-perfect identical
-
-Context: ${currentGeneration.prompt}`;
+                    // Create a simple, direct prompt focusing only on removal
+                    const inpaintPrompt = `Remove ONLY the areas marked with RED overlay from this image. The red overlay shows exactly what to remove. Keep everything else identical. Fill the removed area naturally to match the surrounding background. Do NOT remove any unmarked areas.`;
 
                     let attempts = 0;
                     const maxAttempts = 2;
@@ -1490,6 +1489,7 @@ Context: ${currentGeneration.prompt}`;
                           prompt: inpaintPrompt,
                           baseImageUrl: modalImageUrl,
                           adjustmentMode: true,
+                          eraseMask: eraseMask, // Send the mask path to backend
                           seed: Date.now() + attempts, // Different seed for each attempt
                         }
                       });
@@ -1653,7 +1653,8 @@ Context: ${currentGeneration.prompt}`;
                 </>
               ) : (
                 <>
-                  {/* Normal editing tools: erase, text, save */}
+                  {/* Normal editing tools: text, save */}
+                  {/* ERASE TOOL COMMENTED OUT - uncomment when ready
                   <TouchableOpacity
                     style={[
                       styles.editToolIcon,
@@ -1681,6 +1682,7 @@ Context: ${currentGeneration.prompt}`;
                       <Path d="M8.5 8.5h1v1h-1zm5 0h1v1h-1zm-5 5h1v1h-1zm5 0h1v1h-1z" fill="#ffffff" />
                     </Svg>
                   </TouchableOpacity>
+                  */}
                   <TouchableOpacity
                     style={[
                       styles.editToolIcon,
@@ -1821,6 +1823,31 @@ Context: ${currentGeneration.prompt}`;
                   : Platform.select({ ios: 34, android: 16 })
               }
             ]}>
+              {/* Edit Suggestion Buttons */}
+              <View style={styles.modalSuggestionContainer}>
+                <TouchableOpacity
+                  style={styles.modalSuggestionButton}
+                  onPress={() => setModalPrompt('Change the')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalSuggestionText}>Change the...</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalSuggestionButton}
+                  onPress={() => setModalPrompt('Remove the')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalSuggestionText}>Remove the...</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalSuggestionButton}
+                  onPress={() => setModalPrompt('Add a')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modalSuggestionText}>Add a...</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.modalInputBar}>
                 <TextInput
                   style={styles.textInput}
@@ -2105,6 +2132,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingTop: Platform.select({ ios: 12, android: 16 }),
     paddingHorizontal: 18,
+    paddingBottom: 120,
   },
   fixedBottomContainer: {
     position: 'absolute',
@@ -2459,7 +2487,7 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -2477,6 +2505,21 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  modalCreditsContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 122, 255, 0.5)',
+    backgroundColor: 'transparent',
+  },
+  modalCreditsText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.2,
   },
   centeredImageContainer: {
     flex: 1,
@@ -2512,6 +2555,26 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     paddingHorizontal: 14,
     paddingVertical: 10,
+  },
+  modalSuggestionContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  modalSuggestionButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#2a2e35',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSuggestionText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   editTools: {
     flexDirection: 'row',
