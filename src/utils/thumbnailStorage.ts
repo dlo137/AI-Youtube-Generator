@@ -13,8 +13,8 @@ export interface SavedThumbnail {
   edits?: {
     textOverlay?: {
       text: string;
-      x: number;
-      y: number;
+      x: number; // Relative position (0.0 to 1.0)
+      y: number; // Relative position (0.0 to 1.0)
       scale: number;
       rotation: number;
     };

@@ -196,3 +196,45 @@ export async function changePlan(newPlan: SubscriptionPlan): Promise<void> {
     throw error;
   }
 }
+
+/**
+ * Cancel user's subscription
+ * Marks the subscription as cancelled but keeps access until end of billing period
+ */
+export async function cancelSubscription(): Promise<void> {
+  try {
+    // Get current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Get current subscription info
+    const currentSub = await getSubscriptionInfo();
+    if (!currentSub) {
+      throw new Error('No active subscription found');
+    }
+
+    // Update the subscription to cancelled state
+    // Set is_pro_version to false to indicate cancelled subscription
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        is_pro_version: false,
+        is_trial_version: false,
+        trial_end_date: null,
+      })
+      .eq('id', user.id);
+
+    if (updateError) {
+      console.error('Error cancelling subscription:', updateError);
+      throw updateError;
+    }
+
+    console.log('Successfully cancelled subscription');
+  } catch (error) {
+    console.error('Failed to cancel subscription:', error);
+    throw error;
+  }
+}

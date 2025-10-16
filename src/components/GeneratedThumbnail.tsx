@@ -24,9 +24,16 @@ interface GeneratedThumbnailProps {
   prompt: string;
   onEdit: () => void;
   style: any;
+  textOverlay?: {
+    text: string;
+    x: number;
+    y: number;
+    scale: number;
+    rotation: number;
+  };
 }
 
-export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style }: GeneratedThumbnailProps) {
+export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, textOverlay }: GeneratedThumbnailProps) {
   const downloadThumbnail = async () => {
     if (!imageUrl) {
       Alert.alert('Error', 'No thumbnail to download');
@@ -69,19 +76,52 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style }: 
   return (
     <View style={style.imageWrapper}>
       <TouchableOpacity onPress={onEdit} activeOpacity={0.8}>
-        <Image
-          key={imageUrl}
-          source={{ uri: imageUrl }}
-          style={style.generatedImage}
-          resizeMode="cover"
-        />
+        <View style={{ position: 'relative' }}>
+          <Image
+            key={imageUrl}
+            source={{ uri: imageUrl }}
+            style={style.generatedImage}
+            resizeMode="cover"
+          />
+          {/* Text overlay display */}
+          {textOverlay && (
+            <View
+              style={{
+                position: 'absolute',
+                left: `${textOverlay.x * 100}%`,
+                top: `${textOverlay.y * 100}%`,
+                transform: [
+                  { scale: textOverlay.scale },
+                  { rotate: `${textOverlay.rotation}deg` }
+                ],
+                pointerEvents: 'none', // Allow touch events to pass through to image
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 40,
+                  fontWeight: 'bold',
+                  color: '#ffffff',
+                  textShadowColor: 'rgba(0, 0, 0, 0.75)',
+                  textShadowOffset: { width: 2, height: 2 },
+                  textShadowRadius: 4
+                }}
+              >
+                {textOverlay.text}
+              </Text>
+            </View>
+          )}
+        </View>
       </TouchableOpacity>
       <View style={style.imageActions}>
         <TouchableOpacity
           style={style.saveIcon}
           onPress={async () => {
             try {
-              await saveThumbnail(prompt, imageUrl, null);
+              const editsToSave = textOverlay ? {
+                textOverlay: textOverlay
+              } : null;
+              await saveThumbnail(prompt, imageUrl, editsToSave);
               Alert.alert('Saved!', 'Thumbnail saved to your history');
             } catch (error) {
               console.error('Save error:', error);

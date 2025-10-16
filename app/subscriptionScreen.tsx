@@ -88,6 +88,14 @@ export default function SubscriptionScreen() {
     }).start();
 
     initializeIAP();
+
+    // Fallback: Set IAP ready after 5 seconds if still not ready
+    const timeout = setTimeout(() => {
+      setIapReady(true);
+      console.log('[SUBSCRIPTION] IAP initialization timeout - unblocking button');
+    }, 5000);
+
+    return () => clearTimeout(timeout);
   }, []);
 
   // Re-register callback whenever it changes
@@ -101,6 +109,8 @@ export default function SubscriptionScreen() {
   const initializeIAP = async () => {
     if (!isIAPAvailable) {
       console.log('[SUBSCRIPTION] IAP not available on this platform');
+      // Set IAP ready to true even if unavailable so button is not stuck
+      setIapReady(true);
       return;
     }
 
@@ -120,9 +130,14 @@ export default function SubscriptionScreen() {
 
         // Fetch products
         await fetchProducts();
+      } else {
+        // If initialization failed, still set ready to true to unblock the button
+        setIapReady(true);
       }
     } catch (error) {
       console.error('[SUBSCRIPTION] Error initializing IAP:', error);
+      // Set ready to true even on error to prevent button from being stuck
+      setIapReady(true);
       Alert.alert('Error', 'Failed to initialize purchases. Please restart the app.');
     }
   };

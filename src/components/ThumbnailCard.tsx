@@ -111,47 +111,31 @@ export default function ThumbnailCard({
                 bottom: 0,
                 pointerEvents: 'none'
               }}>
-                {/* Text overlay */}
-                {(() => {
-                  // Use same scaling factors as thumbnail size
-                  const containerWidth = 350;
-                  const modalWidth = containerWidth; // Modal image is 100% width
-                  const modalHeight = 250; // From styles.modalImage
-
-                  // Thumbnail is 65% width with 16:9 aspect ratio
-                  const thumbnailWidth = containerWidth * 0.65; // ~227px
-                  const thumbnailHeight = thumbnailWidth / (16/9); // ~128px
-
-                  const scaleX = thumbnailWidth / modalWidth;   // ~0.65
-                  const scaleY = thumbnailHeight / modalHeight; // ~0.51
-
-                  return (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        left: edits.textOverlay.x * scaleX,
-                        top: edits.textOverlay.y * scaleY,
-                        transform: [
-                          { scale: edits.textOverlay.scale * scaleX },
-                          { rotate: `${edits.textOverlay.rotation}deg` }
-                        ],
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 24 * scaleX,
-                          fontWeight: 'bold',
-                          color: 'white',
-                          textShadowColor: 'black',
-                          textShadowOffset: { width: 1, height: 1 },
-                          textShadowRadius: 2,
-                        }}
-                      >
-                        {edits.textOverlay.text}
-                      </Text>
-                    </View>
-                  );
-                })()}
+                {/* Text overlay - using relative positioning */}
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: `${edits.textOverlay.x * 90}%`,
+                    top: `${edits.textOverlay.y * 90}%`,
+                    transform: [
+                      { scale: edits.textOverlay.scale * 0.77 }, // Slightly bigger scale
+                      { rotate: `${edits.textOverlay.rotation}deg` }
+                    ],
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 32, // Slightly bigger font size
+                      fontWeight: 'bold',
+                      color: '#ffffff',
+                      textShadowColor: 'rgba(0, 0, 0, 0.75)',
+                      textShadowOffset: { width: 1, height: 1 },
+                      textShadowRadius: 3
+                    }}
+                  >
+                    {edits.textOverlay.text}
+                  </Text>
+                </View>
               </View>
             )}
           </View>

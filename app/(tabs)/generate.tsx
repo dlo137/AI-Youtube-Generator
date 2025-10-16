@@ -153,6 +153,29 @@ export default function GenerateScreen() {
     url2?: string;
     url3?: string;
     timestamp: number;
+    textOverlays?: {
+      url1?: {
+        text: string;
+        x: number;
+        y: number;
+        scale: number;
+        rotation: number;
+      };
+      url2?: {
+        text: string;
+        x: number;
+        y: number;
+        scale: number;
+        rotation: number;
+      };
+      url3?: {
+        text: string;
+        x: number;
+        y: number;
+        scale: number;
+        rotation: number;
+      };
+    };
   }>>([]);
   const [imageContainerDimensions, setImageContainerDimensions] = useState({ width: 0, height: 0 });
   const insets = useSafeAreaInsets();
@@ -321,6 +344,22 @@ export default function GenerateScreen() {
     setModalImageUrl(imageUrl);
     setIsModalVisible(true);
 
+    // First check if this image has text overlay in current generation
+    const currentGeneration = allGenerations.find(gen =>
+      gen.url1 === imageUrl || gen.url2 === imageUrl || gen.url3 === imageUrl
+    );
+
+    let textOverlayFromGeneration = null;
+    if (currentGeneration) {
+      if (currentGeneration.url1 === imageUrl) {
+        textOverlayFromGeneration = currentGeneration.textOverlays?.url1;
+      } else if (currentGeneration.url2 === imageUrl) {
+        textOverlayFromGeneration = currentGeneration.textOverlays?.url2;
+      } else if (currentGeneration.url3 === imageUrl) {
+        textOverlayFromGeneration = currentGeneration.textOverlays?.url3;
+      }
+    }
+
     // Check if this image has existing saved edits
     try {
       const savedThumbnails = await getSavedThumbnails();
@@ -329,11 +368,27 @@ export default function GenerateScreen() {
         thumb.imageUrl.includes(imageUrl.split('/').pop() || '')
       );
 
-      if (existingThumbnail?.edits?.textOverlay) {
+      // Prioritize current generation overlay over saved overlay
+      let textOverlay = textOverlayFromGeneration || existingThumbnail?.edits?.textOverlay;
+
+      // Backward compatibility: Convert old absolute positions to relative
+      if (textOverlay && textOverlay.x > 1 && textOverlay.y > 1) {
+        // This appears to be old absolute positioning data, convert to relative
+        // Assume original modal was roughly 350x200 based on common mobile dimensions
+        const assumedModalWidth = 350;
+        const assumedModalHeight = 200;
+        textOverlay = {
+          ...textOverlay,
+          x: Math.min(1, textOverlay.x / assumedModalWidth),
+          y: Math.min(1, textOverlay.y / assumedModalHeight)
+        };
+      }
+
+      if (textOverlay) {
         // Load existing text overlay
         setThumbnailEdits({
           imageUrl,
-          textOverlay: existingThumbnail.edits.textOverlay
+          textOverlay: textOverlay
         });
       } else {
         // Initialize new edits for this image
@@ -1064,6 +1119,7 @@ export default function GenerateScreen() {
                     prompt={generation.prompt}
                     onEdit={() => openModal(generation.url1)}
                     style={styles}
+                    textOverlay={generation.textOverlays?.url1}
                   />
                 )}
 
@@ -1077,6 +1133,7 @@ export default function GenerateScreen() {
                       if (generation.url2) openModal(generation.url2);
                     }}
                     style={styles}
+                    textOverlay={generation.textOverlays?.url2}
                   />
                 )}
 
@@ -1090,6 +1147,7 @@ export default function GenerateScreen() {
                       if (generation.url3) openModal(generation.url3);
                     }}
                     style={styles}
+                    textOverlay={generation.textOverlays?.url3}
                   />
                 )}
 
@@ -1211,10 +1269,22 @@ export default function GenerateScreen() {
             multiline
             blurOnSubmit={true}
             returnKeyType="send"
+            onKeyPress={({ nativeEvent }) => {
+              if (nativeEvent.key === 'Enter') {
+                if (topic.trim() && !isLoading) {
+                  handleGenerate();
+                }
+              }
+            }}
+            onSubmitEditing={() => {
+              if (topic.trim() && !isLoading) {
+                handleGenerate();
+              }
+            }}
           />
           <TouchableOpacity
             style={[styles.sendBtn, (!topic || isLoading) && styles.sendBtnDisabled]}
-            onPress={handleGenerate}
+            onPress={() => handleGenerate()}
             disabled={!topic || isLoading}
             activeOpacity={0.8}
           >
@@ -1307,32 +1377,119 @@ export default function GenerateScreen() {
                       resizeMode="cover"
                     />
 
-                    {/* Text overlay display */}
-                    {thumbnailEdits?.textOverlay && (
-                      <View
+                    {/* Regenerating Animation Overlay */}
+                    {isModalGenerating && (
+                      <View style={styles.modalLoadingOverlay}>
+                        <View style={styles.modalLoadingTextContainer}>
+                          <Text style={styles.modalLoadingText}>Regenerating...</Text>
+                          <View style={styles.loadingDots}>
+                            <Animated.View style={[styles.dot, { transform: [{ translateY: dot1Anim }] }]} />
+                            <Animated.View style={[styles.dot, { transform: [{ translateY: dot2Anim }] }]} />
+                            <Animated.View style={[styles.dot, { transform: [{ translateY: dot3Anim }] }]} />
+                          </View>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Text overlay display - confirmed text that can be re-edited */}
+                    {thumbnailEdits?.textOverlay && !textSticker && imageContainerDimensions.width > 0 && (
+                      <TouchableOpacity
                         style={{
                           position: 'absolute',
-                          left: thumbnailEdits.textOverlay.x,
-                          top: thumbnailEdits.textOverlay.y,
+                          left: thumbnailEdits.textOverlay.x * imageContainerDimensions.width,
+                          top: thumbnailEdits.textOverlay.y * imageContainerDimensions.height,
                           transform: [
                             { scale: thumbnailEdits.textOverlay.scale },
                             { rotate: `${thumbnailEdits.textOverlay.rotation}deg` }
                           ],
                         }}
+                        onPress={() => {
+                          // Convert relative positions back to absolute for editing
+                          const absoluteX = thumbnailEdits.textOverlay!.x * imageContainerDimensions.width;
+                          const absoluteY = thumbnailEdits.textOverlay!.y * imageContainerDimensions.height;
+                          
+                          // Convert confirmed text back to editable textSticker
+                          setSelectedTool('text');
+                          setTextSticker({
+                            text: thumbnailEdits.textOverlay!.text,
+                            x: absoluteX,
+                            y: absoluteY,
+                            scale: thumbnailEdits.textOverlay!.scale,
+                            rotation: thumbnailEdits.textOverlay!.rotation
+                          });
+
+                          // Initialize animated values with current absolute positions
+                          textStickerBaseX.setOffset(absoluteX);
+                          textStickerBaseY.setOffset(absoluteY);
+                          textStickerBaseX.setValue(0);
+                          textStickerBaseY.setValue(0);
+                          textStickerBaseScale.setValue(thumbnailEdits.textOverlay!.scale);
+                          textStickerBaseRotation.setValue(thumbnailEdits.textOverlay!.rotation);
+
+                          // Reset deltas
+                          textStickerPanDelta.setValue({ x: 0, y: 0 });
+                          textStickerScaleDelta.setValue(1);
+                          textStickerRotationDelta.setValue(0);
+
+                          // Clear the confirmed overlay so it doesn't show behind the editable one
+                          setThumbnailEdits(prev => ({
+                            imageUrl: modalImageUrl,
+                            textOverlay: undefined
+                          }));
+                        }}
+                        onLongPress={() => {
+                          // Long press to edit text content
+                          Alert.prompt(
+                            'Edit Text',
+                            'Change your text:',
+                            [
+                              {
+                                text: 'Cancel',
+                                style: 'cancel'
+                              },
+                              {
+                                text: 'Update',
+                                onPress: (newText?: string) => {
+                                  if (newText && newText.trim() && thumbnailEdits?.textOverlay) {
+                                    setThumbnailEdits(prev => ({
+                                      imageUrl: modalImageUrl,
+                                      textOverlay: {
+                                        ...prev!.textOverlay!,
+                                        text: newText.trim()
+                                      }
+                                    }));
+                                  }
+                                }
+                              }
+                            ],
+                            'plain-text',
+                            thumbnailEdits?.textOverlay?.text
+                          );
+                        }}
+                        activeOpacity={0.8}
                       >
-                        <Text
+                        <View
                           style={{
-                            fontSize: 24,
-                            fontWeight: 'bold',
-                            color: 'white',
-                            textShadowColor: 'black',
-                            textShadowOffset: { width: 1, height: 1 },
-                            textShadowRadius: 2,
+                            padding: 10,
+                            // Remove background for clean look when confirmed
+                            backgroundColor: 'transparent',
+                            borderRadius: 8,
                           }}
                         >
-                          {thumbnailEdits.textOverlay.text}
-                        </Text>
-                      </View>
+                          <Text
+                            style={{
+                              fontSize: 40,
+                              fontWeight: 'bold',
+                              color: '#ffffff',
+                              textShadowColor: 'rgba(0, 0, 0, 0.75)',
+                              textShadowOffset: { width: 2, height: 2 },
+                              textShadowRadius: 4
+                            }}
+                          >
+                            {thumbnailEdits.textOverlay.text}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
                     )}
 
                     {/* Erase mask overlay */}
@@ -1576,7 +1733,7 @@ export default function GenerateScreen() {
             <View style={styles.editTools}>
               {selectedTool === 'text' && textSticker ? (
                 <>
-                  {/* Text editing tools: -, +, ✓ */}
+                  {/* Text editing tools: -, Edit, +, ✓ */}
                   <TouchableOpacity
                     style={styles.editToolIcon}
                     onPress={() => {
@@ -1588,6 +1745,38 @@ export default function GenerateScreen() {
                     }}
                   >
                     <Text style={styles.editToolText}>−</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.editToolIcon}
+                    onPress={() => {
+                      // Edit text content
+                      Alert.prompt(
+                        'Edit Text',
+                        'Change your text:',
+                        [
+                          {
+                            text: 'Cancel',
+                            style: 'cancel'
+                          },
+                          {
+                            text: 'Update',
+                            onPress: (newText?: string) => {
+                              if (newText && newText.trim() && textSticker) {
+                                setTextSticker(prev => prev ? {
+                                  ...prev,
+                                  text: newText.trim()
+                                } : null);
+                              }
+                            }
+                          }
+                        ],
+                        'plain-text',
+                        textSticker.text
+                      );
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, color: '#ffffff', fontWeight: '600' }}>Aa</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity
@@ -1606,16 +1795,31 @@ export default function GenerateScreen() {
                   <TouchableOpacity
                     style={styles.editToolIcon}
                     onPress={async () => {
-                      if (!textSticker) return;
+                      if (!textSticker || imageContainerDimensions.width === 0 || imageContainerDimensions.height === 0) return;
+
+                      // Check credits before applying text
+                      const credits = await getCredits();
+                      if (credits.current <= 0) {
+                        Alert.alert(
+                          'No Credits',
+                          'You have run out of credits. Please upgrade your plan to continue editing thumbnails.',
+                          [{ text: 'OK' }]
+                        );
+                        return;
+                      }
 
                       try {
                         setIsModalGenerating(true);
 
-                        // Store the text overlay information with the thumbnail
+                        // Convert absolute positions to relative percentages for consistent scaling
+                        const relativeX = textSticker.x / imageContainerDimensions.width;
+                        const relativeY = textSticker.y / imageContainerDimensions.height;
+
+                        // Store the text overlay information with relative positioning
                         const textOverlay = {
                           text: textSticker.text,
-                          x: textSticker.x,
-                          y: textSticker.y,
+                          x: relativeX, // Now storing as percentage (0.0 to 1.0)
+                          y: relativeY, // Now storing as percentage (0.0 to 1.0)
                           scale: textSticker.scale,
                           rotation: textSticker.rotation
                         };
@@ -1625,6 +1829,54 @@ export default function GenerateScreen() {
                           imageUrl: modalImageUrl,
                           textOverlay: textOverlay
                         }));
+
+                        // Update the allGenerations state to include text overlay
+                        setAllGenerations(prev => prev.map(gen => {
+                          if (gen.url1 === modalImageUrl) {
+                            return {
+                              ...gen,
+                              textOverlays: {
+                                ...gen.textOverlays,
+                                url1: textOverlay
+                              }
+                            };
+                          } else if (gen.url2 === modalImageUrl) {
+                            return {
+                              ...gen,
+                              textOverlays: {
+                                ...gen.textOverlays,
+                                url2: textOverlay
+                              }
+                            };
+                          } else if (gen.url3 === modalImageUrl) {
+                            return {
+                              ...gen,
+                              textOverlays: {
+                                ...gen.textOverlays,
+                                url3: textOverlay
+                              }
+                            };
+                          }
+                          return gen;
+                        }));
+
+                        // Find current generation to get prompt for saving to history
+                        const currentGeneration = allGenerations.find(gen =>
+                          gen.url1 === modalImageUrl || gen.url2 === modalImageUrl || gen.url3 === modalImageUrl
+                        );
+
+                        if (currentGeneration) {
+                          // Save to history with text overlay
+                          await addThumbnailToHistory(currentGeneration.prompt, modalImageUrl, {
+                            textOverlay: textOverlay
+                          });
+                        }
+
+                        // Deduct 1 credit for text overlay application (count as image generation)
+                        await deductCredit(1);
+
+                        // Refresh credits display immediately
+                        await refreshCredits();
 
                         // Clear text sticker and deselect tool
                         setTextSticker(null);
@@ -2410,6 +2662,27 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(139, 146, 155, 0.1)',
+  },
+  modalLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(11, 15, 20, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  modalLoadingTextContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  modalLoadingText: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
   },
   downloadIcon: {
     width: 36,

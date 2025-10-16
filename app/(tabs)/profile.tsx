@@ -8,8 +8,9 @@ import { useModal } from '../../src/contexts/ModalContext';
 import { supabase } from '../../lib/supabase';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getSubscriptionInfo, SubscriptionInfo, getCredits, CreditsInfo } from '../../src/utils/subscriptionStorage';
-import { getSubscriptionInfo as getSupabaseSubscriptionInfo, changePlan, SubscriptionPlan } from '../../src/features/subscription/api';
+import { getSubscriptionInfo as getSupabaseSubscriptionInfo, changePlan, cancelSubscription, SubscriptionPlan } from '../../src/features/subscription/api';
 import * as StoreReview from 'expo-store-review';
+import IAPService from '../../services/IAPService';
 
 export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
@@ -26,7 +27,8 @@ export default function ProfileScreen() {
     plan: 'Free Plan',
     price: '$0.00',
     renewalDate: null as string | null,
-    status: 'free'
+    status: 'free',
+    isCancelled: false
   });
   const {
     isAboutModalVisible,
@@ -47,12 +49,23 @@ export default function ProfileScreen() {
     message: ''
   });
   const router = useRouter();
+  const [products, setProducts] = useState<any[]>([]);
+  const [iapReady, setIapReady] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
+
+  const PRODUCT_IDS = {
+    yearly: 'thumbnail.pro.yearly',
+    monthly: 'thumbnail.pro.monthly',
+    weekly: 'thumbnail.pro.weekly',
+  };
+
+  const isIAPAvailable = IAPService.isAvailable();
 
   const settings = [
-    { id: 'rate', title: 'Rate App', subtitle: 'Share your feedback on the App Store' },
     { id: 'about', title: 'About', subtitle: 'App information' },
     { id: 'help', title: 'Help & Support', subtitle: 'Get assistance' },
-    { id: 'upgrade', title: 'Upgrade Your Plan', subtitle: 'Choose a subscription plan' },
+    { id: 'upgrade', title: 'Plans', subtitle: 'Choose a subscription plan' },
     { id: 'billing', title: 'Billing & Subscription', subtitle: 'Manage your current subscription' },
   ];
 
@@ -61,6 +74,7 @@ export default function ProfileScreen() {
       id: 'weekly',
       name: 'Weekly',
       price: '$2.99/week',
+      billingPrice: '$2.99',
       imageLimit: '30 images per month',
       description: 'Billed weekly at $2.99.\nCancel anytime'
     },
@@ -68,6 +82,7 @@ export default function ProfileScreen() {
       id: 'monthly',
       name: 'Monthly',
       price: '$1.50/week',
+      billingPrice: '$5.99',
       imageLimit: '75 images per month',
       description: 'Billed monthly at $5.99.\nCancel anytime'
     },
@@ -75,6 +90,7 @@ export default function ProfileScreen() {
       id: 'yearly',
       name: 'Yearly',
       price: '$1.15/week',
+      billingPrice: '$59.99',
       imageLimit: '90 images per month',
       description: 'Billed yearly at $59.99.\nCancel anytime'
     }
@@ -140,6 +156,15 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadUserData();
+    initializeIAP();
+
+    // Fallback: Set IAP ready after 5 seconds if still not ready
+    const timeout = setTimeout(() => {
+      setIapReady(true);
+      console.log('[PROFILE] IAP initialization timeout - unblocking button');
+    }, 5000);
+
+    return () => clearTimeout(timeout);
   }, []);
 
   // Refresh data when screen is focused (important for guest mode)
@@ -148,6 +173,68 @@ export default function ProfileScreen() {
       loadUserData();
     }, [])
   );
+
+  const initializeIAP = async () => {
+    if (!isIAPAvailable) {
+      console.log('[PROFILE] IAP not available on this platform');
+      // Set IAP ready to true even if unavailable so button is not stuck
+      setIapReady(true);
+      return;
+    }
+
+    try {
+      const initialized = await IAPService.initialize();
+      console.log('[PROFILE] IAP initialized:', initialized);
+      setIapReady(initialized);
+
+      if (initialized) {
+        await fetchProducts();
+      } else {
+        // If initialization failed, still set ready to true to unblock the button
+        setIapReady(true);
+      }
+    } catch (error) {
+      console.error('[PROFILE] Error initializing IAP:', error);
+      // Set ready to true even on error to prevent button from being stuck
+      setIapReady(true);
+    }
+  };
+
+  const fetchProducts = async (showErrors = false) => {
+    if (!isIAPAvailable) {
+      if (showErrors) {
+        Alert.alert('IAP Unavailable', 'In-app purchases are not available on this platform.');
+      }
+      return [];
+    }
+
+    console.log('[PROFILE] Fetching products...');
+    try {
+      setLoadingProducts(true);
+      const results = await IAPService.getProducts();
+      if (results?.length) {
+        setProducts(results);
+        console.log('[PROFILE] Products loaded:', results.map(p => `${p.productId}: ${p.price}`).join(', '));
+        return results;
+      } else {
+        setProducts([]);
+        console.log('[PROFILE] No products available');
+        if (showErrors) {
+          Alert.alert('Products Unavailable', 'Could not load subscription products. Please check your internet connection and try again.');
+        }
+        return [];
+      }
+    } catch (err) {
+      setProducts([]);
+      console.error('[PROFILE] Error fetching products:', err);
+      if (showErrors) {
+        Alert.alert('Error', 'Failed to load products: ' + String(err instanceof Error ? err.message : err));
+      }
+      return [];
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -198,7 +285,7 @@ export default function ProfileScreen() {
       setCredits(creditsInfo);
 
       // Determine current plan based on Supabase profile first, then fallback to local storage
-      if (supabaseSubInfo && supabaseSubInfo.is_pro_version) {
+      if (supabaseSubInfo && supabaseSubInfo.subscription_plan) {
         const plan = supabaseSubInfo.subscription_plan;
         let planName = '';
         let price = '';
@@ -222,7 +309,8 @@ export default function ProfileScreen() {
           plan: planName,
           price: price,
           renewalDate: supabaseSubInfo.purchase_time,
-          status: 'active'
+          status: supabaseSubInfo.is_pro_version ? 'active' : 'inactive',
+          isCancelled: !supabaseSubInfo.is_pro_version
         });
       } else if (subInfo && subInfo.isActive) {
         // Fallback to local storage
@@ -443,59 +531,255 @@ export default function ProfileScreen() {
       if (hasActiveSub) {
         // This is a plan change (upgrade or downgrade)
         const currentPlanType = subscriptionDisplay.plan.toLowerCase();
-        const isDowngrade =
-          (currentPlanType.includes('yearly') && (planId === 'monthly' || planId === 'weekly')) ||
-          (currentPlanType.includes('monthly') && planId === 'weekly');
 
-        Alert.alert(
-          isDowngrade ? 'Downgrade Plan' : 'Change Plan',
-          `Are you sure you want to ${isDowngrade ? 'downgrade' : 'change'} to the ${plan.name} plan? Your new plan will take effect on your next billing cycle. No charge will be applied now.`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Confirm',
-              onPress: async () => {
-                try {
-                  // Change the plan in Supabase without charging
-                  await changePlan(planId as SubscriptionPlan);
+        // Determine if this is a downgrade or upgrade
+        const planHierarchy = { weekly: 1, monthly: 2, yearly: 3 };
+        let currentPlanLevel = 0;
+        if (currentPlanType.includes('yearly')) currentPlanLevel = 3;
+        else if (currentPlanType.includes('monthly')) currentPlanLevel = 2;
+        else if (currentPlanType.includes('weekly')) currentPlanLevel = 1;
 
-                  setIsBillingModalVisible(false);
+        const newPlanLevel = planHierarchy[planId as keyof typeof planHierarchy];
+        const isDowngrade = newPlanLevel < currentPlanLevel;
+        const isUpgrade = newPlanLevel > currentPlanLevel;
 
-                  // Reload user data to reflect changes
-                  await loadUserData();
+        if (isUpgrade) {
+          // Upgrade - requires payment through IAP
+          Alert.alert(
+            'Upgrade Plan',
+            `Upgrading to ${plan.name} requires a new purchase. You will be charged ${plan.billingPrice} now and your current subscription will be cancelled.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Proceed to Payment',
+                onPress: async () => {
+                  // Trigger IAP purchase flow for upgrade
+                  if (!isIAPAvailable) {
+                    if (__DEV__) {
+                      Alert.alert(
+                        'Development Mode',
+                        'IAP is not available. Would you like to simulate a successful upgrade for testing?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Simulate Upgrade',
+                            onPress: async () => {
+                              try {
+                                const { data: { user }, error: userError } = await supabase.auth.getUser();
+                                if (userError || !user) throw new Error('User not authenticated');
 
-                  Alert.alert(
-                    'Plan Changed',
-                    `Your plan has been updated to ${plan.name}. You will be charged ${plan.price.split('/')[0]} starting next billing cycle.`
-                  );
-                } catch (error) {
-                  console.error('Error changing plan:', error);
-                  Alert.alert('Error', 'Failed to change plan. Please try again.');
+                                let credits_max = 0;
+                                switch (planId) {
+                                  case 'yearly': credits_max = 90; break;
+                                  case 'monthly': credits_max = 75; break;
+                                  case 'weekly': credits_max = 30; break;
+                                }
+
+                                const { error: updateError } = await supabase
+                                  .from('profiles')
+                                  .update({
+                                    subscription_plan: planId,
+                                    is_pro_version: true,
+                                    subscription_id: `test_${planId}_${Date.now()}`,
+                                    purchase_time: new Date().toISOString(),
+                                    credits_current: credits_max,
+                                    credits_max: credits_max,
+                                    last_credit_reset: new Date().toISOString()
+                                  })
+                                  .eq('id', user.id);
+
+                                if (updateError) throw updateError;
+
+                                setIsBillingModalVisible(false);
+                                await loadUserData();
+                                Alert.alert('Success (Simulated)', 'Your plan has been upgraded (development mode).');
+                              } catch (error) {
+                                console.error('Test upgrade error:', error);
+                                Alert.alert('Error', 'Failed to upgrade plan.');
+                              }
+                            }
+                          }
+                        ]
+                      );
+                    } else {
+                      Alert.alert('Purchases Unavailable', 'In-app purchases are only available on physical devices.');
+                    }
+                    return;
+                  }
+
+                  const list = products.length ? products : await fetchProducts(true);
+                  const productId = PRODUCT_IDS[planId as keyof typeof PRODUCT_IDS];
+                  const product = list.find(p => p.productId === productId);
+
+                  if (!product) {
+                    Alert.alert('Plan not available', 'We couldn\'t find that plan. Please try again.');
+                    return;
+                  }
+
+                  setCurrentPurchaseAttempt(planId as 'monthly' | 'yearly' | 'weekly');
+                  await handlePurchase(product.productId);
                 }
               }
-            }
-          ]
-        );
-      } else {
-        // New subscription - would integrate with payment processor
-        Alert.alert(
-          'Subscribe to ' + plan.name,
-          `You selected the ${plan.name} plan for ${plan.price}. This will redirect to the payment processor.`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Continue',
-              onPress: () => {
-                setIsBillingModalVisible(false);
-                // Here you would redirect to payment processor
-                Alert.alert('Payment', 'Payment integration would happen here!');
+            ]
+          );
+        } else if (isDowngrade) {
+          // Downgrade - no payment required, just update database
+          Alert.alert(
+            'Downgrade Plan',
+            `Are you sure you want to downgrade to the ${plan.name} plan? Your new plan will take effect on your next billing cycle. No charge will be applied now.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Confirm',
+                onPress: async () => {
+                  try {
+                    await changePlan(planId as SubscriptionPlan);
+                    setIsBillingModalVisible(false);
+                    await loadUserData();
+                    Alert.alert('Plan Changed', `Your plan will be downgraded to ${plan.name} at the end of your current billing cycle.`);
+                  } catch (error) {
+                    console.error('Error changing plan:', error);
+                    Alert.alert('Error', 'Failed to change plan. Please try again.');
+                  }
+                }
               }
-            }
-          ]
-        );
+            ]
+          );
+        }
+      } else {
+        // New subscription - use IAP
+        if (!isIAPAvailable) {
+          // For development/testing: Allow bypass in development mode
+          if (__DEV__) {
+            Alert.alert(
+              'Development Mode',
+              'IAP is not available. Would you like to simulate a successful purchase for testing?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Simulate Purchase',
+                  onPress: async () => {
+                    try {
+                      // Get current user
+                      const { data: { user }, error: userError } = await supabase.auth.getUser();
+                      if (userError || !user) {
+                        throw new Error('User not authenticated');
+                      }
+
+                      // Determine credits based on plan
+                      let credits_max = 0;
+                      switch (planId) {
+                        case 'yearly': credits_max = 90; break;
+                        case 'monthly': credits_max = 75; break;
+                        case 'weekly': credits_max = 30; break;
+                      }
+
+                      // Update subscription in Supabase with is_pro_version = true
+                      const { error: updateError } = await supabase
+                        .from('profiles')
+                        .update({
+                          subscription_plan: planId,
+                          is_pro_version: true,
+                          subscription_id: `test_${planId}_${Date.now()}`,
+                          purchase_time: new Date().toISOString(),
+                          credits_current: credits_max,
+                          credits_max: credits_max,
+                          last_credit_reset: new Date().toISOString()
+                        })
+                        .eq('id', user.id);
+
+                      if (updateError) throw updateError;
+
+                      setIsBillingModalVisible(false);
+                      await loadUserData();
+                      Alert.alert('Success (Simulated)', 'Your subscription has been activated (development mode).');
+                    } catch (error) {
+                      console.error('Test purchase error:', error);
+                      Alert.alert('Error', 'Failed to activate test subscription.');
+                    }
+                  }
+                }
+              ]
+            );
+          } else {
+            Alert.alert(
+              'Purchases Unavailable',
+              'In-app purchases are only available on physical devices with a valid App Store connection.',
+              [{ text: 'OK' }]
+            );
+          }
+          return;
+        }
+
+        const list = products.length ? products : await fetchProducts(true);
+        const productId = PRODUCT_IDS[planId as keyof typeof PRODUCT_IDS];
+        const product = list.find(p => p.productId === productId);
+
+        if (!product) {
+          Alert.alert(
+            'Plan not available',
+            'We couldn\'t find that plan. Please check your internet connection and try again.'
+          );
+          return;
+        }
+
+        // Set the current purchase attempt BEFORE starting the purchase
+        setCurrentPurchaseAttempt(planId as 'monthly' | 'yearly' | 'weekly');
+        await handlePurchase(product.productId);
       }
     } catch (error) {
+      setCurrentPurchaseAttempt(null);
       Alert.alert('Error', 'Failed to process subscription. Please try again.');
+    }
+  };
+
+  const handlePurchase = async (productId: string) => {
+    if (!isIAPAvailable) {
+      Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
+      setCurrentPurchaseAttempt(null);
+      return;
+    }
+
+    try {
+      console.log('[PROFILE] Attempting to purchase:', productId);
+      await IAPService.purchaseProduct(productId);
+
+      // On success, close modal and reload data
+      setIsBillingModalVisible(false);
+      setCurrentPurchaseAttempt(null);
+      await loadUserData();
+
+      Alert.alert(
+        'Success!',
+        'Your subscription has been activated. Thank you for subscribing!',
+        [{ text: 'OK' }]
+      );
+    } catch (e: any) {
+      setCurrentPurchaseAttempt(null);
+      const msg = String(e?.message || e);
+
+      if (/already.*(owned|subscribed)/i.test(msg)) {
+        Alert.alert(
+          'Already subscribed',
+          'You already have an active subscription. Manage your subscriptions from the App Store.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      if (/item.*unavailable|product.*not.*available/i.test(msg)) {
+        Alert.alert('Not available', 'This plan isn\'t available for purchase right now.');
+        return;
+      }
+
+      // Handle user cancellation
+      if (/user.*(cancel|abort)/i.test(msg) || /cancel/i.test(msg)) {
+        console.log('[PROFILE] Purchase was cancelled by user');
+        return;
+      }
+
+      console.error('[PROFILE] Purchase error:', msg);
+      Alert.alert('Purchase error', msg);
     }
   };
 
@@ -510,21 +794,26 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Here you would call your cancel subscription API
-              const renewalDateStr = subscriptionDisplay.renewalDate
-                ? new Date(subscriptionDisplay.renewalDate).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })
-                : 'the end of your billing period';
+              // Call the cancel subscription API
+              await cancelSubscription();
+
+              // Update subscription display to show cancelled/inactive state
+              setSubscriptionDisplay({
+                ...subscriptionDisplay,
+                status: 'inactive',
+                isCancelled: true
+              });
+
+              // Reload user data to reflect changes
+              await loadUserData();
 
               Alert.alert(
                 'Subscription Cancelled',
-                `Your subscription has been cancelled. You will continue to have access to Pro features until ${renewalDateStr}.`,
+                'Your subscription has been cancelled. You will continue to have access to Pro features until the next billing cycle.',
                 [{ text: 'OK', onPress: () => setIsBillingManagementModalVisible(false) }]
               );
             } catch (error) {
+              console.error('Error cancelling subscription:', error);
               Alert.alert('Error', 'Failed to cancel subscription. Please try again or contact support.');
             }
           }
@@ -865,8 +1154,9 @@ export default function ProfileScreen() {
           {/* Continue Button - Fixed at Bottom */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={styles.continueButton}
+              style={[styles.continueButton, (!iapReady || loadingProducts || currentPurchaseAttempt) && { opacity: 0.6 }]}
               onPress={() => handleSubscribe(selectedPlan)}
+              disabled={!iapReady || loadingProducts || !!currentPurchaseAttempt}
             >
               <LinearGradient
                 colors={['#1e40af', '#1e3a8a']}
@@ -874,7 +1164,9 @@ export default function ProfileScreen() {
                 end={{ x: 1, y: 0 }}
                 style={styles.continueGradient}
               >
-                <Text style={styles.continueText}>Continue</Text>
+                <Text style={styles.continueText}>
+                  {!iapReady ? 'Connecting...' : loadingProducts ? 'Loading...' : currentPurchaseAttempt ? 'Processing...' : 'Continue'}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -905,6 +1197,11 @@ export default function ProfileScreen() {
                       <Text style={styles.statusText}>Active</Text>
                     </View>
                   )}
+                  {subscriptionDisplay.status === 'inactive' && (
+                    <View style={styles.inactiveStatusBadge}>
+                      <Text style={styles.inactiveStatusText}>Inactive</Text>
+                    </View>
+                  )}
                 </View>
 
                 {subscriptionDisplay.renewalDate && (
@@ -927,16 +1224,20 @@ export default function ProfileScreen() {
                     onPress={handleUpgradeFromBilling}
                   >
                     <Text style={styles.upgradeButtonText}>
-                      {subscriptionDisplay.plan.includes('Yearly') ? 'Downgrade Plan' : 'Upgrade Plan'}
+                      {subscriptionDisplay.status === 'inactive'
+                        ? 'Upgrade Plan'
+                        : subscriptionDisplay.plan.includes('Yearly') ? 'Downgrade Plan' : 'Upgrade Plan'}
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={handleCancelSubscription}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel Subscription</Text>
-                  </TouchableOpacity>
+                  {subscriptionDisplay.status === 'active' && (
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      onPress={handleCancelSubscription}
+                    >
+                      <Text style={styles.cancelButtonText}>Cancel Subscription</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             </ScrollView>
@@ -1541,6 +1842,17 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inactiveStatusBadge: {
+    backgroundColor: '#4b5563',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  inactiveStatusText: {
+    color: '#d1d5db',
     fontSize: 12,
     fontWeight: '600',
   },
