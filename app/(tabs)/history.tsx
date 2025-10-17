@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import ThumbnailCard from '../../src/components/ThumbnailCard';
-import { getSavedThumbnails, deleteSavedThumbnail, SavedThumbnail } from '../../src/utils/thumbnailStorage';
+import { getSavedThumbnails, deleteSavedThumbnail, toggleFavorite, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -118,21 +118,17 @@ export default function HistoryScreen() {
 
   const handleFavorite = async (id: string) => {
     try {
-      const existingThumbnails = await getSavedThumbnails();
-      const updatedThumbnails = existingThumbnails.map(thumb =>
-        thumb.id === id ? { ...thumb, isFavorited: !thumb.isFavorited } : thumb
-      );
+      const updatedThumbnail = await toggleFavorite(id);
 
-      // Save back to storage
-      await require('../../src/utils/thumbnailStorage').default;
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      await AsyncStorage.setItem('saved_thumbnails', JSON.stringify(updatedThumbnails));
+      if (!updatedThumbnail) {
+        Alert.alert('Error', 'Thumbnail not found');
+        return;
+      }
 
-      // Update local state
-      setThumbnails(updatedThumbnails);
+      // Reload thumbnails to reflect the change
+      await loadThumbnails();
 
-      const thumbnail = updatedThumbnails.find(t => t.id === id);
-      Alert.alert('Success', thumbnail?.isFavorited ? 'Added to saved' : 'Removed from saved');
+      Alert.alert('Success', updatedThumbnail.isFavorited ? 'Added to saved' : 'Removed from saved');
     } catch (error) {
       console.error('Error toggling favorite:', error);
       Alert.alert('Error', 'Failed to update thumbnail');

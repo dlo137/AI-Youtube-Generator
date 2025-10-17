@@ -441,10 +441,14 @@ serve(async (req: Request) => {
       throw new Error(`Image generation failed: ${error.message}`);
     }
 
-    // Store 3 images to Supabase Storage
-    const filename1 = `${crypto.randomUUID()}.png`;
-    const filename2 = `${crypto.randomUUID()}.png`;
-    const filename3 = `${crypto.randomUUID()}.png`;
+    // Get user ID from auth for namespacing
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id || 'anonymous';
+
+    // Store 3 images to Supabase Storage with user-specific paths
+    const filename1 = `${userId}/${crypto.randomUUID()}.png`;
+    const filename2 = `${userId}/${crypto.randomUUID()}.png`;
+    const filename3 = `${userId}/${crypto.randomUUID()}.png`;
 
     const [upload1, upload2, upload3] = await Promise.all([
       supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
@@ -456,11 +460,13 @@ serve(async (req: Request) => {
     if (upload2.error) throw upload2.error;
     if (upload3.error) throw upload3.error;
 
-    // Generate signed URLs for 3 images
+    // Generate long-lived signed URLs (7 days) for 3 images
+    // The app will download these to permanent local storage immediately
+    const SEVEN_DAYS = 7 * 24 * 60 * 60; // 7 days in seconds
     const [signed1, signed2, signed3] = await Promise.all([
-      supabase.storage.from("thumbnails").createSignedUrl(filename1, 60 * 60),
-      supabase.storage.from("thumbnails").createSignedUrl(filename2, 60 * 60),
-      supabase.storage.from("thumbnails").createSignedUrl(filename3, 60 * 60)
+      supabase.storage.from("thumbnails").createSignedUrl(filename1, SEVEN_DAYS),
+      supabase.storage.from("thumbnails").createSignedUrl(filename2, SEVEN_DAYS),
+      supabase.storage.from("thumbnails").createSignedUrl(filename3, SEVEN_DAYS)
     ]);
 
     if (signed1.error) throw signed1.error;

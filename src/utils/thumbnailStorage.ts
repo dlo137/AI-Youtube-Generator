@@ -1,5 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import { supabase } from '../../lib/supabase';
+
+/**
+ * Thumbnail Storage Module
+ *
+ * PERSISTENCE STRATEGY:
+ * 1. Images are uploaded to Supabase Storage with user-specific paths (userId/filename)
+ * 2. Edge Function returns signed URLs valid for 7 days
+ * 3. This module immediately downloads images to permanent local device storage
+ * 4. Local storage is namespaced by user ID for security isolation
+ * 5. Images persist until explicitly deleted by the user
+ *
+ * IMPORTANT: Images are stored locally on the device to ensure they never disappear.
+ * Even if Supabase signed URLs expire, the local copy remains accessible.
+ */
 
 export interface SavedThumbnail {
   id: string;
@@ -21,45 +36,120 @@ export interface SavedThumbnail {
   } | null;
 }
 
-const STORAGE_KEY = 'saved_thumbnails';
-const THUMBNAIL_DIR = `${FileSystem.documentDirectory}thumbnails/`;
+// Get user-specific storage key
+const getStorageKey = async (): Promise<string | null> => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
 
-// Ensure thumbnail directory exists
-const ensureThumbnailDirectory = async () => {
-  const dirInfo = await FileSystem.getInfoAsync(THUMBNAIL_DIR);
-  if (!dirInfo.exists) {
-    await FileSystem.makeDirectoryAsync(THUMBNAIL_DIR, { intermediates: true });
+    if (!userId) {
+      console.error('User not authenticated');
+      return null;
+    }
+
+    // Namespace storage by user ID for proper isolation
+    return `saved_thumbnails_${userId}`;
+  } catch (error) {
+    console.error('Error getting storage key:', error);
+    return null;
   }
 };
 
-// Download and save image to permanent local storage
-const downloadImageToLocal = async (remoteUrl: string, thumbnailId: string): Promise<string> => {
+// Get user-specific thumbnail directory
+const getThumbnailDir = async (): Promise<string | null> => {
   try {
-    await ensureThumbnailDirectory();
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
 
-    const filename = `thumbnail_${thumbnailId}.png`;
-    const localUri = `${THUMBNAIL_DIR}${filename}`;
-
-    // Check if file already exists locally
-    const fileInfo = await FileSystem.getInfoAsync(localUri);
-    if (fileInfo.exists) {
-      console.log('Image already exists locally:', localUri);
-      return localUri;
+    if (!userId) {
+      console.error('User not authenticated');
+      return null;
     }
 
-    // Download the image
-    console.log('Downloading image from:', remoteUrl);
-    console.log('Saving to:', localUri);
-
-    const { uri } = await FileSystem.downloadAsync(remoteUrl, localUri);
-    console.log('Image downloaded successfully to:', uri);
-
-    return uri;
+    // Namespace directory by user ID for proper isolation
+    return `${FileSystem.documentDirectory}thumbnails/${userId}/`;
   } catch (error) {
-    console.error('Error downloading image to local storage:', error);
-    // If download fails, return the original URL as fallback
-    return remoteUrl;
+    console.error('Error getting thumbnail directory:', error);
+    return null;
   }
+};
+
+// Ensure thumbnail directory exists
+const ensureThumbnailDirectory = async () => {
+  const thumbnailDir = await getThumbnailDir();
+  if (!thumbnailDir) {
+    throw new Error('User not authenticated');
+  }
+
+  const dirInfo = await FileSystem.getInfoAsync(thumbnailDir);
+  if (!dirInfo.exists) {
+    await FileSystem.makeDirectoryAsync(thumbnailDir, { intermediates: true });
+  }
+};
+
+// Download and save image to permanent local storage with retry logic
+const downloadImageToLocal = async (remoteUrl: string, thumbnailId: string, maxRetries = 3): Promise<string> => {
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await ensureThumbnailDirectory();
+
+      const thumbnailDir = await getThumbnailDir();
+      if (!thumbnailDir) {
+        throw new Error('User not authenticated');
+      }
+
+      const filename = `thumbnail_${thumbnailId}.png`;
+      const localUri = `${thumbnailDir}${filename}`;
+
+      // Check if file already exists locally
+      const fileInfo = await FileSystem.getInfoAsync(localUri);
+      if (fileInfo.exists) {
+        console.log('Image already exists locally:', localUri);
+        return localUri;
+      }
+
+      // Download the image
+      console.log(`Downloading image (attempt ${attempt}/${maxRetries}):`, remoteUrl);
+      console.log('Saving to:', localUri);
+
+      const downloadResult = await FileSystem.downloadAsync(remoteUrl, localUri);
+
+      // Verify the download was successful
+      if (downloadResult.status !== 200) {
+        throw new Error(`Download failed with status: ${downloadResult.status}`);
+      }
+
+      // Verify the file exists and has content
+      const verifyInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+      if (!verifyInfo.exists) {
+        throw new Error('Downloaded file does not exist');
+      }
+      if (verifyInfo.size === 0) {
+        throw new Error('Downloaded file is empty');
+      }
+
+      console.log('Image downloaded successfully to:', downloadResult.uri, `(${verifyInfo.size} bytes)`);
+      return downloadResult.uri;
+
+    } catch (error) {
+      lastError = error;
+      console.error(`Error downloading image (attempt ${attempt}/${maxRetries}):`, error);
+
+      // Wait before retry (exponential backoff)
+      if (attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Max 5 seconds
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  // All retries failed - return the remote URL as fallback
+  console.error('All download attempts failed. Using remote URL as fallback:', remoteUrl);
+  console.error('Last error:', lastError);
+  return remoteUrl;
 };
 
 export const saveThumbnail = async (
@@ -76,6 +166,11 @@ export const saveThumbnail = async (
   } | null
 ): Promise<SavedThumbnail> => {
   try {
+    const storageKey = await getStorageKey();
+    if (!storageKey) {
+      throw new Error('User not authenticated');
+    }
+
     const existingThumbnails = await getSavedThumbnails();
 
     // Generate ID first (we'll need it for download)
@@ -97,7 +192,7 @@ export const saveThumbnail = async (
       const updatedThumbnails = [...existingThumbnails];
       updatedThumbnails[existingIndex] = updatedThumbnail;
 
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedThumbnails));
+      await AsyncStorage.setItem(storageKey, JSON.stringify(updatedThumbnails));
       return updatedThumbnail;
     }
 
@@ -119,7 +214,7 @@ export const saveThumbnail = async (
 
     const updatedThumbnails = [newThumbnail, ...existingThumbnails];
 
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedThumbnails));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(updatedThumbnails));
 
     return newThumbnail;
   } catch (error) {
@@ -142,6 +237,11 @@ export const addThumbnailToHistory = async (
   } | null
 ): Promise<SavedThumbnail> => {
   try {
+    const storageKey = await getStorageKey();
+    if (!storageKey) {
+      throw new Error('User not authenticated');
+    }
+
     const existingThumbnails = await getSavedThumbnails();
 
     // Generate ID first (we'll need it for download)
@@ -175,7 +275,7 @@ export const addThumbnailToHistory = async (
 
     const updatedThumbnails = [newThumbnail, ...existingThumbnails];
 
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedThumbnails));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(updatedThumbnails));
 
     console.log('Added new thumbnail to history:', thumbnailId, localImageUrl);
     return newThumbnail;
@@ -187,7 +287,13 @@ export const addThumbnailToHistory = async (
 
 export const getSavedThumbnails = async (): Promise<SavedThumbnail[]> => {
   try {
-    const stored = await AsyncStorage.getItem(STORAGE_KEY);
+    const storageKey = await getStorageKey();
+    if (!storageKey) {
+      console.error('User not authenticated - cannot get thumbnails');
+      return [];
+    }
+
+    const stored = await AsyncStorage.getItem(storageKey);
     const thumbnails = stored ? JSON.parse(stored) : [];
     // Sort by timestamp descending (most recent first)
     return thumbnails.sort((a: SavedThumbnail, b: SavedThumbnail) => b.timestamp - a.timestamp);
@@ -197,8 +303,34 @@ export const getSavedThumbnails = async (): Promise<SavedThumbnail[]> => {
   }
 };
 
+export const toggleFavorite = async (id: string): Promise<SavedThumbnail | null> => {
+  try {
+    const storageKey = await getStorageKey();
+    if (!storageKey) {
+      throw new Error('User not authenticated');
+    }
+
+    const existingThumbnails = await getSavedThumbnails();
+    const updatedThumbnails = existingThumbnails.map(thumb =>
+      thumb.id === id ? { ...thumb, isFavorited: !thumb.isFavorited } : thumb
+    );
+
+    await AsyncStorage.setItem(storageKey, JSON.stringify(updatedThumbnails));
+
+    return updatedThumbnails.find(t => t.id === id) || null;
+  } catch (error) {
+    console.error('Error toggling favorite:', error);
+    throw error;
+  }
+};
+
 export const deleteSavedThumbnail = async (id: string): Promise<void> => {
   try {
+    const storageKey = await getStorageKey();
+    if (!storageKey) {
+      throw new Error('User not authenticated');
+    }
+
     const existingThumbnails = await getSavedThumbnails();
     const thumbnailToDelete = existingThumbnails.find(thumb => thumb.id === id);
 
@@ -217,7 +349,7 @@ export const deleteSavedThumbnail = async (id: string): Promise<void> => {
     }
 
     const updatedThumbnails = existingThumbnails.filter(thumb => thumb.id !== id);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedThumbnails));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(updatedThumbnails));
   } catch (error) {
     console.error('Error deleting thumbnail:', error);
     throw error;

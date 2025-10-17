@@ -127,7 +127,7 @@ export default function WelcomeScreen() {
             ]}
           />
           <Animated.Image
-            source={step === 1 ? require('../assets/home.png') : step === 2 ? require('../assets/history.png') : require('../assets/home.png')}
+            source={step === 1 ? require('../assets/home.png') : step === 2 ? require('../assets/history.png') : require('../assets/editscreen.png')}
             style={[
               styles.heroImage,
               {

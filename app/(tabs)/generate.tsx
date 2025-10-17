@@ -19,9 +19,22 @@ const AnimatedRect = Animated.createAnimatedComponent(Rect);
 // Utility function to upload image to Supabase Storage
 const uploadImageToStorage = async (imageUri: string, fileName: string): Promise<string | null> => {
   try {
+    // Get auth session - REQUIRED for user isolation
+    const { data: { session } } = await supabase.auth.getSession();
+    const authToken = session?.access_token;
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      console.error('User not authenticated - cannot upload image');
+      return null;
+    }
+
     // Create a unique filename
     const fileExt = imageUri.split('.').pop() || 'jpg';
     const uniqueFileName = `${fileName}_${Date.now()}.${fileExt}`;
+
+    // IMPORTANT: Namespace by user ID to ensure proper isolation
+    const userFilePath = `${userId}/${uniqueFileName}`;
 
     // Create FormData with the image file
     const formData = new FormData();
@@ -33,10 +46,6 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
       type: `image/${fileExt}`,
     } as any);
 
-    // Get auth headers for Supabase
-    const { data: { session } } = await supabase.auth.getSession();
-    const authToken = session?.access_token;
-
     // Upload directly to Supabase Storage using fetch
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
     const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -46,12 +55,13 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
       return null;
     }
 
-    const uploadUrl = `${supabaseUrl}/storage/v1/object/thumbnails/${uniqueFileName}`;
+    // Upload to user-specific folder
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/thumbnails/${userFilePath}`;
 
     const uploadResponse = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${authToken || supabaseKey}`,
+        'Authorization': `Bearer ${authToken}`,
         'apikey': supabaseKey,
       },
       body: formData,
@@ -63,10 +73,10 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
       return null;
     }
 
-    // Get signed URL
+    // Get signed URL using the user-specific path
     const { data: urlData } = await supabase.storage
       .from('thumbnails')
-      .createSignedUrl(uniqueFileName, 3600); // 1 hour expiry
+      .createSignedUrl(userFilePath, 3600); // 1 hour expiry
 
     return urlData?.signedUrl || null;
   } catch (error) {
