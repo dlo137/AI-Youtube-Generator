@@ -8,20 +8,48 @@ export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const router = useRouter();
   const params = useLocalSearchParams();
 
   useEffect(() => {
-    // Check if user has a valid session from the email link
-    checkSession();
+    // Give the session a moment to be set from the auth callback
+    // Then check if user has a valid session from the email link
+    const timer = setTimeout(() => {
+      checkSession();
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, []);
 
   const checkSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error('Session check error:', error);
+      }
+
+      if (!session) {
+        Alert.alert(
+          'Invalid Link',
+          'This password reset link is invalid or has expired. Please request a new one.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.push('/forgot-password')
+            }
+          ]
+        );
+      } else {
+        console.log('Valid session found for password reset');
+        setSessionChecked(true);
+      }
+    } catch (error) {
+      console.error('Error checking session:', error);
       Alert.alert(
-        'Invalid Link',
-        'This password reset link is invalid or has expired. Please request a new one.',
+        'Error',
+        'There was a problem verifying your reset link. Please try again.',
         [
           {
             text: 'OK',
@@ -77,6 +105,16 @@ export default function ResetPasswordScreen() {
       setIsLoading(false);
     }
   };
+
+  // Show loading while checking session
+  if (!sessionChecked) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <StatusBar style="light" />
+        <Text style={{ color: TEXT, fontSize: 16 }}>Verifying reset link...</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView

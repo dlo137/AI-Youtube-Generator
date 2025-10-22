@@ -12,6 +12,11 @@ export default function AuthCallback() {
 
         console.log("Auth callback received URL:", incoming);
 
+        // Check if this is a password reset flow by looking at the URL type parameter
+        const isPasswordReset = incoming.includes('type=recovery');
+
+        console.log("Is password reset:", isPasswordReset);
+
         // Exchange the OAuth/magic link code for a session
         const { data, error } = await supabase.auth.exchangeCodeForSession(incoming);
 
@@ -19,13 +24,24 @@ export default function AuthCallback() {
           console.error("Auth exchange error:", error);
         } else {
           console.log("Auth exchange successful:", data);
+
+          // Also check the session event type as a fallback
+          const sessionEvent = data?.session?.user?.user_metadata?.event_type;
+          console.log("Session event type:", sessionEvent);
         }
 
-        // You now have a session in supabase.auth.
+        // Route based on the type of authentication
+        if (isPasswordReset) {
+          // For password reset flows, go to the reset password screen
+          router.replace("/reset-password");
+        } else {
+          // For regular OAuth/magic links, go to the main app
+          router.replace("/(tabs)/generate");
+        }
       } catch (e) {
         console.log("exchange error", e);
-      } finally {
-        router.replace("/(tabs)/generate"); // go to the main app
+        // Default to main app on error
+        router.replace("/(tabs)/generate");
       }
     };
 

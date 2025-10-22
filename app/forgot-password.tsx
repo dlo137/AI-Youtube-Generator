@@ -26,8 +26,9 @@ export default function ForgotPasswordScreen() {
     setIsLoading(true);
 
     try {
-      // Create proper deep link that works in both Expo Go and production builds
-      const redirectUrl = Linking.createURL('/reset-password');
+      // Create proper deep link that goes through auth callback
+      // This ensures the auth code is properly exchanged for a session
+      const redirectUrl = Linking.createURL('/auth/callback');
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl,
