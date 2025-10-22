@@ -27,6 +27,8 @@ class IAPService {
   private debugCallback: ((info: any) => void) | null = null;
   private currentPurchaseStartTime: number | null = null;
   private currentPurchaseProductId: string | null = null;
+  private purchasePromiseResolve: ((value: void) => void) | null = null;
+  private purchasePromiseReject: ((reason?: any) => void) | null = null;
 
   private constructor() {}
 
@@ -130,6 +132,14 @@ class IAPService {
         console.log('[IAP-SERVICE] Purchase successful via listener, processing results:', results);
         await this.processPurchases(results, 'listener');
 
+        // Resolve the purchase promise
+        if (this.purchasePromiseResolve) {
+          console.log('[IAP-SERVICE] Resolving purchase promise (success)');
+          this.purchasePromiseResolve();
+          this.purchasePromiseResolve = null;
+          this.purchasePromiseReject = null;
+        }
+
       } else if (responseCode === IAP.IAPResponseCode.USER_CANCELED) {
         console.log('[IAP-SERVICE] Purchase canceled by user (listener)');
         // Clear purchase session tracking
@@ -143,6 +153,14 @@ class IAPService {
           });
         }
 
+        // Reject the purchase promise with cancellation
+        if (this.purchasePromiseReject) {
+          console.log('[IAP-SERVICE] Rejecting purchase promise (user cancelled)');
+          this.purchasePromiseReject(new Error('User cancelled purchase'));
+          this.purchasePromiseResolve = null;
+          this.purchasePromiseReject = null;
+        }
+
       } else {
         console.log('[IAP-SERVICE] Purchase failed with response code (listener):', responseCode);
         this.currentPurchaseStartTime = null;
@@ -153,6 +171,14 @@ class IAPService {
           this.debugCallback({
             listenerStatus: 'PURCHASE FAILED ❌ (Listener)'
           });
+        }
+
+        // Reject the purchase promise
+        if (this.purchasePromiseReject) {
+          console.log('[IAP-SERVICE] Rejecting purchase promise (failed)');
+          this.purchasePromiseReject(new Error('Purchase failed'));
+          this.purchasePromiseResolve = null;
+          this.purchasePromiseReject = null;
         }
       }
     } catch (listenerError) {
@@ -165,6 +191,14 @@ class IAPService {
         this.debugCallback({
           listenerStatus: 'LISTENER ERROR ❌'
         });
+      }
+
+      // Reject the purchase promise
+      if (this.purchasePromiseReject) {
+        console.log('[IAP-SERVICE] Rejecting purchase promise (listener error)');
+        this.purchasePromiseReject(listenerError);
+        this.purchasePromiseResolve = null;
+        this.purchasePromiseReject = null;
       }
     }
   }
@@ -222,6 +256,14 @@ class IAPService {
             this.debugCallback({
               listenerStatus: 'TIMEOUT ❌ (Purchase not confirmed)'
             });
+          }
+
+          // Reject the purchase promise
+          if (this.purchasePromiseReject) {
+            console.log('[IAP-SERVICE] Rejecting purchase promise (timeout)');
+            this.purchasePromiseReject(new Error('Purchase confirmation timeout'));
+            this.purchasePromiseResolve = null;
+            this.purchasePromiseReject = null;
           }
 
           Alert.alert(
@@ -525,11 +567,27 @@ class IAPService {
               purchaseComplete: true
             });
           }
+
+          // Resolve the purchase promise (for fallback purchases)
+          if (source === 'fallback' && this.purchasePromiseResolve) {
+            console.log('[IAP-SERVICE] Resolving purchase promise (fallback success)');
+            this.purchasePromiseResolve();
+            this.purchasePromiseResolve = null;
+            this.purchasePromiseReject = null;
+          }
         }
 
       } catch (error) {
         console.error(`[IAP-SERVICE] Error processing purchase from ${source}:`, error);
         await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+
+        // Reject the purchase promise
+        if ((source === 'listener' || source === 'fallback') && this.purchasePromiseReject) {
+          console.log('[IAP-SERVICE] Rejecting purchase promise (processing error)');
+          this.purchasePromiseReject(error);
+          this.purchasePromiseResolve = null;
+          this.purchasePromiseReject = null;
+        }
 
         // Only show error to user if they initiated this flow
         if (source === 'listener' || source === 'fallback') {
@@ -583,6 +641,12 @@ class IAPService {
     await AsyncStorage.setItem(INFLIGHT_KEY, 'true');
     console.log('[IAP-SERVICE] In-flight flag set to true');
 
+    // Create a promise that will be resolved/rejected by the purchase listener
+    const purchasePromise = new Promise<void>((resolve, reject) => {
+      this.purchasePromiseResolve = resolve;
+      this.purchasePromiseReject = reject;
+    });
+
     try {
       console.log('[IAP-SERVICE] Calling IAP.purchaseItemAsync...');
       const result = await IAP.purchaseItemAsync(productId);
@@ -600,6 +664,11 @@ class IAPService {
       // Enhanced fallback with multiple retries
       this.startEnhancedFallbackCheck();
 
+      // Wait for the purchase to complete via listener or fallback
+      console.log('[IAP-SERVICE] Waiting for purchase completion...');
+      await purchasePromise;
+      console.log('[IAP-SERVICE] Purchase completed successfully!');
+
     } catch (error: any) {
       console.error('[IAP-SERVICE] purchaseItemAsync failed:', error);
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
@@ -607,6 +676,10 @@ class IAPService {
       // Clear session tracking on error
       this.currentPurchaseStartTime = null;
       this.currentPurchaseProductId = null;
+
+      // Clear promise handlers
+      this.purchasePromiseResolve = null;
+      this.purchasePromiseReject = null;
 
       if (this.debugCallback) {
         this.debugCallback({
@@ -617,7 +690,7 @@ class IAPService {
       // Check if user cancelled
       if (error?.code === 'E_USER_CANCELLED' || error?.message?.includes('cancel')) {
         console.log('[IAP-SERVICE] User cancelled purchase');
-        return; // Don't throw error for cancellation
+        throw new Error('User cancelled purchase'); // Throw for cancellation so UI can handle it
       }
 
       throw error;

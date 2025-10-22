@@ -20,7 +20,7 @@ export async function signUpEmail(email: string, password: string, fullName?: st
   if (data.user && fullName) {
     const { error: profileError } = await supabase
       .from('profiles')
-      .update({ full_name: fullName })
+      .update({ name: fullName })
       .eq('id', data.user.id);
 
     if (profileError) {
@@ -52,7 +52,7 @@ export async function getMyProfile() {
 }
 
 export async function updateMyProfile(updates: {
-  full_name?: string;
+  name?: string;
   avatar_url?: string;
   website?: string;
 }) {
@@ -218,7 +218,7 @@ export async function signInWithApple() {
       if (fullNameString) {
         await supabase
           .from('profiles')
-          .update({ full_name: fullNameString })
+          .update({ name: fullNameString })
           .eq('id', data.user.id);
       }
     }

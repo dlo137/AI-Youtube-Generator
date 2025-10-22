@@ -2837,13 +2837,15 @@ const styles = StyleSheet.create({
   },
   centeredImageContainer: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
   },
   imageAndToolsGroup: {
     alignItems: 'center',
+    width: '100%',
   },
   modalImage: {
     width: '100%',
@@ -2894,9 +2896,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 16,
     paddingHorizontal: 20,
     gap: 12,
+    width: '100%',
   },
   editToolIcon: {
     width: 40,

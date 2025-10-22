@@ -18,7 +18,7 @@ export default function ProfileScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
-    full_name: ''
+    name: ''
   });
   const [subscriptionInfo, setSubscriptionInfo] = useState<SubscriptionInfo | null>(null);
   const [currentPlan, setCurrentPlan] = useState('Free');
@@ -246,10 +246,10 @@ export default function ProfileScreen() {
           isGuest: true
         });
         setProfile({
-          full_name: 'Guest User'
+          name: 'Guest User'
         });
         setEditForm({
-          full_name: 'Guest User'
+          name: 'Guest User'
         });
         setCurrentPlan('Free');
         setIsLoading(false);
@@ -269,7 +269,7 @@ export default function ProfileScreen() {
 
       if (profileData) {
         setEditForm({
-          full_name: profileData.full_name || ''
+          name: profileData.name || ''
         });
       }
 
@@ -865,12 +865,12 @@ export default function ProfileScreen() {
         <View style={styles.profileHeader}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {user?.isGuest ? 'G' : (profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || '?')}
+              {user?.isGuest ? 'G' : (profile?.name ? profile.name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || '?')}
             </Text>
           </View>
           <Text style={styles.email}>{user?.isGuest ? 'Guest' : user?.email}</Text>
           <Text style={styles.plan}>{currentPlan}</Text>
-          <Text style={styles.name}>{user?.isGuest ? '' : (profile?.full_name || '')}</Text>
+          <Text style={styles.name}>{user?.isGuest ? '' : (profile?.name || '')}</Text>
         </View>
 
 
