@@ -359,7 +359,7 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Monthly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('monthly', '$1.50/week')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('monthly', '$5.99/month')}</Text>
               <Text style={styles.planSubtext}>75 images per month</Text>
             </View>
           </TouchableOpacity>
@@ -380,18 +380,11 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Yearly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('yearly', '$1.15/week')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('yearly', '$59.99/year')}</Text>
               <Text style={styles.planSubtext}>90 images per month</Text>
             </View>
           </TouchableOpacity>
         </View>
-
-        {/* Trial Info */}
-        <Text style={styles.trialInfo}>
-          {selectedPlan === 'yearly' && 'Billed yearly at $59.99.\nCancel anytime'}
-          {selectedPlan === 'monthly' && 'Billed monthly at $5.99.\nCancel anytime'}
-          {selectedPlan === 'weekly' && 'Billed weekly at $2.99.\nCancel anytime'}
-        </Text>
       </Animated.ScrollView>
 
       {/* Continue Button - Fixed at Bottom */}

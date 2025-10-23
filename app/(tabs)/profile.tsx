@@ -81,7 +81,7 @@ export default function ProfileScreen() {
     {
       id: 'monthly',
       name: 'Monthly',
-      price: '$1.50/week',
+      price: '$5.99/month',
       billingPrice: '$5.99',
       imageLimit: '75 images per month',
       description: 'Billed monthly at $5.99.\nCancel anytime'
@@ -89,7 +89,7 @@ export default function ProfileScreen() {
     {
       id: 'yearly',
       name: 'Yearly',
-      price: '$1.15/week',
+      price: '$59.99/year',
       billingPrice: '$59.99',
       imageLimit: '90 images per month',
       description: 'Billed yearly at $59.99.\nCancel anytime'
@@ -1144,11 +1144,6 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
-
-            {/* Trial Info */}
-            <Text style={styles.trialInfo}>
-              {subscriptionPlans.find(p => p.id === selectedPlan)?.description}
-            </Text>
           </ScrollView>
 
           {/* Continue Button - Fixed at Bottom */}
