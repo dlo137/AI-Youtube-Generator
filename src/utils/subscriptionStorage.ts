@@ -235,11 +235,11 @@ export const resetCredits = async (): Promise<void> => {
     if (maxCredits === 0) {
       const subscriptionInfo = await getSubscriptionInfo();
       if (subscriptionInfo && subscriptionInfo.isActive) {
-        if (subscriptionInfo.productId === 'thumbnail.pro.yearly') {
+        if (subscriptionInfo.productId === 'thumbnail.yearly') {
           maxCredits = 90;
-        } else if (subscriptionInfo.productId === 'thumbnail.pro.monthly') {
+        } else if (subscriptionInfo.productId === 'thumbnail.monthly') {
           maxCredits = 75;
-        } else if (subscriptionInfo.productId === 'thumbnail.pro.weekly') {
+        } else if (subscriptionInfo.productId === 'thumbnail.weekly') {
           maxCredits = 30;
         }
       }

@@ -6,9 +6,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import IAPService from '../services/IAPService';
 
 const PRODUCT_IDS = {
-  yearly: 'thumbnail.pro.yearly',
-  monthly: 'thumbnail.pro.monthly',
-  weekly: 'thumbnail.pro.weekly',
+  yearly: 'thumbnail.yearly',
+  monthly: 'thumbnail.monthly',
+  weekly: 'thumbnail.weekly',
 };
 
 export default function SubscriptionScreen() {

@@ -12,9 +12,9 @@ try {
 }
 
 const IAP_PRODUCT_IDS = [
-  'thumbnail.pro.yearly',
-  'thumbnail.pro.monthly',
-  'thumbnail.pro.weekly'
+  'thumbnail.yearly',
+  'thumbnail.monthly',
+  'thumbnail.weekly'
 ];
 const INFLIGHT_KEY = 'iapPurchaseInFlight';
 

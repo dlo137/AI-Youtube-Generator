@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, Linking } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, Linking, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { signUpEmail, signInWithApple } from '../src/features/auth/api';
+import { signUpEmail, signInWithApple, signInWithGoogle } from '../src/features/auth/api';
 
 export default function SignUpScreen() {
   const [name, setName] = useState('');
@@ -63,6 +63,45 @@ export default function SignUpScreen() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    // Show informational alert first
+    Alert.alert(
+      'Secure Sign-In',
+      'For sign-in we use Google authentication powered by Supabase (a trusted backend service).',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Continue',
+          onPress: async () => {
+            setIsLoading(true);
+
+            try {
+              const data = await signInWithGoogle();
+
+              if (data.user) {
+                // Successfully signed in, navigate to loading account screen
+                router.push('/loadingaccount');
+              }
+
+            } catch (error: any) {
+              console.error('Google sign in error:', error);
+              if (error.message === 'Sign in was canceled') {
+                // User canceled, don't show error
+                return;
+              }
+              Alert.alert('Sign In Error', error.message || 'Failed to sign in with Google. Please try again.');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -84,6 +123,46 @@ export default function SignUpScreen() {
         </View>
 
         <View style={styles.form}>
+          <TouchableOpacity
+            style={styles.appleButton}
+            onPress={handleAppleSignIn}
+            disabled={isLoading}
+          >
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/apple-logo.png')}
+                style={styles.buttonIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.appleButtonText}>
+                {isLoading ? 'Signing up...' : 'Sign Up With Apple'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={handleGoogleSignIn}
+            disabled={isLoading}
+          >
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/google-logo.png')}
+                style={styles.buttonIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.googleButtonText}>
+                {isLoading ? 'Signing up...' : 'Sign Up With Google'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Name</Text>
             <TextInput
@@ -138,22 +217,6 @@ export default function SignUpScreen() {
           >
             <Text style={styles.signUpButtonText}>
               {isLoading ? 'Creating Account...' : 'Sign Up'}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity
-            style={styles.appleButton}
-            onPress={handleAppleSignIn}
-            disabled={isLoading}
-          >
-            <Text style={styles.appleButtonText}>
-              {isLoading ? 'Signing up...' : 'Sign Up With Apple'}
             </Text>
           </TouchableOpacity>
 
@@ -345,18 +408,41 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'center',
+    marginBottom: 20,
   },
   appleButtonText: {
     color: TEXT,
     fontSize: 16,
     fontWeight: '600',
   },
+  googleButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DADCE0',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  googleButtonText: {
+    color: '#3C4043',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 12,
+  },
   termsContainer: {
-    marginTop: 32,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
+    marginTop: 16,
   },
   termsText: {
     fontSize: 12,

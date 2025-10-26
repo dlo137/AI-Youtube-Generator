@@ -3,6 +3,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as WebBrowser from 'expo-web-browser';
 
 export async function signUpEmail(email: string, password: string, fullName?: string) {
   const { data, error } = await supabase.auth.signUp({
@@ -228,6 +229,60 @@ export async function signInWithApple() {
     if (error.code === 'ERR_REQUEST_CANCELED') {
       throw new Error('Sign in was canceled');
     }
+    throw error;
+  }
+}
+
+export async function signInWithGoogle() {
+  try {
+    // Configure WebBrowser for OAuth
+    WebBrowser.maybeCompleteAuthSession();
+
+    // Start Google OAuth flow
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectTo,
+        skipBrowserRedirect: false,
+      }
+    });
+
+    if (error) throw error;
+
+    // Open browser for authentication
+    if (data?.url) {
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectTo
+      );
+
+      if (result.type === 'cancel') {
+        throw new Error('Sign in was canceled');
+      }
+
+      if (result.type === 'success') {
+        // Extract tokens from URL
+        const url = result.url;
+        const params = new URLSearchParams(url.split('#')[1] || url.split('?')[1]);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+
+        if (accessToken && refreshToken) {
+          // Set the session
+          const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (sessionError) throw sessionError;
+          return sessionData;
+        }
+      }
+    }
+
+    throw new Error('Failed to complete Google authentication');
+  } catch (error: any) {
+    console.error('Google sign in error:', error);
     throw error;
   }
 }

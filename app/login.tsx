@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
-import { signInEmail, signInWithApple } from '../src/features/auth/api';
+import { signInEmail, signInWithApple, signInWithGoogle } from '../src/features/auth/api';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -54,6 +54,45 @@ export default function LoginScreen() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleGoogleSignIn = async () => {
+    // Show informational alert first
+    Alert.alert(
+      'Secure Sign-In',
+      'For sign-in we use Google authentication powered by Supabase (a trusted backend service).\n\nYou will see a prompt referencing that — that\'s just the secure login service we use.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Continue',
+          onPress: async () => {
+            setIsLoading(true);
+
+            try {
+              const data = await signInWithGoogle();
+
+              if (data.user) {
+                // Successfully signed in, navigate to main app
+                router.push('/(tabs)/generate');
+              }
+
+            } catch (error: any) {
+              console.error('Google sign in error:', error);
+              if (error.message === 'Sign in was canceled') {
+                // User canceled, don't show error
+                return;
+              }
+              Alert.alert('Sign In Error', error.message || 'Failed to sign in with Google. Please try again.');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -124,9 +163,33 @@ export default function LoginScreen() {
             onPress={handleAppleSignIn}
             disabled={isLoading}
           >
-            <Text style={styles.appleButtonText}>
-              {isLoading ? 'Signing in...' : 'Sign in With Apple'}
-            </Text>
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/apple-logo.png')}
+                style={styles.buttonIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.appleButtonText}>
+                {isLoading ? 'Signing in...' : 'Sign in With Apple'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={handleGoogleSignIn}
+            disabled={isLoading}
+          >
+            <View style={styles.buttonContent}>
+              <Image
+                source={require('../assets/google-logo.png')}
+                style={styles.buttonIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.googleButtonText}>
+                {isLoading ? 'Signing in...' : 'Sign in With Google'}
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -266,11 +329,37 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'center',
+    marginBottom: 20,
   },
   appleButtonText: {
     color: TEXT,
     fontSize: 16,
     fontWeight: '600',
+  },
+  googleButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DADCE0',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  googleButtonText: {
+    color: '#3C4043',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    width: 20,
+    height: 20,
+    marginRight: 12,
   },
 });

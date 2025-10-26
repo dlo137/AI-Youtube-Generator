@@ -13,17 +13,17 @@ This happens when the IAP purchase flow doesn't complete properly. Here's how to
 3. Create three auto-renewable subscription products:
 
    **Weekly Plan:**
-   - Product ID: `thumbnail.pro.weekly`
+   - Product ID: `thumbnail.weekly`
    - Price: $2.99/week
    - Subscription Group: Create a new group (e.g., "Thumbnail Pro")
 
    **Monthly Plan:**
-   - Product ID: `thumbnail.pro.monthly`
+   - Product ID: `thumbnail.monthly`
    - Price: $5.99/month
    - Subscription Group: Same as above
 
    **Yearly Plan:**
-   - Product ID: `thumbnail.pro.yearly`
+   - Product ID: `thumbnail.yearly`
    - Price: $59.99/year
    - Subscription Group: Same as above
 
@@ -62,9 +62,9 @@ In `subscriptionScreen.tsx`, verify:
 
 ```typescript
 const PRODUCT_IDS = {
-  yearly: 'thumbnail.pro.yearly',
-  monthly: 'thumbnail.pro.monthly',
-  weekly: 'thumbnail.pro.weekly',
+  yearly: 'thumbnail.yearly',
+  monthly: 'thumbnail.monthly',
+  weekly: 'thumbnail.weekly',
 };
 ```
 

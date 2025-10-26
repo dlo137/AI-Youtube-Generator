@@ -7,6 +7,7 @@ import ThumbnailCard from '../../src/components/ThumbnailCard';
 import { getSavedThumbnails, deleteSavedThumbnail, toggleFavorite, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system/legacy';
+import { requestReview } from '../../services/reviewRequestService';
 
 export default function HistoryScreen() {
   const [thumbnails, setThumbnails] = useState<SavedThumbnail[]>([]);
@@ -53,6 +54,9 @@ export default function HistoryScreen() {
         const asset = await MediaLibrary.createAssetAsync(thumbnail.imageUrl);
         await MediaLibrary.createAlbumAsync('Thumbnails', asset, false);
         Alert.alert('Success', 'Thumbnail saved to your photo library!');
+
+        // Request review after successful download
+        await requestReview();
         return;
       }
 
@@ -69,6 +73,9 @@ export default function HistoryScreen() {
       await MediaLibrary.createAlbumAsync('Thumbnails', asset, false);
 
       Alert.alert('Success', 'Thumbnail saved to your photo library!');
+
+      // Request review after successful download
+      await requestReview();
     } catch (error) {
       console.error('Error downloading thumbnail:', error);
       Alert.alert('Error', 'Failed to save thumbnail to photo library');

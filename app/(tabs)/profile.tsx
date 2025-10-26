@@ -55,9 +55,9 @@ export default function ProfileScreen() {
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
 
   const PRODUCT_IDS = {
-    yearly: 'thumbnail.pro.yearly',
-    monthly: 'thumbnail.pro.monthly',
-    weekly: 'thumbnail.pro.weekly',
+    yearly: 'thumbnail.yearly',
+    monthly: 'thumbnail.monthly',
+    weekly: 'thumbnail.weekly',
   };
 
   const isIAPAvailable = IAPService.isAvailable();
@@ -67,6 +67,7 @@ export default function ProfileScreen() {
     { id: 'help', title: 'Help & Support', subtitle: 'Get assistance' },
     { id: 'upgrade', title: 'Plans', subtitle: 'Choose a subscription plan' },
     { id: 'billing', title: 'Billing & Subscription', subtitle: 'Manage your current subscription' },
+    { id: 'rate', title: 'Rate the App', subtitle: 'Share your feedback on the App Store' },
   ];
 
   const subscriptionPlans = [
@@ -138,11 +139,11 @@ export default function ProfileScreen() {
     let price = '';
     let planName = currentPlan;
 
-    if (subscriptionInfo.productId === 'thumbnail.pro.yearly') {
-      price = '$49.99/year';
-    } else if (subscriptionInfo.productId === 'thumbnail.pro.monthly') {
+    if (subscriptionInfo.productId === 'thumbnail.yearly') {
+      price = '$59.99/year';
+    } else if (subscriptionInfo.productId === 'thumbnail.monthly') {
       price = '$5.99/month';
-    } else if (subscriptionInfo.productId === 'thumbnail.pro.weekly') {
+    } else if (subscriptionInfo.productId === 'thumbnail.weekly') {
       price = '$2.99/week';
     }
 
@@ -317,13 +318,13 @@ export default function ProfileScreen() {
         let planName = '';
         let price = '';
 
-        if (subInfo.productId === 'thumbnail.pro.yearly') {
+        if (subInfo.productId === 'thumbnail.yearly') {
           planName = 'Yearly Plan';
           price = '$59.99/year';
-        } else if (subInfo.productId === 'thumbnail.pro.monthly') {
+        } else if (subInfo.productId === 'thumbnail.monthly') {
           planName = 'Monthly Plan';
           price = '$5.99/month';
-        } else if (subInfo.productId === 'thumbnail.pro.weekly') {
+        } else if (subInfo.productId === 'thumbnail.weekly') {
           planName = 'Weekly Plan';
           price = '$2.99/week';
         } else {
@@ -430,24 +431,40 @@ export default function ProfileScreen() {
 
   const handleRateApp = async () => {
     try {
-      if (Platform.OS === 'ios') {
-        // Use native iOS StoreReview API for in-app rating prompt
-        const isAvailable = await StoreReview.isAvailableAsync();
+      // Check if we're in development/Expo Go
+      const isAvailable = await StoreReview.isAvailableAsync();
 
-        if (isAvailable) {
-          // This will show the native iOS rating dialog
-          await StoreReview.requestReview();
-        } else {
-          // Fallback: Open App Store page (will work once app is published)
-          // For now, show a thank you message
-          Alert.alert(
-            'Thank You!',
-            'Thank you for wanting to rate our app! Once the app is published on the App Store, you can rate it there.',
-            [{ text: 'OK' }]
-          );
-        }
+      if (!isAvailable || __DEV__) {
+        // Simulate review prompt for development/Expo Go
+        Alert.alert(
+          'Rate AI Thumbnail Generator',
+          'How would you rate your experience with our app?',
+          [
+            {
+              text: 'Not Now',
+              style: 'cancel',
+              onPress: () => console.log('[Review] User dismissed')
+            },
+            {
+              text: 'Rate ⭐',
+              onPress: () => {
+                Alert.alert(
+                  'Thank You!',
+                  'We appreciate your feedback! In production, this would open the App Store for you to leave a review.',
+                  [{ text: 'OK' }]
+                );
+                console.log('[Review] User tapped Rate (simulated)');
+              }
+            }
+          ]
+        );
+        return;
+      }
+
+      // Production: Use native review prompt
+      if (Platform.OS === 'ios') {
+        await StoreReview.requestReview();
       } else if (Platform.OS === 'android') {
-        // Android Play Store URL
         const androidPackageName = 'com.watsonsweb.thumbnail-generator';
         const url = `market://details?id=${androidPackageName}`;
         const fallbackUrl = `https://play.google.com/store/apps/details?id=${androidPackageName}`;
@@ -892,15 +909,15 @@ export default function ProfileScreen() {
         </View>
 
 
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+
         {!user?.isGuest && (
           <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
             <Text style={styles.deleteAccountText}>Delete Account</Text>
           </TouchableOpacity>
         )}
-
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       {/* About Modal */}

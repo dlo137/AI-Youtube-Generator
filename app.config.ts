@@ -10,6 +10,9 @@ export default {
     userInterfaceStyle: "light",
     scheme: "thumbnailgen",
     jsEngine: "jsc",
+    plugins: [
+      "expo-web-browser"
+    ],
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
