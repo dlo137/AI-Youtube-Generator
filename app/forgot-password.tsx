@@ -30,6 +30,8 @@ export default function ForgotPasswordScreen() {
       // This ensures the auth code is properly exchanged for a session
       const redirectUrl = Linking.createURL('/auth/callback');
 
+      console.log('[Forgot Password] Sending reset email with redirect:', redirectUrl);
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl,
       });

@@ -238,51 +238,94 @@ export async function signInWithGoogle() {
     // Configure WebBrowser for OAuth
     WebBrowser.maybeCompleteAuthSession();
 
+    console.log('[Google Auth] Starting OAuth with redirect:', redirectTo);
+
     // Start Google OAuth flow
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectTo,
-        skipBrowserRedirect: false,
+        skipBrowserRedirect: true,
       }
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Google Auth] OAuth init error:', error);
+      throw error;
+    }
+
+    if (!data?.url) {
+      throw new Error('No OAuth URL returned');
+    }
+
+    console.log('[Google Auth] Opening browser...');
 
     // Open browser for authentication
-    if (data?.url) {
-      const result = await WebBrowser.openAuthSessionAsync(
-        data.url,
-        redirectTo
-      );
+    const result = await WebBrowser.openAuthSessionAsync(
+      data.url,
+      redirectTo
+    );
 
-      if (result.type === 'cancel') {
-        throw new Error('Sign in was canceled');
-      }
+    console.log('[Google Auth] Browser result:', result.type);
 
-      if (result.type === 'success') {
-        // Extract tokens from URL
-        const url = result.url;
-        const params = new URLSearchParams(url.split('#')[1] || url.split('?')[1]);
-        const accessToken = params.get('access_token');
-        const refreshToken = params.get('refresh_token');
+    if (result.type === 'cancel') {
+      throw new Error('Sign in was canceled');
+    }
 
-        if (accessToken && refreshToken) {
-          // Set the session
-          const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
+    if (result.type === 'success' && result.url) {
+      console.log('[Google Auth] Callback URL received:', result.url);
 
-          if (sessionError) throw sessionError;
-          return sessionData;
+      // Parse URL properly
+      const url = new URL(result.url);
+
+      // Check for authorization code (PKCE flow)
+      const code = url.searchParams.get('code');
+
+      if (code) {
+        console.log('[Google Auth] Got auth code, exchanging for session...');
+
+        const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (sessionError) {
+          console.error('[Google Auth] Code exchange error:', sessionError);
+          throw sessionError;
         }
+
+        console.log('[Google Auth] Session created!');
+        return sessionData;
       }
+
+      // Fallback: Check for direct tokens (implicit flow)
+      const hashParams = new URLSearchParams(url.hash.substring(1));
+      const accessToken = hashParams.get('access_token') || url.searchParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token') || url.searchParams.get('refresh_token');
+
+      console.log('[Google Auth] Checking tokens - access:', !!accessToken, 'refresh:', !!refreshToken);
+
+      if (accessToken && refreshToken) {
+        console.log('[Google Auth] Setting session with tokens...');
+
+        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (sessionError) {
+          console.error('[Google Auth] Session error:', sessionError);
+          throw sessionError;
+        }
+
+        console.log('[Google Auth] Session created!');
+        return sessionData;
+      }
+
+      console.error('[Google Auth] No code or tokens in callback URL');
+      throw new Error('No authentication data in callback');
     }
 
     throw new Error('Failed to complete Google authentication');
   } catch (error: any) {
-    console.error('Google sign in error:', error);
+    console.error('[Google Auth] Full error:', error);
     throw error;
   }
 }

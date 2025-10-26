@@ -4,7 +4,7 @@ export default {
   expo: {
     name: "Youtube Thumbnail Generator",
     slug: "youtube-thumbnail-generator",
-    version: "1.0.13",
+    version: "1.0.14",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
@@ -28,6 +28,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.watsonsweb.thumbnail-generator",
+      buildNumber: "14",
       jsEngine: "jsc",
       icon: "./assets/icon.png",
       infoPlist: {
@@ -39,6 +40,7 @@ export default {
     },
     android: {
       package: "com.watsonsweb.thumbnail-generator",
+      versionCode: 14,
       jsEngine: "jsc",
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
