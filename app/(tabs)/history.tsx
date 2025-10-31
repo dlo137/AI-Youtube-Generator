@@ -29,7 +29,7 @@ export default function HistoryScreen() {
       const savedThumbnails = await getSavedThumbnails();
       setThumbnails(savedThumbnails);
     } catch (error) {
-      console.error('Error loading thumbnails:', error);
+      // Silently fail
     }
   };
 
@@ -77,7 +77,6 @@ export default function HistoryScreen() {
       // Request review after successful download
       await requestReview();
     } catch (error) {
-      console.error('Error downloading thumbnail:', error);
       Alert.alert('Error', 'Failed to save thumbnail to photo library');
     }
   };
@@ -108,17 +107,13 @@ export default function HistoryScreen() {
       if (result.action === Share.sharedAction) {
         if (result.activityType) {
           // Shared with activity type (iOS)
-          console.log('Shared with activity:', result.activityType);
         } else {
           // Shared (Android or iOS without activity type)
-          console.log('Thumbnail shared successfully');
         }
       } else if (result.action === Share.dismissedAction) {
         // Dismissed
-        console.log('Share dialog dismissed');
       }
     } catch (error) {
-      console.error('Error sharing thumbnail:', error);
       Alert.alert('Error', 'Failed to share thumbnail');
     }
   };
@@ -137,7 +132,6 @@ export default function HistoryScreen() {
 
       Alert.alert('Success', updatedThumbnail.isFavorited ? 'Added to saved' : 'Removed from saved');
     } catch (error) {
-      console.error('Error toggling favorite:', error);
       Alert.alert('Error', 'Failed to update thumbnail');
     }
   };
@@ -156,7 +150,6 @@ export default function HistoryScreen() {
               await deleteSavedThumbnail(id);
               setThumbnails(prev => prev.filter(thumb => thumb.id !== id));
             } catch (error) {
-              console.error('Error deleting thumbnail:', error);
               Alert.alert('Error', 'Failed to delete thumbnail');
             }
           }

@@ -25,7 +25,6 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
     const userId = session?.user?.id;
 
     if (!userId) {
-      console.error('User not authenticated - cannot upload image');
       return null;
     }
 
@@ -51,7 +50,6 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
     const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
     if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing Supabase configuration');
       return null;
     }
 
@@ -68,8 +66,6 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
     });
 
     if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error('Upload failed:', errorText);
       return null;
     }
 
@@ -80,7 +76,6 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
 
     return urlData?.signedUrl || null;
   } catch (error) {
-    console.error('Error uploading image:', error);
     return null;
   }
 };
@@ -332,9 +327,6 @@ export default function GenerateScreen() {
       }
       const localUri = `${docDir}${filename}`;
 
-      console.log('Downloading image from:', generatedImageUrl);
-      console.log('Saving to local path:', localUri);
-
       const { uri } = await (FileSystem as any).downloadAsync(generatedImageUrl, localUri);
 
       // Save to photo library
@@ -344,7 +336,6 @@ export default function GenerateScreen() {
       Alert.alert('Success', 'Thumbnail saved to your photo library!');
 
     } catch (error) {
-      console.error('Download error:', error);
       Alert.alert('Error', 'Failed to save thumbnail. Please try again.');
     }
   };
@@ -407,7 +398,6 @@ export default function GenerateScreen() {
         });
       }
     } catch (error) {
-      console.error('Error loading existing edits:', error);
       // Fallback to initialize new edits
       setThumbnailEdits({
         imageUrl
@@ -475,13 +465,11 @@ export default function GenerateScreen() {
       });
 
       if (error) {
-        console.error('Supabase function error:', error);
         Alert.alert('Error', `Failed to generate adjustment: ${error.message || 'Unknown error'}`);
         return;
       }
 
       if (data?.error) {
-        console.error('Generation error:', data.error);
         Alert.alert('Error', data.error || 'Failed to generate thumbnail adjustment');
         return;
       }
@@ -495,7 +483,6 @@ export default function GenerateScreen() {
 
       // Validate the URL is properly formed
       if (!newImageUrl.startsWith('http') && !newImageUrl.startsWith('file://')) {
-        console.error('Invalid image URL:', newImageUrl);
         Alert.alert('Error', 'Invalid image URL received. Please try again.');
         return;
       }
@@ -531,7 +518,6 @@ export default function GenerateScreen() {
       Alert.alert('Success!', 'Your thumbnail has been adjusted');
 
     } catch (error) {
-      console.error('Error generating thumbnail adjustment:', error);
       Alert.alert('Error', 'Something went wrong. Please check your connection and try again.');
     } finally {
       setIsModalGenerating(false);
@@ -896,7 +882,6 @@ export default function GenerateScreen() {
 
 
       if (error) {
-        console.error('Supabase function error:', error);
         const errorMsg = error.message || 'Unknown error';
 
         // Provide helpful error messages based on common issues
@@ -916,7 +901,6 @@ export default function GenerateScreen() {
       }
 
       if (data?.error) {
-        console.error('Generation error:', data.error);
         Alert.alert('Error', data.error || 'Failed to generate thumbnail');
         return;
       }
@@ -984,7 +968,6 @@ export default function GenerateScreen() {
       }
 
     } catch (error) {
-      console.error('Error generating thumbnail:', error);
       Alert.alert('Error', 'Something went wrong. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
@@ -1732,7 +1715,6 @@ export default function GenerateScreen() {
                       throw new Error('Failed to generate image after multiple attempts');
                     }
                   } catch (error) {
-                    console.error('Inpainting error:', error);
                     Alert.alert('Error', 'Failed to remove object. Please try again.');
                     setShowEraseConfirm(true);
                   } finally {
@@ -1931,10 +1913,7 @@ export default function GenerateScreen() {
                         textStickerBaseY.setValue(0);
                         textStickerBaseScale.setValue(1);
                         textStickerBaseRotation.setValue(0);
-
-                        Alert.alert('Success', 'Text added to thumbnail!');
                       } catch (error) {
-                        console.error('Text overlay error:', error);
                         Alert.alert('Error', 'Failed to add text. Please try again.');
                       } finally {
                         setIsModalGenerating(false);
@@ -2083,7 +2062,6 @@ export default function GenerateScreen() {
                           Alert.alert('Error', 'Could not find thumbnail to save');
                         }
                       } catch (error) {
-                        console.error('Save error:', error);
                         Alert.alert('Error', 'Failed to save thumbnail');
                       }
                     }}
@@ -2236,7 +2214,6 @@ export default function GenerateScreen() {
                       setSubjectImage(result.assets[0].uri);
                     }
                   } catch (error) {
-                    console.error('Error picking image:', error);
                     Alert.alert('Error', 'Failed to select image');
                   }
                 }}
@@ -2274,7 +2251,6 @@ export default function GenerateScreen() {
                         Alert.alert('Upload Failed', 'Failed to upload subject image. Please try again.');
                       }
                     } catch (error) {
-                      console.error('Subject upload error:', error);
                       Alert.alert('Upload Error', 'Something went wrong uploading the subject image.');
                     }
                   }
@@ -2339,7 +2315,6 @@ export default function GenerateScreen() {
                         setReferenceImages(prev => [...prev, result.assets[0].uri]);
                       }
                     } catch (error) {
-                      console.error('Error picking image:', error);
                       Alert.alert('Error', 'Failed to select image');
                     }
                   }}
@@ -2389,7 +2364,6 @@ export default function GenerateScreen() {
                         Alert.alert('Upload Failed', 'Some reference images failed to upload. Please try again.');
                       }
                     } catch (error) {
-                      console.error('Reference upload error:', error);
                       Alert.alert('Upload Error', 'Something went wrong uploading the reference images.');
                     }
                   }
@@ -2837,14 +2811,13 @@ const styles = StyleSheet.create({
   },
   centeredImageContainer: {
     flex: 1,
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
   },
   imageAndToolsGroup: {
     alignItems: 'center',
+    justifyContent: 'center',
     width: '100%',
   },
   modalImage: {
@@ -2929,7 +2902,7 @@ const styles = StyleSheet.create({
   imageWithDrawing: {
     position: 'relative',
     width: '100%',
-    height: 250,
+    aspectRatio: 16/9,
   },
   drawingOverlay: {
     position: 'absolute',

@@ -36,7 +36,9 @@
       "Bash(git commit:*)",
       "Read(//c/Users/aidaw/Desktop/**)",
       "Bash(git push:*)",
-      "Bash(del nul)"
+      "Bash(del nul)",
+      "Bash(dir:*)",
+      "Bash(npm uninstall:*)"
     ],
     "deny": [],
     "ask": []

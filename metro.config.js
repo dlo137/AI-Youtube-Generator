@@ -16,12 +16,18 @@ config.resolver.alias = {
   // Add React JSX runtime aliases
   'react/jsx-runtime': 'react/jsx-runtime',
   'react/jsx-dev-runtime': 'react/jsx-dev-runtime',
+  // Add semver subpath exports aliases
+  'semver/functions/satisfies': path.resolve(__dirname, 'node_modules/semver/functions/satisfies.js'),
+  'semver/functions/prerelease': path.resolve(__dirname, 'node_modules/semver/functions/prerelease.js'),
 };
 
 // Add node_modules resolution for polyfills
 config.resolver.nodeModulesPaths = [
   path.resolve(__dirname, 'node_modules'),
 ];
+
+// Enable package exports support for semver and other packages
+config.resolver.unstable_enablePackageExports = true;
 
 // Exclude problematic packages
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];
