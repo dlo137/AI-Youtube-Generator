@@ -340,7 +340,7 @@ export default function SubscriptionScreen() {
             </View>
             <View style={styles.planPricing}>
               <Text style={styles.planPrice}>{formatPrice('weekly', '$2.99/week')}</Text>
-              <Text style={styles.planSubtext}>30 images per month</Text>
+              <Text style={styles.planSubtext}>10 images per week</Text>
             </View>
           </TouchableOpacity>
 
