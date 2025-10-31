@@ -508,19 +508,21 @@ class IAPService {
           switch (planToUse) {
             case 'yearly': credits_max = 90; break;
             case 'monthly': credits_max = 75; break;
-            case 'weekly': credits_max = 30; break;
+            case 'weekly': credits_max = 10; break;
           }
 
           // Update Supabase profile
+          const now = new Date().toISOString();
           const updateData = {
             subscription_plan: planToUse,
             subscription_id: subscriptionId,
             is_pro_version: true,
             product_id: purchase.productId,
-            purchase_time: new Date().toISOString(),
+            purchase_time: now,
             credits_current: credits_max,
             credits_max: credits_max,
-            last_credit_reset: new Date().toISOString()
+            subscription_start_date: now,
+            last_credit_reset: now
           };
 
           console.log('[IAP-SERVICE] Updating profile with data:', updateData);

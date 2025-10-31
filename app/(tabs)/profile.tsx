@@ -13,6 +13,7 @@ import * as StoreReview from 'expo-store-review';
 import IAPService from '../../services/IAPService';
 
 export default function ProfileScreen() {
+  const storeUrl = 'https://apps.apple.com/app/id6753228851?action=write-review';
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,7 +77,7 @@ export default function ProfileScreen() {
       name: 'Weekly',
       price: '$2.99/week',
       billingPrice: '$2.99',
-      imageLimit: '30 images per month',
+      imageLimit: '10 images per week',
       description: 'Billed weekly at $2.99.\nCancel anytime'
     },
     {
@@ -429,61 +430,8 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleRateApp = async () => {
-    try {
-      // Check if we're in development/Expo Go
-      const isAvailable = await StoreReview.isAvailableAsync();
-
-      if (!isAvailable || __DEV__) {
-        // Simulate review prompt for development/Expo Go
-        Alert.alert(
-          'Rate AI Thumbnail Generator',
-          'How would you rate your experience with our app?',
-          [
-            {
-              text: 'Not Now',
-              style: 'cancel',
-              onPress: () => console.log('[Review] User dismissed')
-            },
-            {
-              text: 'Rate ⭐',
-              onPress: () => {
-                Alert.alert(
-                  'Thank You!',
-                  'We appreciate your feedback! In production, this would open the App Store for you to leave a review.',
-                  [{ text: 'OK' }]
-                );
-                console.log('[Review] User tapped Rate (simulated)');
-              }
-            }
-          ]
-        );
-        return;
-      }
-
-      // Production: Use native review prompt
-      if (Platform.OS === 'ios') {
-        await StoreReview.requestReview();
-      } else if (Platform.OS === 'android') {
-        const androidPackageName = 'com.watsonsweb.thumbnail-generator';
-        const url = `market://details?id=${androidPackageName}`;
-        const fallbackUrl = `https://play.google.com/store/apps/details?id=${androidPackageName}`;
-
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
-        } else {
-          await Linking.openURL(fallbackUrl);
-        }
-      }
-    } catch (error) {
-      console.error('Error opening rating:', error);
-      Alert.alert(
-        'Rate the App',
-        'Thank you for wanting to rate our app! Please visit the app store to leave a review.',
-        [{ text: 'OK' }]
-      );
-    }
+  const handleRateApp = () => {
+    Linking.openURL(storeUrl);
   };
 
   const handleContactSubmit = async () => {
@@ -589,7 +537,7 @@ export default function ProfileScreen() {
                                 switch (planId) {
                                   case 'yearly': credits_max = 90; break;
                                   case 'monthly': credits_max = 75; break;
-                                  case 'weekly': credits_max = 30; break;
+                                  case 'weekly': credits_max = 10; break;
                                 }
 
                                 const { error: updateError } = await supabase
@@ -688,7 +636,7 @@ export default function ProfileScreen() {
                       switch (planId) {
                         case 'yearly': credits_max = 90; break;
                         case 'monthly': credits_max = 75; break;
-                        case 'weekly': credits_max = 30; break;
+                        case 'weekly': credits_max = 10; break;
                       }
 
                       // Update subscription in Supabase with is_pro_version = true

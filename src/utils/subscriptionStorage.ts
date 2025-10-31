@@ -63,10 +63,11 @@ export const isUserSubscribed = async (): Promise<boolean> => {
 // Track if we're currently resetting to prevent loops
 let isResetting = false;
 
-// Credits Management Functions - Now uses Supabase for real-time tracking
+// Credits Management Functions - Now uses Supabase for real-time tracking with automatic resets
 export const getCredits = async (): Promise<CreditsInfo> => {
   try {
     // First try to get from Supabase edge function
+    // The edge function now automatically checks if credits need to be reset based on subscription cycle
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -74,6 +75,7 @@ export const getCredits = async (): Promise<CreditsInfo> => {
         // First check what the subscription plan is
         const supabaseSubInfo = await getSupabaseSubscriptionInfo();
 
+        // Invoke the edge function - it will automatically reset if needed
         const { data, error } = await supabase.functions.invoke('manage-credits', {
           body: { action: 'get' }
         });
@@ -133,7 +135,7 @@ export const getCredits = async (): Promise<CreditsInfo> => {
           } else if (supabaseSubInfo.subscription_plan === 'monthly') {
             correctMaxCredits = 75;
           } else if (supabaseSubInfo.subscription_plan === 'weekly') {
-            correctMaxCredits = 30;
+            correctMaxCredits = 10;
           }
         }
       } catch (error) {
@@ -224,7 +226,7 @@ export const resetCredits = async (): Promise<void> => {
         } else if (supabaseSubInfo.subscription_plan === 'monthly') {
           maxCredits = 75;
         } else if (supabaseSubInfo.subscription_plan === 'weekly') {
-          maxCredits = 30;
+          maxCredits = 10;
         }
       }
     } catch (error) {
@@ -240,7 +242,7 @@ export const resetCredits = async (): Promise<void> => {
         } else if (subscriptionInfo.productId === 'thumbnail.monthly') {
           maxCredits = 75;
         } else if (subscriptionInfo.productId === 'thumbnail.weekly') {
-          maxCredits = 30;
+          maxCredits = 10;
         }
       }
     }

@@ -6,6 +6,48 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Credit reset logic
+const shouldResetCredits = (profile: any): boolean => {
+  if (!profile.is_pro_version || !profile.subscription_plan || !profile.subscription_start_date) {
+    return false;
+  }
+
+  const now = new Date();
+  const startDate = new Date(profile.subscription_start_date);
+  const lastResetDate = profile.last_credit_reset
+    ? new Date(profile.last_credit_reset)
+    : startDate;
+
+  const millisecondsElapsed = now.getTime() - lastResetDate.getTime();
+  const daysElapsed = millisecondsElapsed / (1000 * 60 * 60 * 24);
+
+  switch (profile.subscription_plan) {
+    case 'weekly':
+      return daysElapsed >= 7;
+    case 'monthly':
+    case 'yearly':
+      // Both monthly and yearly plans reset every 30 days
+      const monthsSinceReset = (now.getFullYear() - lastResetDate.getFullYear()) * 12 +
+                               (now.getMonth() - lastResetDate.getMonth());
+      return monthsSinceReset >= 1 || daysElapsed >= 30;
+    default:
+      return false;
+  }
+};
+
+const getCreditsForPlan = (plan: string | null): number => {
+  switch (plan) {
+    case 'yearly':
+      return 90;
+    case 'monthly':
+      return 75;
+    case 'weekly':
+      return 10;
+    default:
+      return 0;
+  }
+};
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -43,7 +85,7 @@ serve(async (req) => {
     // Get user's profile with subscription info
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('credits_current, credits_max, subscription_plan, is_pro_version')
+      .select('credits_current, credits_max, subscription_plan, is_pro_version, subscription_start_date, last_credit_reset')
       .eq('id', user.id)
       .single()
 
@@ -53,6 +95,26 @@ serve(async (req) => {
         JSON.stringify({ error: 'Failed to fetch user profile' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
+    }
+
+    // Check if credits need to be reset based on subscription cycle
+    if (shouldResetCredits(profile)) {
+      console.log('Auto-resetting credits based on subscription cycle')
+      const resetMaxCredits = getCreditsForPlan(profile.subscription_plan);
+
+      await supabase
+        .from('profiles')
+        .update({
+          credits_current: resetMaxCredits,
+          credits_max: resetMaxCredits,
+          last_credit_reset: new Date().toISOString()
+        })
+        .eq('id', user.id)
+
+      // Update local profile object
+      profile.credits_current = resetMaxCredits;
+      profile.credits_max = resetMaxCredits;
+      profile.last_credit_reset = new Date().toISOString();
     }
 
     // If credits columns don't exist yet, initialize them based on subscription
@@ -70,7 +132,7 @@ serve(async (req) => {
             maxCredits = 75
             break
           case 'weekly':
-            maxCredits = 30
+            maxCredits = 10
             break
           default:
             maxCredits = 0
@@ -143,28 +205,16 @@ serve(async (req) => {
         )
 
       case 'reset':
-        // Reset credits to max (useful for testing or monthly resets)
+        // Reset credits to max (useful for testing or manual resets)
         // Recalculate maxCredits based on subscription plan
-        let resetMaxCredits = 0
-        if (profile.is_pro_version && profile.subscription_plan) {
-          switch (profile.subscription_plan) {
-            case 'yearly':
-              resetMaxCredits = 90
-              break
-            case 'monthly':
-              resetMaxCredits = 75
-              break
-            case 'weekly':
-              resetMaxCredits = 30
-              break
-          }
-        }
+        const resetMaxCredits = getCreditsForPlan(profile.subscription_plan);
 
         const { error: resetError } = await supabase
           .from('profiles')
           .update({
             credits_current: resetMaxCredits,
-            credits_max: resetMaxCredits
+            credits_max: resetMaxCredits,
+            last_credit_reset: new Date().toISOString()
           })
           .eq('id', user.id)
 

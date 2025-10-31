@@ -10,13 +10,13 @@ SET
   credits_max = CASE
     WHEN subscription_plan = 'yearly' THEN 90
     WHEN subscription_plan = 'monthly' THEN 75
-    WHEN subscription_plan = 'weekly' THEN 30
+    WHEN subscription_plan = 'weekly' THEN 10
     ELSE 0
   END,
   credits_current = CASE
     WHEN subscription_plan = 'yearly' THEN 90
     WHEN subscription_plan = 'monthly' THEN 75
-    WHEN subscription_plan = 'weekly' THEN 30
+    WHEN subscription_plan = 'weekly' THEN 10
     ELSE 0
   END
 WHERE credits_current IS NULL OR credits_max IS NULL;
