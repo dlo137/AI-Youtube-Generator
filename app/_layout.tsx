@@ -2,9 +2,51 @@ import '../polyfills';
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { Alert } from 'react-native';
+import { PostHogProvider, usePostHog, PostHog } from 'posthog-react-native';
+import { usePostHogScreenTracking } from '../hooks/usePostHogScreenTracking';
+import { POSTHOG_API_KEY, POSTHOG_HOST } from '../lib/posthog';
 
-export default function RootLayout() {
+// Initialize PostHog client
+const posthog = new PostHog(POSTHOG_API_KEY, {
+  host: POSTHOG_HOST,
+  captureApplicationLifecycleEvents: true,
+  captureScreenViews: false, // We handle this manually via usePostHogScreenTracking
+});
+
+function RootLayoutNav() {
+  const posthog = usePostHog();
+
+  // Track screen views automatically
+  usePostHogScreenTracking();
+
   useEffect(() => {
+    // Send a test event to verify PostHog is working
+    console.log('=== PostHog Debug Info ===');
+    console.log('PostHog instance:', posthog ? 'Initialized' : 'Not initialized');
+
+    if (posthog) {
+      console.log('Sending test event to PostHog...');
+      try {
+        posthog.capture('app_started', {
+          timestamp: new Date().toISOString(),
+          platform: 'mobile',
+          test: true
+        });
+        console.log('✅ Test event sent successfully!');
+
+        // Also try screen tracking
+        posthog.screen('welcome_screen', {
+          manual_test: true
+        });
+        console.log('✅ Screen event sent successfully!');
+      } catch (error) {
+        console.error('❌ Error sending PostHog events:', error);
+      }
+    } else {
+      console.log('⚠️ PostHog not initialized yet');
+    }
+    console.log('=========================')
+
     // Global error handler
     const errorHandler = (error: Error, isFatal?: boolean) => {
       console.error('Global error:', error);
@@ -44,7 +86,7 @@ export default function RootLayout() {
         window.removeEventListener('unhandledrejection', rejectionHandler);
       }
     };
-  }, []);
+  }, [posthog]);
 
   return (
     <Stack
@@ -120,5 +162,23 @@ export default function RootLayout() {
         }}
       />
     </Stack>
+  );
+}
+
+export default function RootLayout() {
+  useEffect(() => {
+    console.log('=== PostHog Provider Config ===');
+    console.log('API Key:', POSTHOG_API_KEY ? `${POSTHOG_API_KEY.substring(0, 15)}...` : 'NOT SET');
+    console.log('Host:', POSTHOG_HOST);
+    console.log('===============================');
+
+    // Send initial event
+    posthog.capture('app_started');
+  }, []);
+
+  return (
+    <PostHogProvider client={posthog}>
+      <RootLayoutNav />
+    </PostHogProvider>
   );
 }

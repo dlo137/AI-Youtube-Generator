@@ -38,7 +38,12 @@
       "Bash(git push:*)",
       "Bash(del nul)",
       "Bash(dir:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(git gc:*)",
+      "Bash(del \"C:\\Users\\aidaw\\Desktop\\Code\\ThumbnailGenerator\\lib\\posthog.ts\")",
+      "Bash(nul)",
+      "Bash(where adb 2)",
+      "Bash(del nul 2)"
     ],
     "deny": [],
     "ask": []

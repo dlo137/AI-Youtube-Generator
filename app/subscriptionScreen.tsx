@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Image, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -613,11 +613,17 @@ const styles = StyleSheet.create({
   selectedPlan: {
     borderColor: '#1e40af',
     backgroundColor: 'rgba(30, 64, 175, 0.1)',
-    shadowColor: '#1e40af',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 15,
-    elevation: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#1e40af',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.4,
+        shadowRadius: 15,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   popularPlan: {
     // Additional styling for popular plan
