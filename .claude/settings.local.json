@@ -43,7 +43,10 @@
       "Bash(del \"C:\\Users\\aidaw\\Desktop\\Code\\ThumbnailGenerator\\lib\\posthog.ts\")",
       "Bash(nul)",
       "Bash(where adb 2)",
-      "Bash(del nul 2)"
+      "Bash(del nul 2)",
+      "Bash(keytool -list:*)",
+      "Bash(findstr:*)",
+      "Bash(if exist nul del nul)"
     ],
     "deny": [],
     "ask": []

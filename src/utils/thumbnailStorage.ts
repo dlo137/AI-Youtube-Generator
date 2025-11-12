@@ -193,6 +193,7 @@ export const saveThumbnail = async (
       updatedThumbnails[existingIndex] = updatedThumbnail;
 
       await AsyncStorage.setItem(storageKey, JSON.stringify(updatedThumbnails));
+
       return updatedThumbnail;
     }
 
@@ -204,7 +205,7 @@ export const saveThumbnail = async (
       id: thumbnailId,
       title: generateTitle(prompt),
       prompt,
-      imageUrl: localImageUrl, // Store local file path, not remote URL
+      imageUrl: localImageUrl, // Store local file path
       date: new Date().toISOString().split('T')[0],
       status: 'completed',
       timestamp: Date.now(),
@@ -265,7 +266,7 @@ export const addThumbnailToHistory = async (
       id: thumbnailId,
       title: generateTitle(prompt),
       prompt,
-      imageUrl: localImageUrl, // Store local file path, not remote URL
+      imageUrl: localImageUrl, // Store local file path
       date: new Date().toISOString().split('T')[0],
       status: 'completed',
       timestamp: Date.now(),

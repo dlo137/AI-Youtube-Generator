@@ -13,6 +13,10 @@ export default {
     plugins: [
       "expo-web-browser"
     ],
+    updates: {
+      fallbackToCacheTimeout: 0,
+      enabled: false
+    },
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
@@ -48,6 +52,19 @@ export default {
       },
       permissions: [
         "WRITE_EXTERNAL_STORAGE"
+      ],
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "thumbnailgen",
+              host: "*"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     web: {

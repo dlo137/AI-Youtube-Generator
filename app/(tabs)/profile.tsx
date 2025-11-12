@@ -830,12 +830,11 @@ export default function ProfileScreen() {
         <View style={styles.profileHeader}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {user?.isGuest ? 'G' : (profile?.name ? profile.name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase() || '?')}
+              {user?.isGuest ? 'G' : (user?.email?.charAt(0).toUpperCase() || '?')}
             </Text>
           </View>
           <Text style={styles.email}>{user?.isGuest ? 'Guest' : user?.email}</Text>
           <Text style={styles.plan}>{currentPlan}</Text>
-          <Text style={styles.name}>{user?.isGuest ? '' : (profile?.name || '')}</Text>
         </View>
 
 

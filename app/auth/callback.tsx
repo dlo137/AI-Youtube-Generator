@@ -27,11 +27,40 @@ export default function AuthCallback() {
         console.log("[Auth Callback] Type parameter:", typeParam);
         console.log("[Auth Callback] Is password reset:", isPasswordReset);
 
+        // Try to extract code from URL first
+        const code = urlParams.get('code');
+        console.log("[Auth Callback] Code present:", !!code);
+
+        if (!code && !isPasswordReset) {
+          console.error("[Auth Callback] No authorization code in callback URL");
+          // Check for direct tokens (legacy flow)
+          const accessToken = hashParams.get('access_token');
+          if (accessToken) {
+            console.log("[Auth Callback] Found access token in hash, attempting direct session");
+            const refreshToken = hashParams.get('refresh_token');
+            if (refreshToken) {
+              const { error: setSessionError } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
+              if (!setSessionError) {
+                console.log("[Auth Callback] Session set successfully, routing to app");
+                router.replace("/(tabs)/generate");
+                return;
+              }
+            }
+          }
+          router.replace("/login");
+          return;
+        }
+
         // Exchange the OAuth/magic link code for a session
-        const { data, error } = await supabase.auth.exchangeCodeForSession(incoming);
+        console.log("[Auth Callback] Exchanging code for session...");
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code || incoming);
 
         if (error) {
           console.error("[Auth Callback] Exchange error:", error);
+          console.error("[Auth Callback] Error details:", JSON.stringify(error));
 
           // If there's an error but it's a password reset, still try to navigate
           if (isPasswordReset) {
@@ -41,6 +70,7 @@ export default function AuthCallback() {
           }
 
           // Otherwise go to login
+          console.log("[Auth Callback] Redirecting to login due to exchange error");
           router.replace("/login");
           return;
         }

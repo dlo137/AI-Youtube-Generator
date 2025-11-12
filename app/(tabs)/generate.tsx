@@ -102,6 +102,7 @@ export default function GenerateScreen() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPrompt, setModalPrompt] = useState('');
   const [modalImageUrl, setModalImageUrl] = useState('');
+  const [originalModalImageUrl, setOriginalModalImageUrl] = useState(''); // Track original remote URL for syncing
   const [selectedTool, setSelectedTool] = useState<'save' | 'erase' | 'text' | null>(null);
   const [eraseMask, setEraseMask] = useState<string>('');
   const [currentErasePath, setCurrentErasePath] = useState<string>('');
@@ -343,6 +344,7 @@ export default function GenerateScreen() {
   const openModal = async (imageUrl: string) => {
     setModalPrompt('');
     setModalImageUrl(imageUrl);
+    setOriginalModalImageUrl(imageUrl); // Save the original remote URL
     setIsModalVisible(true);
 
     // First check if this image has text overlay in current generation
@@ -528,6 +530,7 @@ export default function GenerateScreen() {
     setIsModalVisible(false);
     setModalPrompt('');
     setModalImageUrl('');
+    setOriginalModalImageUrl('');
     setSelectedTool(null);
     setTextElements([]);
     setIsAddingText(false);
@@ -1264,21 +1267,21 @@ export default function GenerateScreen() {
             onPress={() => handleGenerate('Tech Review')}
             activeOpacity={0.7}
           >
-            <Text style={styles.suggestionText}>Tech Review</Text>
+            <Text style={styles.suggestionText} numberOfLines={1}>Tech Review</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.suggestionButton}
             onPress={() => handleGenerate('Podcast')}
             activeOpacity={0.7}
           >
-            <Text style={styles.suggestionText}>Podcast</Text>
+            <Text style={styles.suggestionText} numberOfLines={1}>Podcast</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.suggestionButton}
             onPress={() => handleGenerate('Gamer vs Gamer')}
             activeOpacity={0.7}
           >
-            <Text style={styles.suggestionText}>Gamer vs Gamer</Text>
+            <Text style={styles.suggestionText} numberOfLines={1}>Gamer vs Gamer</Text>
           </TouchableOpacity>
         </View>
 
@@ -1885,12 +1888,16 @@ export default function GenerateScreen() {
 
                         // Find current generation to get prompt for saving to history
                         const currentGeneration = allGenerations.find(gen =>
+                          gen.url1 === originalModalImageUrl || gen.url2 === originalModalImageUrl || gen.url3 === originalModalImageUrl ||
                           gen.url1 === modalImageUrl || gen.url2 === modalImageUrl || gen.url3 === modalImageUrl
                         );
 
                         if (currentGeneration) {
+                          // Use originalModalImageUrl (the remote URL) for syncing
+                          const urlToSave = originalModalImageUrl || modalImageUrl;
+                          console.log('[ADD TO HISTORY] Adding thumbnail with URL:', urlToSave.substring(0, 60));
                           // Save to history with text overlay
-                          await addThumbnailToHistory(currentGeneration.prompt, modalImageUrl, {
+                          await addThumbnailToHistory(currentGeneration.prompt, urlToSave, {
                             textOverlay: textOverlay
                           });
                         }
@@ -2046,7 +2053,9 @@ export default function GenerateScreen() {
                         }
 
                         // Find the generation that matches the current modal image
+                        // First try to match with originalModalImageUrl, then fall back to modalImageUrl
                         const currentGeneration = allGenerations.find(gen =>
+                          gen.url1 === originalModalImageUrl || gen.url2 === originalModalImageUrl || gen.url3 === originalModalImageUrl ||
                           gen.url1 === modalImageUrl || gen.url2 === modalImageUrl || gen.url3 === modalImageUrl
                         );
 
@@ -2054,9 +2063,12 @@ export default function GenerateScreen() {
                           const editsToSave = thumbnailEdits?.textOverlay ? {
                             textOverlay: thumbnailEdits.textOverlay
                           } : null;
-                          
-                          // Always use the current modalImageUrl for saving, not the original generation URL
-                          await saveThumbnail(currentGeneration.prompt, modalImageUrl, editsToSave);
+
+                          // Use originalModalImageUrl (the remote URL) for syncing, not the edited local path
+                          // This ensures cross-device sync works correctly
+                          const urlToSave = originalModalImageUrl || modalImageUrl;
+                          console.log('[SAVE] Saving thumbnail with URL:', urlToSave.substring(0, 60));
+                          await saveThumbnail(currentGeneration.prompt, urlToSave, editsToSave);
                           Alert.alert('Saved!', 'Thumbnail saved to your history');
                         } else {
                           Alert.alert('Error', 'Could not find thumbnail to save');
@@ -3130,16 +3142,22 @@ const styles = StyleSheet.create({
   },
   suggestionButton: {
     flex: 1,
-    paddingVertical:8,
-    paddingHorizontal: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     backgroundColor: '#2a2e35',
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 0, // Allow flex to shrink below content width
   },
   suggestionText: {
     color: MUTED,
-    fontSize: 13,
+    fontSize: Platform.select({
+      android: 12,
+      ios: 13,
+      default: 13,
+    }),
     fontWeight: '500',
+    textAlign: 'center',
   },
 });

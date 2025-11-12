@@ -238,26 +238,32 @@ export async function signInWithGoogle() {
     // Configure WebBrowser for OAuth
     WebBrowser.maybeCompleteAuthSession();
 
+    const Platform = require('react-native').Platform;
     console.log('[Google Auth] Starting OAuth with redirect:', redirectTo);
+    console.log('[Google Auth] Platform:', Platform.OS);
 
     // Start Google OAuth flow
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectTo,
-        skipBrowserRedirect: true,
+        skipBrowserRedirect: false, // Let browser auto-close after OAuth
+        queryParams: {
+          prompt: 'select_account',
+        },
       }
     });
 
     if (error) {
       console.error('[Google Auth] OAuth init error:', error);
-      throw error;
+      throw new Error(`Google OAuth initialization failed: ${error.message}`);
     }
 
     if (!data?.url) {
-      throw new Error('No OAuth URL returned');
+      throw new Error('No OAuth URL returned from Supabase');
     }
 
+    console.log('[Google Auth] OAuth URL:', data.url.substring(0, 100) + '...');
     console.log('[Google Auth] Opening browser...');
 
     // Open browser for authentication
@@ -266,14 +272,33 @@ export async function signInWithGoogle() {
       redirectTo
     );
 
-    console.log('[Google Auth] Browser result:', result.type);
+    console.log('[Google Auth] Browser result type:', result.type);
 
-    if (result.type === 'cancel') {
+    // If browser closed/dismissed, check if session was created
+    if (result.type === 'cancel' || result.type === 'dismiss') {
+      console.log('[Google Auth] Browser dismissed, checking for session with polling...');
+
+      // Poll for session multiple times (sometimes takes a few seconds)
+      for (let i = 0; i < 10; i++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionData?.session) {
+          console.log(`[Google Auth] ✓ Session found after ${(i + 1) * 500}ms!`);
+          return sessionData;
+        }
+
+        console.log(`[Google Auth] Poll attempt ${i + 1}/10: No session yet...`);
+      }
+
+      console.log('[Google Auth] No session found after 5 seconds, sign in was likely canceled');
       throw new Error('Sign in was canceled');
     }
 
     if (result.type === 'success' && result.url) {
-      console.log('[Google Auth] Callback URL received:', result.url);
+      console.log('[Google Auth] Callback URL received');
+      console.log('[Google Auth] Full URL:', result.url);
 
       // Parse URL properly
       const url = new URL(result.url);
@@ -323,9 +348,19 @@ export async function signInWithGoogle() {
       throw new Error('No authentication data in callback');
     }
 
-    throw new Error('Failed to complete Google authentication');
+    console.error('[Google Auth] Browser did not return success or callback URL was invalid');
+    throw new Error('Authentication was not completed. The browser did not return a valid response.');
   } catch (error: any) {
     console.error('[Google Auth] Full error:', error);
-    throw error;
+    console.error('[Google Auth] Error type:', typeof error);
+    console.error('[Google Auth] Error message:', error?.message);
+    console.error('[Google Auth] Error stack:', error?.stack);
+
+    // Provide helpful error message
+    if (error?.message?.includes('canceled')) {
+      throw error;
+    }
+
+    throw new Error(`Google sign-in failed: ${error?.message || 'Unknown error'}. Please try again or contact support.`);
   }
 }
