@@ -37,11 +37,9 @@ try {
 // Process polyfill
 if (!global.process) {
   // @ts-ignore
-  global.process = {
-    env: {
-      NODE_ENV: __DEV__ ? 'development' : 'production',
-    },
-    version: '',
-    platform: 'ios',
+  global.process = require('process');
+} else if (!global.process.env) {
+  global.process.env = {
+    NODE_ENV: __DEV__ ? 'development' : 'production',
   };
 }
