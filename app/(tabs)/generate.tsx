@@ -12,6 +12,7 @@ import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
 import { saveThumbnail, addThumbnailToHistory, getSavedThumbnails, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 import { getCredits, deductCredit } from '../../src/utils/subscriptionStorage';
 import { useCredits } from '../../src/contexts/CreditsContext';
+import Constants from 'expo-constants';
 
 // Create Animated SVG components
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -46,8 +47,8 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
     } as any);
 
     // Upload directly to Supabase Storage using fetch
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-    const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+    const supabaseUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL || '';
+    const supabaseKey = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
     if (!supabaseUrl || !supabaseKey) {
       return null;

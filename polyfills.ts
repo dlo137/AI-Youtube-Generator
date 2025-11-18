@@ -35,11 +35,28 @@ try {
 }
 
 // Process polyfill
-if (!global.process) {
-  // @ts-ignore
-  global.process = require('process');
-} else if (!global.process.env) {
-  global.process.env = {
-    NODE_ENV: __DEV__ ? 'development' : 'production',
-  };
+try {
+  if (!global.process) {
+    // @ts-ignore
+    global.process = require('process/browser');
+  }
+  if (!global.process.env) {
+    global.process.env = {};
+  }
+  if (!global.process.env.NODE_ENV) {
+    global.process.env.NODE_ENV = __DEV__ ? 'development' : 'production';
+  }
+} catch (e) {
+  // Fallback if process module doesn't exist
+  if (!global.process) {
+    // @ts-ignore
+    global.process = {
+      env: {
+        NODE_ENV: __DEV__ ? 'development' : 'production',
+      },
+      version: '',
+      platform: 'android',
+      nextTick: (fn: Function) => setTimeout(fn, 0),
+    };
+  }
 }
