@@ -10,7 +10,7 @@ Implemented automatic credit reset system that resets user credits based on thei
 - Added `subscription_start_date` column to track when user's subscription period began
 - Initialized existing pro users with current timestamp.
 
-### 2. Reset Logic
+### 2. Reset Logic.
 **File:** `src/utils/creditResetLogic.ts`
 - **Weekly Plans**: Reset every 7 days (10 credits)
 - **Monthly Plans**: Reset every 30 days (75 credits)
