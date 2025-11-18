@@ -8,7 +8,7 @@ Implemented automatic credit reset system that resets user credits based on thei
 ### 1. Database Changes
 **File:** `supabase/migrations/20251030000000_add_subscription_start_date.sql`
 - Added `subscription_start_date` column to track when user's subscription period began
-- Initialized existing pro users with current timestamp
+- Initialized existing pro users with current timestamp.
 
 ### 2. Reset Logic
 **File:** `src/utils/creditResetLogic.ts`
