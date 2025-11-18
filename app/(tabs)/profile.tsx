@@ -13,7 +13,9 @@ import * as StoreReview from 'expo-store-review';
 import IAPService from '../../services/IAPService';
 
 export default function ProfileScreen() {
-  const storeUrl = 'https://apps.apple.com/app/id6753228851?action=write-review';
+  const storeUrl = Platform.OS === 'android'
+    ? 'https://play.google.com/store/apps/details?id=com.aidawrapper.ThumbnailGenerator'
+    : 'https://apps.apple.com/app/id6753228851?action=write-review';
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,7 +70,13 @@ export default function ProfileScreen() {
     { id: 'help', title: 'Help & Support', subtitle: 'Get assistance' },
     { id: 'upgrade', title: 'Plans', subtitle: 'Choose a subscription plan' },
     { id: 'billing', title: 'Billing & Subscription', subtitle: 'Manage your current subscription' },
-    { id: 'rate', title: 'Rate the App', subtitle: 'Share your feedback on the App Store' },
+    {
+      id: 'rate',
+      title: 'Rate the App',
+      subtitle: Platform.OS === 'android'
+        ? 'Share your feedback on the Playstore'
+        : 'Share your feedback on the App Store'
+    },
   ];
 
   const subscriptionPlans = [

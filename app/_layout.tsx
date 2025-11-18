@@ -1,7 +1,7 @@
 import '../polyfills';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 import { PostHogProvider, usePostHog, PostHog } from 'posthog-react-native';
 import { usePostHogScreenTracking } from '../hooks/usePostHogScreenTracking';
 import { POSTHOG_API_KEY, POSTHOG_HOST } from '../lib/posthog';
@@ -15,9 +15,51 @@ const posthog = new PostHog(POSTHOG_API_KEY, {
 
 function RootLayoutNav() {
   const posthog = usePostHog();
+  const router = useRouter();
 
   // Track screen views automatically
   usePostHogScreenTracking();
+
+  // Listen for deep links from Google Sign-In
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', async ({ url }) => {
+      console.log('[Deep Link] Received:', url);
+
+      // Handle OAuth callbacks
+      if (url.includes('access_token') || url.includes('code=')) {
+        console.log('[Deep Link] Auth callback detected');
+
+        try {
+          // Import supabase
+          const { supabase } = require('../lib/supabase');
+
+          // Parse the URL
+          const urlObj = new URL(url);
+          const code = urlObj.searchParams.get('code');
+          const accessToken = urlObj.searchParams.get('access_token');
+
+          if (code) {
+            console.log('[Deep Link] Exchanging code for session...');
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+            if (error) {
+              console.error('[Deep Link] Code exchange error:', error);
+            } else {
+              console.log('[Deep Link] Session created successfully!');
+              router.push('/(tabs)/generate');
+            }
+          } else if (accessToken) {
+            console.log('[Deep Link] Access token found in URL');
+            router.push('/(tabs)/generate');
+          }
+        } catch (error) {
+          console.error('[Deep Link] Error handling OAuth callback:', error);
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [router]);
 
   useEffect(() => {
     // Send a test event to verify PostHog is working

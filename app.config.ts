@@ -43,7 +43,7 @@ export default {
       usesAppleSignIn: true
     },
     android: {
-      package: "com.watsonsweb.thumbnail-generator",
+      package: "com.aidawrapper.ThumbnailGenerator",
       versionCode: 14,
       jsEngine: "jsc",
       adaptiveIcon: {
@@ -56,11 +56,23 @@ export default {
       intentFilters: [
         {
           action: "VIEW",
-          autoVerify: true,
+          autoVerify: false,
           data: [
             {
               scheme: "thumbnailgen",
-              host: "*"
+              host: "auth"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "zxklggjxauvvesqwqvgi.supabase.co",
+              pathPrefix: "/auth/v1/callback"
             }
           ],
           category: ["BROWSABLE", "DEFAULT"]
