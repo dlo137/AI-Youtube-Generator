@@ -1,6 +1,6 @@
 # Automatic Credit Reset Implementation
 
-## Overview
+## Overview..
 Implemented automatic credit reset system that resets user credits based on their subscription plan and purchase date.
 
 ## How It Works
