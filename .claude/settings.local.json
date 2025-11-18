@@ -48,7 +48,8 @@
       "Bash(findstr:*)",
       "Bash(if exist nul del nul)",
       "Bash(echo:*)",
-      "Bash(del \"C:\\Users\\aidaw\\Desktop\\Code\\ThumbnailGenerator\\nul\")"
+      "Bash(del \"C:\\Users\\aidaw\\Desktop\\Code\\ThumbnailGenerator\\nul\")",
+      "Bash(git config:*)"
     ],
     "deny": [],
     "ask": []
