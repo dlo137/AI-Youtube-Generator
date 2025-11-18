@@ -9,7 +9,7 @@ import { POSTHOG_API_KEY, POSTHOG_HOST } from '../lib/posthog';
 // Initialize PostHog client
 const posthog = new PostHog(POSTHOG_API_KEY, {
   host: POSTHOG_HOST,
-  captureApplicationLifecycleEvents: true,
+  captureAppLifecycleEvents: true,
   captureScreenViews: false, // We handle this manually via usePostHogScreenTracking
 });
 
