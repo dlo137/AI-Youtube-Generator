@@ -2,14 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-// Conditionally import IAP for development compatibility
-let IAP: any;
-try {
-  IAP = require('expo-in-app-purchases');
-} catch (error) {
-  console.log('[IAP-SERVICE] IAP module not available (development mode)');
-  IAP = null;
-}
+// IAP functionality is not available - this service is a placeholder
+const IAP: any = null;
 
 const IAP_PRODUCT_IDS = [
   'thumbnail.yearly',
