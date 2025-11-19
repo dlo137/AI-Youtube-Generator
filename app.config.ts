@@ -9,7 +9,6 @@ export default {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     scheme: "thumbnailgen",
-    jsEngine: "jsc",
     plugins: [
       "expo-web-browser"
     ],
@@ -33,7 +32,6 @@ export default {
       supportsTablet: true,
       bundleIdentifier: "com.watsonsweb.thumbnail-generator",
       buildNumber: "14",
-      jsEngine: "jsc",
       icon: "./assets/icon.png",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
@@ -45,7 +43,6 @@ export default {
     android: {
       package: "com.aidawrapper.ThumbnailGenerator",
       versionCode: 14,
-      jsEngine: "jsc",
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#ffffff"
