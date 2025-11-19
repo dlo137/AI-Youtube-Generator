@@ -10,4 +10,4 @@ module.exports = function (api) {
       // expo-router/babel is deprecated in SDK 50+, removed as per warning...
     ],
   };
-};
+}; 

@@ -70,13 +70,12 @@ export default function ProfileScreen() {
     { id: 'help', title: 'Help & Support', subtitle: 'Get assistance' },
     { id: 'upgrade', title: 'Plans', subtitle: 'Choose a subscription plan' },
     { id: 'billing', title: 'Billing & Subscription', subtitle: 'Manage your current subscription' },
-    {
+    // Only show rate button on iOS
+    ...(Platform.OS === 'ios' ? [{
       id: 'rate',
       title: 'Rate the App',
-      subtitle: Platform.OS === 'android'
-        ? 'Share your feedback on the Playstore'
-        : 'Share your feedback on the App Store'
-    },
+      subtitle: 'Share your feedback on the App Store'
+    }] : []),
   ];
 
   const subscriptionPlans = [

@@ -1,15 +1,27 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
+import * as RNIap from 'react-native-iap';
+import type {
+  Product,
+  ProductPurchase,
+  PurchaseError,
+  Subscription,
+} from 'react-native-iap';
 
-// IAP functionality is not available - this service is a placeholder
-const IAP: any = null;
-
-const IAP_PRODUCT_IDS = [
+// Platform-specific product IDs
+const IOS_PRODUCT_IDS = [
   'thumbnail.yearly',
   'thumbnail.monthly',
   'thumbnail.weekly'
 ];
+
+const ANDROID_PRODUCT_IDS = [
+  'ai.thumbnail.pro:yearly',
+  'ai.thumbnail.pro:monthly',
+  'ai.thumbnail.pro:weekly'
+];
+
 const INFLIGHT_KEY = 'iapPurchaseInFlight';
 
 class IAPService {
@@ -23,6 +35,8 @@ class IAPService {
   private currentPurchaseProductId: string | null = null;
   private purchasePromiseResolve: ((value: void) => void) | null = null;
   private purchasePromiseReject: ((reason?: any) => void) | null = null;
+  private purchaseUpdateSubscription: any = null;
+  private purchaseErrorSubscription: any = null;
 
   private constructor() {}
 
@@ -34,32 +48,29 @@ class IAPService {
   }
 
   async initialize(): Promise<boolean> {
-    if (!IAP || typeof IAP.connectAsync !== 'function') {
-      console.log('[IAP-SERVICE] IAP not available on this platform');
-      return false;
-    }
-
     try {
-      // Connect first, then set up listener
+      console.log('[IAP-SERVICE] Initializing react-native-iap...');
+
       if (!this.isConnected) {
-        console.log('[IAP-SERVICE] Connecting to store...');
-        try {
-          await IAP.getProductsAsync(['test']);
-          console.log('[IAP-SERVICE] Already connected to store');
-        } catch (error) {
-          console.log('[IAP-SERVICE] Not connected, establishing connection...');
-          await IAP.connectAsync();
-          console.log('[IAP-SERVICE] Connected successfully');
-        }
+        const result = await RNIap.initConnection();
+        console.log('[IAP-SERVICE] Connection result:', result);
         this.isConnected = true;
       }
 
-      // Set up purchase listener
+      // Set up purchase listeners
       if (!this.hasListener) {
-        console.log('[IAP-SERVICE] Setting up purchase listener...');
-        await this.setupPurchaseListener();
+        console.log('[IAP-SERVICE] Setting up purchase listeners...');
+        this.setupPurchaseListeners();
         this.hasListener = true;
       }
+
+      // Clear any pending transactions on iOS
+      if (Platform.OS === 'ios') {
+        await RNIap.clearTransactionIOS();
+      }
+
+      // Check for unfinished transactions (important for Android)
+      await this.checkForPendingPurchases();
 
       return true;
     } catch (error) {
@@ -68,555 +79,249 @@ class IAPService {
     }
   }
 
-  private setupPurchaseListener() {
-    console.log('[IAP-SERVICE] Setting up purchase listener...');
+  private setupPurchaseListeners() {
+    // Purchase update listener
+    this.purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
+      async (purchase: ProductPurchase) => {
+        console.log('[IAP-SERVICE] 🎉 Purchase updated:', purchase);
+        this.lastPurchaseResult = purchase;
 
-    if (!IAP.setPurchaseListener) {
-      console.error('[IAP-SERVICE] setPurchaseListener is not available!');
-      return;
-    }
+        if (this.debugCallback) {
+          this.debugCallback({
+            lastPurchase: purchase,
+            listenerStatus: 'PURCHASE RECEIVED ✅'
+          });
+        }
 
-    // Clear any existing listener first
-    try {
-      IAP.setPurchaseListener(() => {});
-      console.log('[IAP-SERVICE] Cleared existing listener');
-    } catch (e) {
-      console.log('[IAP-SERVICE] No existing listener to clear:', e);
-    }
-
-    // Set up the listener with direct navigation
-    const listenerFunction = (result: any) => {
-      console.log('[IAP-SERVICE] 🎉 PURCHASE LISTENER TRIGGERED 🎉');
-      console.log('[IAP-SERVICE] Listener result:', JSON.stringify(result, null, 2));
-
-      // Store the result immediately
-      this.lastPurchaseResult = result;
-
-      // Update debug callback
-      if (this.debugCallback) {
-        this.debugCallback({
-          lastPurchase: result,
-          listenerStatus: 'LISTENER TRIGGERED ✅'
-        });
+        await this.handlePurchaseUpdate(purchase);
       }
+    );
 
-      // Process the purchase result directly
-      this.handlePurchaseResult(result).catch(error => {
-        console.error('[IAP-SERVICE] Error in listener purchase handling:', error);
-      });
-    };
-
-    try {
-      IAP.setPurchaseListener(listenerFunction);
-      console.log('[IAP-SERVICE] Purchase listener set successfully!');
-    } catch (error) {
-      console.error('[IAP-SERVICE] Error setting purchase listener:', error);
-    }
-  }
-
-  private async handlePurchaseResult(result: any) {
-    try {
-      console.log('[IAP-SERVICE] 🔥 PROCESSING LISTENER RESULT 🔥', result);
-
-      const { responseCode, results } = result;
-      console.log('[IAP-SERVICE] Response code:', responseCode);
-      console.log('[IAP-SERVICE] Results:', results);
-
-      if (responseCode === IAP.IAPResponseCode.OK && results && results.length > 0) {
-        console.log('[IAP-SERVICE] Purchase successful via listener, processing results:', results);
-        await this.processPurchases(results, 'listener');
-
-        // Resolve the purchase promise
-        if (this.purchasePromiseResolve) {
-          console.log('[IAP-SERVICE] Resolving purchase promise (success)');
-          this.purchasePromiseResolve();
-          this.purchasePromiseResolve = null;
-          this.purchasePromiseReject = null;
-        }
-
-      } else if (responseCode === IAP.IAPResponseCode.USER_CANCELED) {
-        console.log('[IAP-SERVICE] Purchase canceled by user (listener)');
-        // Clear purchase session tracking
-        this.currentPurchaseStartTime = null;
-        this.currentPurchaseProductId = null;
-        await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+    // Purchase error listener
+    this.purchaseErrorSubscription = RNIap.purchaseErrorListener(
+      (error: PurchaseError) => {
+        console.error('[IAP-SERVICE] Purchase error:', error);
 
         if (this.debugCallback) {
           this.debugCallback({
-            listenerStatus: 'USER CANCELLED ❌ (Listener)'
+            listenerStatus: `PURCHASE ERROR ❌: ${error.message}`
           });
         }
 
-        // Reject the purchase promise with cancellation
-        if (this.purchasePromiseReject) {
-          console.log('[IAP-SERVICE] Rejecting purchase promise (user cancelled)');
-          this.purchasePromiseReject(new Error('User cancelled purchase'));
-          this.purchasePromiseResolve = null;
-          this.purchasePromiseReject = null;
-        }
-
-      } else {
-        console.log('[IAP-SERVICE] Purchase failed with response code (listener):', responseCode);
+        // Clear purchase tracking
         this.currentPurchaseStartTime = null;
         this.currentPurchaseProductId = null;
-        await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-
-        if (this.debugCallback) {
-          this.debugCallback({
-            listenerStatus: 'PURCHASE FAILED ❌ (Listener)'
-          });
-        }
+        AsyncStorage.setItem(INFLIGHT_KEY, 'false');
 
         // Reject the purchase promise
         if (this.purchasePromiseReject) {
-          console.log('[IAP-SERVICE] Rejecting purchase promise (failed)');
-          this.purchasePromiseReject(new Error('Purchase failed'));
+          this.purchasePromiseReject(new Error(error.message));
           this.purchasePromiseResolve = null;
           this.purchasePromiseReject = null;
         }
       }
-    } catch (listenerError) {
-      console.error('[IAP-SERVICE] Purchase listener error:', listenerError);
-      this.currentPurchaseStartTime = null;
-      this.currentPurchaseProductId = null;
-      await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+    );
 
-      if (this.debugCallback) {
-        this.debugCallback({
-          listenerStatus: 'LISTENER ERROR ❌'
-        });
+    console.log('[IAP-SERVICE] Purchase listeners set up successfully');
+  }
+
+  private async handlePurchaseUpdate(purchase: ProductPurchase) {
+    try {
+      console.log('[IAP-SERVICE] Processing purchase update:', {
+        productId: purchase.productId,
+        transactionId: purchase.transactionId,
+        purchaseToken: purchase.purchaseToken
+      });
+
+      await this.processPurchase(purchase, 'listener');
+
+      // Resolve the purchase promise
+      if (this.purchasePromiseResolve) {
+        console.log('[IAP-SERVICE] Resolving purchase promise (success)');
+        this.purchasePromiseResolve();
+        this.purchasePromiseResolve = null;
+        this.purchasePromiseReject = null;
       }
 
-      // Reject the purchase promise
+    } catch (error) {
+      console.error('[IAP-SERVICE] Error handling purchase update:', error);
+
       if (this.purchasePromiseReject) {
-        console.log('[IAP-SERVICE] Rejecting purchase promise (listener error)');
-        this.purchasePromiseReject(listenerError);
+        this.purchasePromiseReject(error);
         this.purchasePromiseResolve = null;
         this.purchasePromiseReject = null;
       }
     }
   }
 
-  private longTermCheckTimer: NodeJS.Timeout | null = null;
-  private longTermCheckAttempt: number = 0;
-
-  private async startLongTermBackgroundCheck() {
-    // Clear any existing timer
-    if (this.longTermCheckTimer) {
-      clearTimeout(this.longTermCheckTimer);
-    }
-
-    const maxLongTermAttempts = 24; // 24 attempts * 5 seconds = 2 minutes
-    this.longTermCheckAttempt = 0;
-
-    const checkPeriodically = async () => {
-      this.longTermCheckAttempt++;
-      console.log(`[IAP-SERVICE] LONG-TERM CHECK: Attempt ${this.longTermCheckAttempt}/${maxLongTermAttempts}`);
-
-      try {
-        const history = await IAP.getPurchaseHistoryAsync();
-
-        if (history?.responseCode === IAP.IAPResponseCode.OK && history.results?.length) {
-          const matchingPurchases = history.results.filter((p: any) => {
-            const txId = p.transactionId || p.orderId;
-            const isCorrectProduct = p.productId === this.currentPurchaseProductId;
-            const isNotProcessed = !this.processedIds.has(txId);
-            return isCorrectProduct && isNotProcessed;
-          });
-
-          if (matchingPurchases.length > 0) {
-            console.log('[IAP-SERVICE] LONG-TERM CHECK: Found purchase! Processing...');
-
-            if (this.longTermCheckTimer) {
-              clearTimeout(this.longTermCheckTimer);
-              this.longTermCheckTimer = null;
-            }
-
-            await this.processPurchases(matchingPurchases, 'fallback');
-            return;
-          }
-        }
-
-        // Continue checking if we haven't hit max attempts
-        if (this.longTermCheckAttempt < maxLongTermAttempts) {
-          this.longTermCheckTimer = setTimeout(checkPeriodically, 5000);
-        } else {
-          console.log('[IAP-SERVICE] LONG-TERM CHECK: Max attempts reached - stopping');
-          await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-          this.currentPurchaseStartTime = null;
-          this.currentPurchaseProductId = null;
-
-          if (this.debugCallback) {
-            this.debugCallback({
-              listenerStatus: 'TIMEOUT ❌ (Purchase not confirmed)'
-            });
-          }
-
-          // Reject the purchase promise
-          if (this.purchasePromiseReject) {
-            console.log('[IAP-SERVICE] Rejecting purchase promise (timeout)');
-            this.purchasePromiseReject(new Error('Purchase confirmation timeout'));
-            this.purchasePromiseResolve = null;
-            this.purchasePromiseReject = null;
-          }
-
-          Alert.alert(
-            'Purchase Not Confirmed',
-            'We couldn\'t confirm your purchase with the App Store. If you were charged, please use "Restore Purchases" to activate your subscription.',
-            [{ text: 'OK' }]
-          );
-        }
-      } catch (error) {
-        console.error('[IAP-SERVICE] LONG-TERM CHECK: Error:', error);
-        // Continue checking even on errors
-        if (this.longTermCheckAttempt < maxLongTermAttempts) {
-          this.longTermCheckTimer = setTimeout(checkPeriodically, 5000);
-        }
-      }
-    };
-
-    // Start first check
-    this.longTermCheckTimer = setTimeout(checkPeriodically, 5000);
-  }
-
-  async manualPurchaseCheck() {
-    console.log('[IAP-SERVICE] MANUAL CHECK: User requested manual check');
-
+  private async checkForPendingPurchases() {
     try {
-      const history = await IAP.getPurchaseHistoryAsync();
+      console.log('[IAP-SERVICE] Checking for pending purchases...');
+      const purchases = await RNIap.getAvailablePurchases();
 
-      if (history?.responseCode === IAP.IAPResponseCode.OK && history.results?.length) {
-        const matchingPurchases = history.results.filter((p: any) => {
-          const txId = p.transactionId || p.orderId;
-          const isCorrectProduct = p.productId === this.currentPurchaseProductId;
-          const isNotProcessed = !this.processedIds.has(txId);
-          return isCorrectProduct && isNotProcessed;
-        });
+      if (purchases && purchases.length > 0) {
+        console.log(`[IAP-SERVICE] Found ${purchases.length} pending purchases`);
 
-        if (matchingPurchases.length > 0) {
-          console.log('[IAP-SERVICE] MANUAL CHECK: Found purchase!');
-
-          // Clear long-term check timer
-          if (this.longTermCheckTimer) {
-            clearTimeout(this.longTermCheckTimer);
-            this.longTermCheckTimer = null;
+        for (const purchase of purchases) {
+          const txId = purchase.transactionId;
+          if (!this.processedIds.has(txId)) {
+            console.log('[IAP-SERVICE] Processing pending purchase:', purchase.productId);
+            await this.processPurchase(purchase, 'orphan');
           }
-
-          await this.processPurchases(matchingPurchases, 'fallback');
-          Alert.alert('Success!', 'Your purchase has been found and activated.');
-        } else {
-          Alert.alert(
-            'Still Checking',
-            'Purchase not found yet. This can take a few minutes. We\'re still checking in the background.',
-            [{ text: 'OK' }]
-          );
         }
       } else {
-        Alert.alert(
-          'Connection Issue',
-          'Could not connect to App Store. Please check your internet connection and try again.',
-          [{ text: 'OK' }]
-        );
+        console.log('[IAP-SERVICE] No pending purchases found');
       }
     } catch (error) {
-      console.error('[IAP-SERVICE] MANUAL CHECK: Error:', error);
-      Alert.alert('Error', 'Failed to check purchases. Please try again.');
+      console.error('[IAP-SERVICE] Error checking pending purchases:', error);
     }
   }
 
-  private async startEnhancedFallbackCheck() {
-    let attempt = 0;
-    const maxAttempts = 10;
-    const checkIntervals = [500, 1000, 2000, 3000, 4000, 5000, 6000, 8000, 10000, 12000];
+  private async processPurchase(
+    purchase: ProductPurchase,
+    source: 'listener' | 'restore' | 'orphan'
+  ) {
+    const txId = purchase.transactionId;
+    console.log(`[IAP-SERVICE] Processing purchase from ${source}:`, {
+      productId: purchase.productId,
+      transactionId: txId,
+    });
 
-    const checkForPurchase = async () => {
-      attempt++;
-      console.log(`[IAP-SERVICE] FALLBACK: Attempt ${attempt}/${maxAttempts} - Comprehensive purchase check...`);
+    if (!txId || this.processedIds.has(txId)) {
+      console.log(`[IAP-SERVICE] Skipping already processed transaction: ${txId}`);
+      return;
+    }
 
-      // Check if purchase was cancelled
-      if (!this.currentPurchaseStartTime || !this.currentPurchaseProductId) {
-        console.log('[IAP-SERVICE] FALLBACK: Purchase session was cleared (cancelled/failed), stopping checks');
-        await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-        if (this.debugCallback) {
-          this.debugCallback({
-            listenerStatus: 'CANCELLED/FAILED ❌ (Session cleared)'
-          });
-        }
-        return;
+    this.processedIds.add(txId);
+
+    try {
+      // Map productId to plan
+      let planToUse: 'yearly' | 'monthly' | 'weekly' = 'yearly';
+      const productId = purchase.productId.toLowerCase();
+
+      if (productId.includes('monthly')) {
+        planToUse = 'monthly';
+      } else if (productId.includes('weekly')) {
+        planToUse = 'weekly';
       }
 
-      try {
-        // Check purchase history
-        console.log('[IAP-SERVICE] FALLBACK: Checking purchase history...');
-        const history = await IAP.getPurchaseHistoryAsync();
-        console.log('[IAP-SERVICE] FALLBACK: Purchase history response:', {
-          responseCode: history?.responseCode,
-          resultsCount: history?.results?.length || 0
-        });
+      const subscriptionId = `${purchase.productId}_${Date.now()}`;
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
 
-        if (history?.responseCode === IAP.IAPResponseCode.OK && history.results?.length) {
-          const matchingPurchases = history.results.filter((p: any) => {
-            const txId = p.transactionId || p.orderId;
-            const isCorrectProduct = p.productId === this.currentPurchaseProductId;
-            const isNotProcessed = !this.processedIds.has(txId);
-
-            return isCorrectProduct && isNotProcessed;
-          });
-
-          if (matchingPurchases.length > 0) {
-            console.log('[IAP-SERVICE] FALLBACK: Found matching purchases!');
-
-            if (this.debugCallback) {
-              this.debugCallback({
-                listenerStatus: `FALLBACK SUCCESS! ✅ (Found after ${attempt} attempts)`
-              });
-            }
-
-            await this.processPurchases(matchingPurchases, 'fallback');
-            return;
-          }
-        }
-
-        // No purchase found yet - try again if we have attempts left
-        if (attempt < maxAttempts) {
-          console.log(`[IAP-SERVICE] FALLBACK: No purchase found on attempt ${attempt}, retrying in ${checkIntervals[attempt] / 1000}s...`);
-
-          if (this.debugCallback) {
-            this.debugCallback({
-              listenerStatus: `CHECKING... ⏳ (Attempt ${attempt}/${maxAttempts})`
-            });
-          }
-
-          setTimeout(checkForPurchase, checkIntervals[attempt]);
-        } else {
-          console.log('[IAP-SERVICE] FALLBACK: All attempts exhausted - starting continuous background check');
-
-          // Don't clear the in-flight flag yet - we'll keep checking
-          // await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-
-          if (this.debugCallback) {
-            this.debugCallback({
-              listenerStatus: 'CHECKING IN BACKGROUND... ⏳'
-            });
-          }
-
-          // Start a longer-term background check (every 5 seconds for 2 minutes)
-          this.startLongTermBackgroundCheck();
-
-          // Show error to user explaining the issue
-          Alert.alert(
-            'Connection Issue',
-            'We\'re having trouble connecting to the App Store to confirm your purchase.\n\nPossible issues:\n• Slow internet connection\n• App Store server delay\n• Network timeout\n\nWe\'re still checking in the background. Your purchase is safe - if you were charged, your subscription will activate automatically within a few minutes.',
-            [
-              {
-                text: 'Check Again',
-                onPress: () => this.manualPurchaseCheck()
-              },
-              {
-                text: 'Wait',
-                style: 'cancel'
-              }
-            ]
-          );
-        }
-
-      } catch (fallbackError) {
-        console.error(`[IAP-SERVICE] FALLBACK: Error on attempt ${attempt}:`, fallbackError);
-
-        if (attempt < maxAttempts) {
-          console.log(`[IAP-SERVICE] FALLBACK: Retrying due to error in ${checkIntervals[attempt] / 1000}s...`);
-          setTimeout(checkForPurchase, checkIntervals[attempt]);
-        } else {
-          await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-          if (this.debugCallback) {
-            this.debugCallback({
-              listenerStatus: 'FALLBACK ERROR ❌'
-            });
-          }
-        }
-      }
-    };
-
-    // Start the first check
-    setTimeout(checkForPurchase, checkIntervals[0]);
-  }
-
-  private async processPurchases(purchases: any[], source: 'listener' | 'restore' | 'orphan' | 'fallback') {
-    console.log(`[IAP-SERVICE] Processing ${purchases.length} purchases from ${source}`);
-
-    const inFlight = (await AsyncStorage.getItem(INFLIGHT_KEY)) === 'true';
-    console.log(`[IAP-SERVICE] In-flight flag: ${inFlight}`);
-
-    for (const purchase of purchases) {
-      const txId = purchase.transactionId || purchase.orderId;
-      console.log(`[IAP-SERVICE] Processing purchase:`, {
-        productId: purchase.productId,
-        transactionId: txId,
-        purchaseState: purchase.purchaseState,
+      console.log(`[IAP-SERVICE] Purchase details:`, {
+        planToUse,
+        subscriptionId,
+        userId: userId ? 'found' : 'missing',
         source
       });
 
-      if (!txId || this.processedIds.has(txId)) {
-        console.log(`[IAP-SERVICE] Skipping already processed transaction: ${txId}`);
-        continue;
+      // Determine if we should grant entitlement
+      const inFlight = (await AsyncStorage.getItem(INFLIGHT_KEY)) === 'true';
+      const shouldEntitle =
+        (source === 'listener' && inFlight) ||
+        source === 'restore' ||
+        source === 'orphan';
+
+      console.log(`[IAP-SERVICE] Should entitle: ${shouldEntitle}`);
+
+      if (shouldEntitle && userId) {
+        console.log('[IAP-SERVICE] Granting entitlement...');
+
+        // Determine credits based on plan
+        let credits_max = 0;
+        switch (planToUse) {
+          case 'yearly': credits_max = 90; break;
+          case 'monthly': credits_max = 75; break;
+          case 'weekly': credits_max = 10; break;
+        }
+
+        // Update Supabase profile
+        const now = new Date().toISOString();
+        const updateData = {
+          subscription_plan: planToUse,
+          subscription_id: subscriptionId,
+          is_pro_version: true,
+          product_id: purchase.productId,
+          purchase_time: now,
+          credits_current: credits_max,
+          credits_max: credits_max,
+          subscription_start_date: now,
+          last_credit_reset: now
+        };
+
+        console.log('[IAP-SERVICE] Updating profile with data:', updateData);
+
+        const { error: supabaseError } = await supabase.from('profiles')
+          .update(updateData)
+          .eq('id', userId);
+
+        if (supabaseError) {
+          console.error('[IAP-SERVICE] Supabase update error:', supabaseError);
+          throw supabaseError;
+        }
+
+        // Update AsyncStorage
+        await AsyncStorage.multiSet([
+          ['profile.subscription_plan', planToUse],
+          ['profile.subscription_id', subscriptionId],
+          ['profile.is_pro_version', 'true'],
+        ]);
+
+        console.log('[IAP-SERVICE] Entitlement granted successfully');
       }
 
-      this.processedIds.add(txId);
+      // Acknowledge/finish the purchase
+      console.log('[IAP-SERVICE] Finishing transaction...');
+      if (Platform.OS === 'android') {
+        // On Android, acknowledge the purchase
+        await RNIap.acknowledgePurchaseAndroid(purchase.purchaseToken);
+      } else {
+        // On iOS, finish the transaction
+        await RNIap.finishTransaction({ purchase, isConsumable: false });
+      }
 
-      try {
-        // Map productId -> plan
-        let planToUse: 'yearly' | 'monthly' | 'weekly' = 'yearly';
-        if (/monthly/i.test(purchase.productId)) {
-          planToUse = 'monthly';
-        } else if (/weekly/i.test(purchase.productId)) {
-          planToUse = 'weekly';
-        }
-
-        const subscriptionId = `${purchase.productId}_${Date.now()}`;
-        const { data: userData } = await supabase.auth.getUser();
-        const userId = userData?.user?.id;
-
-        console.log(`[IAP-SERVICE] Purchase details:`, {
-          planToUse,
-          subscriptionId,
-          userId: userId ? 'found' : 'missing',
-          source,
-          inFlight
-        });
-
-        // Determine if we should grant entitlement
-        // IMPORTANT: orphan transactions should always be entitled (user already paid)
-        const shouldEntitle =
-          (source === 'listener' && inFlight) ||
-          source === 'restore' ||
-          source === 'orphan' ||  // Always entitle orphaned transactions
-          (source === 'fallback' && inFlight);
-
-        console.log(`[IAP-SERVICE] Should entitle: ${shouldEntitle}`);
-
-        if (shouldEntitle && userId) {
-          console.log('[IAP-SERVICE] Granting entitlement...');
-
-          // Determine credits based on plan
-          let credits_max = 0;
-          switch (planToUse) {
-            case 'yearly': credits_max = 90; break;
-            case 'monthly': credits_max = 75; break;
-            case 'weekly': credits_max = 10; break;
-          }
-
-          // Update Supabase profile
-          const now = new Date().toISOString();
-          const updateData = {
-            subscription_plan: planToUse,
-            subscription_id: subscriptionId,
-            is_pro_version: true,
-            product_id: purchase.productId,
-            purchase_time: now,
-            credits_current: credits_max,
-            credits_max: credits_max,
-            subscription_start_date: now,
-            last_credit_reset: now
-          };
-
-          console.log('[IAP-SERVICE] Updating profile with data:', updateData);
-
-          const { error: supabaseError } = await supabase.from('profiles')
-            .update(updateData)
-            .eq('id', userId);
-
-          if (supabaseError) {
-            console.error('[IAP-SERVICE] Supabase update error:', supabaseError);
-            throw supabaseError;
-          }
-
-          // Update AsyncStorage
-          await AsyncStorage.multiSet([
-            ['profile.subscription_plan', planToUse],
-            ['profile.subscription_id', subscriptionId],
-            ['profile.is_pro_version', 'true'],
-          ]);
-
-          console.log('[IAP-SERVICE] Entitlement granted successfully');
-        }
-
-        // Always finish the transaction
-        console.log('[IAP-SERVICE] Finishing transaction...');
-        await IAP.finishTransactionAsync(purchase, false);
-
-        // Navigate and clear flag for deliberate purchases
-        if (shouldEntitle) {
-          console.log('[IAP-SERVICE] Clearing in-flight flag and navigating...');
-          await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-
-          // Clear purchase session tracking on success
-          this.currentPurchaseStartTime = null;
-          this.currentPurchaseProductId = null;
-
-          // Update debug callback for success - let the callback handler do the navigation
-          console.log(`[IAP-SERVICE] ✅ Purchase complete! Notifying UI from ${source}`);
-
-          if (this.debugCallback) {
-            this.debugCallback({
-              listenerStatus: 'PURCHASE SUCCESS! ✅ (Navigating...)',
-              shouldNavigate: true,
-              purchaseComplete: true
-            });
-          }
-
-          // Resolve the purchase promise (for fallback purchases)
-          if (source === 'fallback' && this.purchasePromiseResolve) {
-            console.log('[IAP-SERVICE] Resolving purchase promise (fallback success)');
-            this.purchasePromiseResolve();
-            this.purchasePromiseResolve = null;
-            this.purchasePromiseReject = null;
-          }
-        }
-
-      } catch (error) {
-        console.error(`[IAP-SERVICE] Error processing purchase from ${source}:`, error);
+      // Navigate and clear flag for deliberate purchases
+      if (shouldEntitle) {
+        console.log('[IAP-SERVICE] Clearing in-flight flag...');
         await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
 
-        // Reject the purchase promise
-        if ((source === 'listener' || source === 'fallback') && this.purchasePromiseReject) {
-          console.log('[IAP-SERVICE] Rejecting purchase promise (processing error)');
-          this.purchasePromiseReject(error);
-          this.purchasePromiseResolve = null;
-          this.purchasePromiseReject = null;
-        }
+        // Clear purchase session tracking on success
+        this.currentPurchaseStartTime = null;
+        this.currentPurchaseProductId = null;
 
-        // Only show error to user if they initiated this flow
-        if (source === 'listener' || source === 'fallback') {
-          const inFlight = (await AsyncStorage.getItem(INFLIGHT_KEY)) === 'true';
-          if (inFlight) {
-            Alert.alert(
-              'Subscription Error',
-              'Your purchase was successful, but we had trouble activating your subscription. Please contact support if this persists.'
-            );
-          }
-        }
+        console.log(`[IAP-SERVICE] ✅ Purchase complete from ${source}!`);
 
-        throw error;
+        if (this.debugCallback) {
+          this.debugCallback({
+            listenerStatus: 'PURCHASE SUCCESS! ✅',
+            shouldNavigate: true,
+            purchaseComplete: true
+          });
+        }
       }
+
+    } catch (error) {
+      console.error(`[IAP-SERVICE] Error processing purchase:`, error);
+      await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+      throw error;
     }
   }
 
-  async getProducts(): Promise<any[]> {
+  async getProducts(): Promise<Product[]> {
     if (!this.isConnected) {
       await this.initialize();
     }
 
     try {
-      const { responseCode, results } = await IAP.getProductsAsync(IAP_PRODUCT_IDS);
-      console.log('[IAP-SERVICE] Product fetch response:', { responseCode, results });
+      const productIds = Platform.OS === 'ios' ? IOS_PRODUCT_IDS : ANDROID_PRODUCT_IDS;
+      console.log('[IAP-SERVICE] Fetching products for', Platform.OS, ':', productIds);
 
-      if (responseCode === IAP.IAPResponseCode.OK && results?.length) {
-        console.log('[IAP-SERVICE] Products loaded:', results.map(p => `${p.productId}: ${p.price}`).join(', '));
-        return results;
-      } else {
-        console.log('[IAP-SERVICE] No products available or error:', { responseCode, results });
-        return [];
-      }
+      // Get subscriptions (most IAP products are subscriptions)
+      const products = await RNIap.getSubscriptions({ skus: productIds });
+      console.log('[IAP-SERVICE] Products loaded:', products.length);
+
+      return products;
     } catch (err) {
       console.error('[IAP-SERVICE] Error fetching products:', err);
       return [];
@@ -635,38 +340,44 @@ class IAPService {
 
     console.log(`[IAP-SERVICE] Setting in-flight flag and attempting purchase: ${productId}`);
     await AsyncStorage.setItem(INFLIGHT_KEY, 'true');
-    console.log('[IAP-SERVICE] In-flight flag set to true');
 
     // Create a promise that will be resolved/rejected by the purchase listener
     const purchasePromise = new Promise<void>((resolve, reject) => {
       this.purchasePromiseResolve = resolve;
       this.purchasePromiseReject = reject;
+
+      // Set a timeout
+      setTimeout(() => {
+        if (this.purchasePromiseReject) {
+          this.purchasePromiseReject(new Error('Purchase timeout'));
+          this.purchasePromiseResolve = null;
+          this.purchasePromiseReject = null;
+        }
+      }, 60000); // 60 second timeout
     });
 
     try {
-      console.log('[IAP-SERVICE] Calling IAP.purchaseItemAsync...');
-      const result = await IAP.purchaseItemAsync(productId);
-      console.log('[IAP-SERVICE] purchaseItemAsync returned:', result);
+      console.log('[IAP-SERVICE] Requesting purchase...');
 
-      // Start fallback check in case listener doesn't fire
-      console.log('[IAP-SERVICE] Starting fallback check...');
+      if (Platform.OS === 'android') {
+        await RNIap.requestSubscription({ sku: productId });
+      } else {
+        await RNIap.requestSubscription({ sku: productId });
+      }
 
       if (this.debugCallback) {
         this.debugCallback({
-          listenerStatus: 'PURCHASE INITIATED - WAITING FOR RESPONSE... ⏳'
+          listenerStatus: 'PURCHASE INITIATED - WAITING... ⏳'
         });
       }
 
-      // Enhanced fallback with multiple retries
-      this.startEnhancedFallbackCheck();
-
-      // Wait for the purchase to complete via listener or fallback
+      // Wait for the purchase to complete via listener
       console.log('[IAP-SERVICE] Waiting for purchase completion...');
       await purchasePromise;
       console.log('[IAP-SERVICE] Purchase completed successfully!');
 
     } catch (error: any) {
-      console.error('[IAP-SERVICE] purchaseItemAsync failed:', error);
+      console.error('[IAP-SERVICE] Purchase failed:', error);
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
 
       // Clear session tracking on error
@@ -686,34 +397,37 @@ class IAPService {
       // Check if user cancelled
       if (error?.code === 'E_USER_CANCELLED' || error?.message?.includes('cancel')) {
         console.log('[IAP-SERVICE] User cancelled purchase');
-        throw new Error('User cancelled purchase'); // Throw for cancellation so UI can handle it
+        throw new Error('User cancelled purchase');
       }
 
       throw error;
     }
   }
 
-  async restorePurchases(): Promise<any[]> {
+  async restorePurchases(): Promise<ProductPurchase[]> {
     if (!this.isConnected) {
       await this.initialize();
     }
 
     try {
       await AsyncStorage.setItem(INFLIGHT_KEY, 'true');
-      const { responseCode, results } = await IAP.getPurchaseHistoryAsync();
+      console.log('[IAP-SERVICE] Restoring purchases...');
 
-      if (responseCode !== IAP.IAPResponseCode.OK) {
-        await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-        throw new Error('Could not connect to App Store');
-      }
+      const purchases = await RNIap.getAvailablePurchases();
 
-      if (!results?.length) {
+      if (!purchases || purchases.length === 0) {
         await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
         throw new Error('No previous purchases found');
       }
 
-      await this.processPurchases(results, 'restore');
-      return results;
+      console.log(`[IAP-SERVICE] Found ${purchases.length} purchases to restore`);
+
+      for (const purchase of purchases) {
+        await this.processPurchase(purchase, 'restore');
+      }
+
+      await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+      return purchases;
     } catch (error) {
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
       throw error;
@@ -725,20 +439,12 @@ class IAPService {
       await this.initialize();
     }
 
-    try {
-      console.log('[IAP-SERVICE] Checking for orphaned transactions...');
-      const history = await IAP.getPurchaseHistoryAsync();
-      if (history?.responseCode === IAP.IAPResponseCode.OK && history.results?.length) {
-        console.log('[IAP-SERVICE] Found purchase history, processing as orphans');
-        await this.processPurchases(history.results, 'orphan');
-      }
-    } catch (e) {
-      console.error('[IAP-SERVICE] Error checking for orphaned transactions:', e);
-    }
+    await this.checkForPendingPurchases();
   }
 
   isAvailable(): boolean {
-    return IAP && typeof IAP.connectAsync === 'function';
+    // react-native-iap works on both iOS and Android
+    return true;
   }
 
   setDebugCallback(callback: (info: any) => void) {
@@ -754,6 +460,25 @@ class IAPService {
       isConnected: this.isConnected,
       hasListener: this.hasListener,
     };
+  }
+
+  async cleanup() {
+    if (this.purchaseUpdateSubscription) {
+      this.purchaseUpdateSubscription.remove();
+      this.purchaseUpdateSubscription = null;
+    }
+
+    if (this.purchaseErrorSubscription) {
+      this.purchaseErrorSubscription.remove();
+      this.purchaseErrorSubscription = null;
+    }
+
+    if (this.isConnected) {
+      await RNIap.endConnection();
+      this.isConnected = false;
+    }
+
+    this.hasListener = false;
   }
 }
 

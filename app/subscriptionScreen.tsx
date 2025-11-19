@@ -5,10 +5,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import IAPService from '../services/IAPService';
 
-const PRODUCT_IDS = {
+// Platform-specific product IDs
+const PRODUCT_IDS = Platform.OS === 'ios' ? {
   yearly: 'thumbnail.yearly',
   monthly: 'thumbnail.monthly',
   weekly: 'thumbnail.weekly',
+} : {
+  yearly: 'ai.thumbnail.pro:yearly',
+  monthly: 'ai.thumbnail.pro:monthly',
+  weekly: 'ai.thumbnail.pro:weekly',
 };
 
 export default function SubscriptionScreen() {
