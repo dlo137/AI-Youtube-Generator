@@ -48,7 +48,8 @@ export default {
         backgroundColor: "#ffffff"
       },
       permissions: [
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "com.android.vending.BILLING"
       ],
       intentFilters: [
         {
