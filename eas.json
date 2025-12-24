@@ -6,9 +6,9 @@
   "build": {
     "simulator": {
       "node": "20.19.4",
-      "image": "latest",
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "image": "latest"
       },
       "distribution": "internal",
       "env": {
@@ -18,7 +18,9 @@
     },
     "development": {
       "node": "20.19.4",
-      "image": "latest",
+      "ios": {
+        "image": "latest"
+      },
       "developmentClient": true,
       "distribution": "internal",
       "env": {
@@ -28,7 +30,9 @@
     },
     "preview": {
       "node": "20.19.4",
-      "image": "latest",
+      "ios": {
+        "image": "latest"
+      },
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://zxklggjxauvvesqwqvgi.supabase.co",
@@ -37,7 +41,9 @@
     },
     "production": {
       "node": "20.19.4",
-      "image": "latest",
+      "ios": {
+        "image": "latest"
+      },
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://zxklggjxauvvesqwqvgi.supabase.co",
