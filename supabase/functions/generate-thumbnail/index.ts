@@ -195,32 +195,6 @@ Focus on style matching and natural subject integration.` }];
   return enhancedPrompt;
 }
 
-// Retry helper with exponential backoff and jitter
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 1000
-): Promise<T> {
-  let lastError: Error;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error as Error;
-
-      if (attempt < maxRetries - 1) {
-        // Exponential backoff with jitter: baseDelay * 2^attempt + random(0-1000ms)
-        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-        console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay.toFixed(0)}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  throw lastError!;
-}
-
 async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean, seed?: number) {
   // Create explicit prompt based on mode
   let promptText: string;
@@ -454,50 +428,18 @@ serve(async (req: Request) => {
     const variation2Prompt = `${finalPrompt} Style: Energetic with dynamic composition and aesthetic colors. [Variation ID: ${timestamp}-${randomSeed2}]`;
     const variation3Prompt = `${finalPrompt} Style: Clean and minimal with soft colors and simple composition. [Variation ID: ${timestamp}-${randomSeed3}]`;
 
-    // Generate 3 variations with graceful degradation - don't fail if one preview fails
-    const generateWithRetry = (prompt: string, seed: number) =>
-      retryWithBackoff(() =>
-        callGeminiImagePreview(prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, seed)
-      );
-
-    const results = await Promise.allSettled([
-      generateWithRetry(variation1Prompt, randomSeed1),
-      generateWithRetry(variation2Prompt, randomSeed2),
-      generateWithRetry(variation3Prompt, randomSeed3)
-    ]);
-
-    // Extract successful results
-    const successfulResults: Uint8Array[] = [];
-    const errors: string[] = [];
-
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      if (result.status === 'fulfilled') {
-        successfulResults.push(result.value);
-      } else {
-        console.error(`Variation ${i + 1} failed:`, result.reason);
-        errors.push(`Variation ${i + 1}: ${result.reason.message}`);
-      }
+    // Generate 3 variations in parallel with different prompts and seeds
+    let bytes1: Uint8Array, bytes2: Uint8Array, bytes3: Uint8Array;
+    try {
+      [bytes1, bytes2, bytes3] = await Promise.all([
+        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed1),
+        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed2),
+        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed3)
+      ]);
+    } catch (error) {
+      console.error('Gemini Image Preview failed:', error);
+      throw new Error(`Image generation failed: ${error.message}`);
     }
-
-    // If all 3 failed, return 503 (service temporarily unavailable)
-    if (successfulResults.length === 0) {
-      console.error('All image generation attempts failed');
-      return new Response(JSON.stringify({
-        error: 'Image generation service temporarily unavailable. Please try again.',
-        details: errors
-      }), {
-        status: 503,
-        headers: { "Content-Type": "application/json", "Retry-After": "60" }
-      });
-    }
-
-    // If some succeeded, fill in missing ones by duplicating successful results
-    while (successfulResults.length < 3) {
-      successfulResults.push(successfulResults[0]); // Duplicate the first successful one
-    }
-
-    const [bytes1, bytes2, bytes3] = successfulResults;
 
     // Get user ID from auth for namespacing
     const { data: { user } } = await supabase.auth.getUser();
@@ -562,30 +504,6 @@ serve(async (req: Request) => {
 
   } catch (e) {
     console.error(e);
-    const errorMessage = String(e);
-
-    // Determine if this is a transient error (API issues, rate limits, etc.)
-    const isTransient = errorMessage.includes('API error') ||
-                       errorMessage.includes('rate limit') ||
-                       errorMessage.includes('timeout') ||
-                       errorMessage.includes('temporarily unavailable') ||
-                       errorMessage.includes('network') ||
-                       errorMessage.includes('fetch');
-
-    if (isTransient) {
-      return new Response(JSON.stringify({
-        error: 'Image generation service temporarily unavailable. Please try again.',
-        details: errorMessage
-      }), {
-        status: 503,
-        headers: { "Content-Type": "application/json", "Retry-After": "60" }
-      });
-    }
-
-    // For other errors (user errors, permanent failures), return 500
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+    return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
   }
 });
