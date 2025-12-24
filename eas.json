@@ -5,7 +5,8 @@
   },
   "build": {
     "simulator": {
-      "node": "20.18.0",
+      "node": "20.19.4",
+      "image": "latest",
       "ios": {
         "simulator": true
       },
@@ -16,6 +17,8 @@
       }
     },
     "development": {
+      "node": "20.19.4",
+      "image": "latest",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
@@ -24,6 +27,8 @@
       }
     },
     "preview": {
+      "node": "20.19.4",
+      "image": "latest",
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://zxklggjxauvvesqwqvgi.supabase.co",
@@ -31,6 +36,8 @@
       }
     },
     "production": {
+      "node": "20.19.4",
+      "image": "latest",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://zxklggjxauvvesqwqvgi.supabase.co",
