@@ -31,7 +31,6 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.watsonsweb.thumbnail-generator",
-      buildNumber: "14",
       icon: "./assets/icon.png",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
