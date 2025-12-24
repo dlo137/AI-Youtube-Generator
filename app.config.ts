@@ -7,9 +7,6 @@ export default {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     scheme: "thumbnailgen",
-    plugins: [
-      "expo-web-browser"
-    ],
     updates: {
       fallbackToCacheTimeout: 0,
       enabled: false
