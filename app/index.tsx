@@ -15,6 +15,7 @@ export default function WelcomeScreen() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [selectedStruggles, setSelectedStruggles] = useState<string[]>([]);
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
   const confettiRef = useRef(null);
   const confettiLeftRef = useRef(null);
@@ -87,27 +88,39 @@ export default function WelcomeScreen() {
 
   const handleGetStarted = () => {
     try {
-      Animated.timing(slideAnim, {
-        toValue: -1,
-        duration: 250,
-        useNativeDriver: true,
-      }).start(() => {
+      // Fade out and slide out simultaneously
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: -1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        })
+      ]).start(() => {
         try {
+          // Update step while everything is still faded out
           if (step === 1) {
             setStep(2);
           } else if (step === 2) {
             setStep(3);
-          } else if (step === 3) {
-            setStep(5);
           } else {
             router.push('/signup');
+            return;
           }
-          slideAnim.setValue(1);
-          Animated.timing(slideAnim, {
-            toValue: 0,
-            duration: 250,
-            useNativeDriver: true,
-          }).start();
+          
+          // Wait for React to render the new step, then reset position and fade in
+          requestAnimationFrame(() => {
+            slideAnim.setValue(0);
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: true,
+            }).start();
+          });
         } catch (error) {
           // Animation callback error
         }
@@ -143,93 +156,8 @@ export default function WelcomeScreen() {
       <FloatingParticles />
 
       <View style={styles.content}>
-        {step === 3 ? (
-          <Animated.View style={{ transform: [{ translateX }], width: '100%', gap: 24, alignItems: 'center' }}>
-            <View style={{ width: '100%' }}>
-              <Text style={styles.title}>
-                What's slowing down your content growth?
-              </Text>
-              <Text style={styles.subtitle}>
-                Select all that apply
-              </Text>
-            </View>
-
-            <View style={{ width: '100%', gap: 12, marginTop: 20 }}>
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  selectedStruggles.includes('Pricing') && styles.optionButtonSelected
-                ]}
-                onPress={() => toggleStruggle('Pricing')}
-              >
-                <View style={[
-                  styles.checkbox,
-                  selectedStruggles.includes('Pricing') && styles.checkboxSelected
-                ]}>
-                  {selectedStruggles.includes('Pricing') && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
-                </View>
-                <Text style={styles.optionText}>Pricing</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  selectedStruggles.includes('Time') && styles.optionButtonSelected
-                ]}
-                onPress={() => toggleStruggle('Time')}
-              >
-                <View style={[
-                  styles.checkbox,
-                  selectedStruggles.includes('Time') && styles.checkboxSelected
-                ]}>
-                  {selectedStruggles.includes('Time') && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
-                </View>
-                <Text style={styles.optionText}>Time</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  selectedStruggles.includes('Quality Designs') && styles.optionButtonSelected
-                ]}
-                onPress={() => toggleStruggle('Quality Designs')}
-              >
-                <View style={[
-                  styles.checkbox,
-                  selectedStruggles.includes('Quality Designs') && styles.checkboxSelected
-                ]}>
-                  {selectedStruggles.includes('Quality Designs') && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
-                </View>
-                <Text style={styles.optionText}>Quality Designs</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.optionButton,
-                  selectedStruggles.includes('Other') && styles.optionButtonSelected
-                ]}
-                onPress={() => toggleStruggle('Other')}
-              >
-                <View style={[
-                  styles.checkbox,
-                  selectedStruggles.includes('Other') && styles.checkboxSelected
-                ]}>
-                  {selectedStruggles.includes('Other') && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
-                </View>
-                <Text style={styles.optionText}>Other</Text>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        ) : step === 5 ? (
-          <Animated.View style={{ transform: [{ translateX }], width: '100%', gap: 16 }}>
+        {step === 2 ? (
+          <Animated.View style={{ transform: [{ translateX }], opacity: fadeAnim, width: '100%', gap: 16 }}>
             <View>
               <Text style={styles.title}>
                 Save instantly.{'\n'}Save 85% of your time & cost.
@@ -240,9 +168,42 @@ export default function WelcomeScreen() {
             </View>
             <TimeChart />
           </Animated.View>
-        ) : (step === 1 || step === 2) ? (
-          <View style={styles.imageContainer}>
-            {step === 1 && (
+        ) : step === 3 ? (
+          <Animated.View style={{ transform: [{ translateX }], opacity: fadeAnim, width: '100%', gap: 24, alignItems: 'center' }}>
+            <View style={{ width: '100%' }}>
+              <Text style={styles.title}>
+                Trusted by 10,000+ creators
+              </Text>
+              <Text style={styles.subtitle}>
+                Join the community of successful content creators
+              </Text>
+            </View>
+
+            <View style={styles.socialProofContainer}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNumber}>10K+</Text>
+                <Text style={styles.statLabel}>Active Users</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNumber}>50K+</Text>
+                <Text style={styles.statLabel}>Thumbnails Created</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNumber}>4.8⭐</Text>
+                <Text style={styles.statLabel}>App Store Rating</Text>
+              </View>
+            </View>
+
+            <View style={styles.testimonialCard}>
+              <Text style={styles.testimonialText}>
+                "This app transformed my workflow. I create stunning thumbnails in minutes!"
+              </Text>
+              <Text style={styles.testimonialAuthor}>- Alex, YouTuber</Text>
+            </View>
+          </Animated.View>
+        ) : step === 1 ? (
+          <Animated.View style={{ transform: [{ translateX }], opacity: fadeAnim, width: '100%', alignItems: 'center' }}>
+            <View style={styles.imageContainer}>
               <View style={styles.confettiWrapper}>
                 <ConfettiCannon
                   ref={confettiRef}
@@ -297,47 +258,24 @@ export default function WelcomeScreen() {
                   colors={['#1e40af', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe', '#ffffff']}
                 />
               </View>
-            )}
-            <Animated.Image
-              source={step === 1 ? require('../assets/home.png') : step === 2 ? require('../assets/editscreen.png') : require('../assets/home.png')}
-              style={[
-                styles.heroImage,
-                {
-                  transform: [{ translateX }],
-                },
-              ]}
-              resizeMode="contain"
-            />
-          </View>
+              <Image
+                source={require('../assets/home.png')}
+                style={styles.heroImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.screenTitle}>
+              Thumbnail Designs{'\n'}Made Easy
+            </Text>
+          </Animated.View>
         ) : null}
-
-{(step === 1 || step === 2) && (
-          <Animated.Text
-            style={[
-              styles.screenTitle,
-              {
-                transform: [{ translateX }],
-              },
-            ]}
-          >
-            {step === 1 ? (
-              <>
-                Thumbnail Designs{'\n'}Made Easy
-              </>
-            ) : step === 2 ? (
-              <>
-                Unlock the Secret Behind Every Viral Thumbnail
-              </>
-            ) : null}
-          </Animated.Text>
-        )}
 
         <TouchableOpacity
           style={[styles.getStartedButton, step === 3 && { marginTop: 40 }]}
           onPress={handleGetStarted}
         >
           <Text style={styles.getStartedButtonText}>
-            {step === 1 ? "Get Started" : step === 5 ? "Let's Get Started" : "Continue"}
+            {step === 1 ? "Get Started" : step === 3 ? "Let's Get Started" : "Continue"}
           </Text>
         </TouchableOpacity>
 
@@ -504,6 +442,54 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: TEXT,
     fontWeight: '500',
+  },
+  socialProofContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 10,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#1a1f26',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2a3340',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#3b82f6',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: MUTED,
+    textAlign: 'center',
+  },
+  testimonialCard: {
+    width: '100%',
+    backgroundColor: '#1a1f26',
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2a3340',
+    marginTop: 10,
+  },
+  testimonialText: {
+    fontSize: 15,
+    color: TEXT,
+    fontStyle: 'italic',
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  testimonialAuthor: {
+    fontSize: 14,
+    color: '#3b82f6',
+    fontWeight: '600',
   },
   chartCard: {
     backgroundColor: '#1a1f26',
