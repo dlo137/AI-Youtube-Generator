@@ -80,7 +80,7 @@ export default function LoginScreen() {
             try {
               const data = await signInWithGoogle();
 
-              if (data.user) {
+              if ('user' in data && data.user) {
                 // Successfully signed in, navigate to main app
                 router.push('/(tabs)/generate');
               }
