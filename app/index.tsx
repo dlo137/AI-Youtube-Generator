@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, ActivityIndicator, Dimensions } from 'react-native';
+import MaskedView from '@react-native-masked-view/masked-view';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
@@ -8,6 +9,21 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import * as Haptics from 'expo-haptics';
 import TimeChart from '../src/components/TimeChart';
 import { trackScreenView } from '../lib/posthog';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const GradientText = ({ children, style }: { children: string; style?: any }) => (
+  <MaskedView
+    maskElement={<Text style={[style, { backgroundColor: 'transparent' }]}>{children}</Text>}
+  >
+    <LinearGradient
+      colors={['#93c5fd', '#3b82f6']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+    >
+      <Text style={[style, { opacity: 0 }]}>{children}</Text>
+    </LinearGradient>
+  </MaskedView>
+);
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -171,34 +187,34 @@ export default function WelcomeScreen() {
         ) : step === 3 ? (
           <Animated.View style={{ transform: [{ translateX }], opacity: fadeAnim, width: '100%', gap: 24, alignItems: 'center' }}>
             <View style={{ width: '100%' }}>
-              <Text style={styles.title}>
-                Trusted by 10,000+ creators
-              </Text>
-              <Text style={styles.subtitle}>
-                Join the community of successful content creators
+              <Text style={[styles.title, { textAlign: 'center' }]}>Used by creators who value</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', gap: 6, alignItems: 'center' }}>
+                <GradientText style={styles.title}>speed</GradientText>
+                <Text style={styles.title}>,</Text>
+                <GradientText style={styles.title}>quality</GradientText>
+                <Text style={styles.title}>, and</Text>
+                <GradientText style={styles.title}>consistency</GradientText>
+              </View>
+              <Text style={[styles.subtitle, { textAlign: 'center' }]}>
+                Join creators using AI to work faster, not harder
               </Text>
             </View>
 
             <View style={styles.socialProofContainer}>
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>10K+</Text>
-                <Text style={styles.statLabel}>Active Users</Text>
+                <Text style={styles.statLabel}>Thumbnails Generated </Text>
               </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statNumber}>50K+</Text>
-                <Text style={styles.statLabel}>Thumbnails Created</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statNumber}>4.8⭐</Text>
-                <Text style={styles.statLabel}>App Store Rating</Text>
+              <View style={[styles.statCard, { flex: 2 }]}>
+                <Text style={[styles.statNumber, { fontSize: 20 }]}>5 Star Rating</Text>
+                <Text style={[styles.statLabel, { fontSize: 20, marginTop: 8 }]}>☆ ☆ ☆ ☆ ☆</Text>
               </View>
             </View>
 
             <View style={styles.testimonialCard}>
               <Text style={styles.testimonialText}>
-                "This app transformed my workflow. I create stunning thumbnails in minutes!"
+                "Designed to help creators produce click-worthy thumbnails in seconds, without any design skills."
               </Text>
-              <Text style={styles.testimonialAuthor}>- Alex, YouTuber</Text>
             </View>
           </Animated.View>
         ) : step === 1 ? (
@@ -275,16 +291,22 @@ export default function WelcomeScreen() {
           onPress={handleGetStarted}
         >
           <Text style={styles.getStartedButtonText}>
-            {step === 1 ? "Get Started" : step === 3 ? "Let's Get Started" : "Continue"}
+            {step === 1 ? "Get Started" : step === 3 ? "Start Creating" : "Continue"}
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.loginContainer}>
-          <Text style={styles.loginText}>Already got an account? </Text>
-          <TouchableOpacity onPress={() => router.push('/login')}>
-            <Text style={styles.loginLink}>Sign in</Text>
-          </TouchableOpacity>
-        </View>
+        {step === 3 ? (
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>Built for creators, not agencies</Text>
+          </View>
+        ) : (
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>Already got an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/login')}>
+              <Text style={styles.loginLink}>Sign in</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -478,6 +500,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a3340',
     marginTop: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   testimonialText: {
     fontSize: 15,
@@ -485,6 +509,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     lineHeight: 22,
     marginBottom: 12,
+    textAlign: 'center',
   },
   testimonialAuthor: {
     fontSize: 14,
