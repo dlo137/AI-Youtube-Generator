@@ -1,14 +1,19 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import * as Linking from 'expo-linking';
+import { trackScreenView } from '../lib/posthog';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    trackScreenView('Forgot Password Screen');
+  }, []);
 
   const handleResetPassword = async () => {
     if (!email) {

@@ -3,6 +3,11 @@ import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
+
+// Extend global type for guest mode
+declare global {
+  var isGuestMode: boolean | undefined;
+}
 import { getCurrentUser, getMyProfile, updateMyProfile, signOut, deleteAccount } from '../../src/features/auth/api';
 import { useModal } from '../../src/contexts/ModalContext';
 import { supabase } from '../../lib/supabase';
@@ -11,6 +16,7 @@ import { getSubscriptionInfo, SubscriptionInfo, getCredits, CreditsInfo } from '
 import { getSubscriptionInfo as getSupabaseSubscriptionInfo, changePlan, cancelSubscription, SubscriptionPlan } from '../../src/features/subscription/api';
 import * as StoreReview from 'expo-store-review';
 import IAPService from '../../services/IAPService';
+import { trackEvent } from '../../lib/posthog';
 
 export default function ProfileScreen() {
   const storeUrl = Platform.OS === 'android'
@@ -88,6 +94,14 @@ export default function ProfileScreen() {
       description: 'Billed weekly at $2.99.\nCancel anytime'
     },
     {
+      id: 'discounted_weekly',
+      name: 'Weekly (Special Offer)',
+      price: '$1.99/week',
+      billingPrice: '$1.99',
+      imageLimit: '10 images per week',
+      description: 'Billed weekly at $1.99.\nCancel anytime'
+    },
+    {
       id: 'monthly',
       name: 'Monthly',
       price: '$5.99/month',
@@ -124,6 +138,9 @@ export default function ProfileScreen() {
       } else if (supabaseSubInfo.subscription_plan === 'weekly') {
         price = '$2.99/week';
         planName = 'Weekly Plan';
+      } else if (supabaseSubInfo.subscription_plan === 'discounted_weekly') {
+        price = '$1.99/week';
+        planName = 'Weekly Plan (Special Offer)';
       }
 
       return {
@@ -345,7 +362,8 @@ export default function ProfileScreen() {
           plan: planName,
           price: price,
           renewalDate: subInfo.expiryDate || subInfo.purchaseDate,
-          status: 'active'
+          status: 'active',
+          isCancelled: false
         });
       } else {
         setCurrentPlan('Free');
@@ -353,7 +371,8 @@ export default function ProfileScreen() {
           plan: 'Free Plan',
           price: '$0.00',
           renewalDate: null,
-          status: 'free'
+          status: 'free',
+          isCancelled: false
         });
       }
     } catch (error) {
@@ -796,6 +815,10 @@ export default function ProfileScreen() {
 
   const handleUpgradeFromBilling = () => {
     setIsBillingManagementModalVisible(false);
+    trackEvent('discount_modal_viewed', {
+      source: 'billing_management_upgrade',
+      platform: Platform.OS,
+    });
     setIsBillingModalVisible(true);
   };
 
@@ -805,6 +828,10 @@ export default function ProfileScreen() {
         handleRateApp();
         break;
       case 'upgrade':
+        trackEvent('discount_modal_viewed', {
+          source: 'profile_upgrade_button',
+          platform: Platform.OS,
+        });
         setIsBillingModalVisible(true);
         break;
       case 'billing':
@@ -1082,7 +1109,8 @@ export default function ProfileScreen() {
                 const isActivePlan = subscriptionDisplay.status === 'active' && (
                   (plan.id === 'yearly' && subscriptionDisplay.plan.includes('Yearly')) ||
                   (plan.id === 'monthly' && subscriptionDisplay.plan.includes('Monthly')) ||
-                  (plan.id === 'weekly' && subscriptionDisplay.plan.includes('Weekly'))
+                  (plan.id === 'weekly' && subscriptionDisplay.plan === 'Weekly Plan') ||
+                  (plan.id === 'discounted_weekly' && subscriptionDisplay.plan.includes('Special Offer'))
                 );
 
                 return (

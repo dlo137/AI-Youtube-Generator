@@ -136,6 +136,8 @@ export const getCredits = async (): Promise<CreditsInfo> => {
             correctMaxCredits = 75;
           } else if (supabaseSubInfo.subscription_plan === 'weekly') {
             correctMaxCredits = 10;
+          } else if (supabaseSubInfo.subscription_plan === 'discounted_weekly') {
+            correctMaxCredits = 10;
           }
         }
       } catch (error) {
@@ -226,6 +228,8 @@ export const resetCredits = async (): Promise<void> => {
         } else if (supabaseSubInfo.subscription_plan === 'monthly') {
           maxCredits = 75;
         } else if (supabaseSubInfo.subscription_plan === 'weekly') {
+          maxCredits = 10;
+        } else if (supabaseSubInfo.subscription_plan === 'discounted_weekly') {
           maxCredits = 10;
         }
       }

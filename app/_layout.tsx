@@ -2,9 +2,31 @@ import '../polyfills';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Alert, Linking } from 'react-native';
+import { initPostHog, trackEvent } from '../lib/posthog';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function RootLayoutNav() {
   const router = useRouter();
+
+  useEffect(() => {
+    const initializeAnalytics = async () => {
+      await initPostHog();
+      
+      // Check if this is first app launch
+      const hasLaunchedBefore = await AsyncStorage.getItem('app_launched_before');
+      
+      // In development/Expo Go, always track for testing purposes
+      // In production, only track on first launch
+      if (!hasLaunchedBefore || __DEV__) {
+        trackEvent('application_installed');
+        if (!hasLaunchedBefore) {
+          await AsyncStorage.setItem('app_launched_before', 'true');
+        }
+      }
+    };
+    
+    initializeAnalytics();
+  }, []);
 
   // Listen for deep links from Google Sign-In
   useEffect(() => {

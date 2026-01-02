@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { trackScreenView } from '../lib/posthog';
 
 export default function ResetPasswordScreen() {
   const [password, setPassword] = useState('');
@@ -13,6 +14,8 @@ export default function ResetPasswordScreen() {
   const params = useLocalSearchParams();
 
   useEffect(() => {
+    trackScreenView('Reset Password Screen');
+
     // Give the session a moment to be set from the auth callback
     // Then check if user has a valid session from the email link
     const timer = setTimeout(() => {

@@ -7,6 +7,7 @@ import FloatingParticles from '../src/components/FloatingParticles';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import * as Haptics from 'expo-haptics';
 import TimeChart from '../src/components/TimeChart';
+import { trackScreenView } from '../lib/posthog';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -52,6 +53,13 @@ export default function WelcomeScreen() {
         setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 200);
       };
       triggerHaptics();
+    }
+  }, [step, isCheckingAuth]);
+
+  // Track onboarding steps
+  useEffect(() => {
+    if (!isCheckingAuth) {
+      trackScreenView(`Onboarding Step ${step}`);
     }
   }, [step, isCheckingAuth]);
 

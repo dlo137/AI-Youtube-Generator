@@ -1,8 +1,9 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { signInEmail, signInWithApple, signInWithGoogle } from '../src/features/auth/api';
+import { trackScreenView } from '../lib/posthog';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -10,6 +11,10 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    trackScreenView('Login Screen');
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {

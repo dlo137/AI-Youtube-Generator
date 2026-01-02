@@ -4,7 +4,7 @@
  */
 
 export interface SubscriptionProfile {
-  subscription_plan: 'weekly' | 'monthly' | 'yearly' | null;
+  subscription_plan: 'weekly' | 'monthly' | 'yearly' | 'discounted_weekly' | null;
   subscription_start_date: string | null;
   last_credit_reset: string | null;
   is_pro_version: boolean;
@@ -35,6 +35,7 @@ export const shouldResetCredits = (profile: SubscriptionProfile): boolean => {
 
   switch (profile.subscription_plan) {
     case 'weekly':
+    case 'discounted_weekly':
       // Reset every 7 days
       return daysElapsed >= 7;
 
@@ -69,6 +70,7 @@ export const getNextResetDate = (profile: SubscriptionProfile): string | null =>
 
   switch (profile.subscription_plan) {
     case 'weekly':
+    case 'discounted_weekly':
       nextReset.setDate(nextReset.getDate() + 7);
       break;
 

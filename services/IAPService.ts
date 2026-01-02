@@ -1,13 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert, Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
-import * as RNIap from 'react-native-iap';
-import type {
-  Product,
-  ProductPurchase,
-  PurchaseError,
-  Subscription,
-} from 'react-native-iap';
+
+// Conditionally import react-native-iap to avoid crashes in Expo Go
+let RNIap: any = null;
+
+// Suppress the error completely by wrapping in try-catch
+try {
+  // Try to load the module - will fail silently in Expo Go
+  RNIap = require('react-native-iap');
+} catch (error) {
+  // Silently ignore the error - this is expected in Expo Go
+  console.log('[IAP-SERVICE] Running in Expo Go - IAP features disabled');
+}
 
 // Platform-specific product IDs
 const IOS_PRODUCT_IDS = [
@@ -47,7 +52,16 @@ class IAPService {
     return IAPService.instance;
   }
 
+  isAvailable(): boolean {
+    return RNIap !== null;
+  }
+
   async initialize(): Promise<boolean> {
+    if (!this.isAvailable()) {
+      console.log('[IAP-SERVICE] IAP not available in this environment (Expo Go)');
+      return false;
+    }
+
     try {
       console.log('[IAP-SERVICE] Initializing react-native-iap...');
 
@@ -80,6 +94,11 @@ class IAPService {
   }
 
   private setupPurchaseListeners() {
+    if (!this.isAvailable()) {
+      console.log('[IAP-SERVICE] Cannot setup listeners - IAP not available');
+      return;
+    }
+
     // Purchase update listener
     this.purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
       async (purchase: ProductPurchase) => {
@@ -125,7 +144,12 @@ class IAPService {
     console.log('[IAP-SERVICE] Purchase listeners set up successfully');
   }
 
-  private async handlePurchaseUpdate(purchase: ProductPurchase) {
+  private async handlePurchaseUpdate(purchase: any) {
+    if (!this.isAvailable()) {
+      console.log('[IAP-SERVICE] Cannot handle purchase update - IAP not available');
+      return;
+    }
+
     try {
       console.log('[IAP-SERVICE] Processing purchase update:', {
         productId: purchase.productId,
@@ -155,6 +179,11 @@ class IAPService {
   }
 
   private async checkForPendingPurchases() {
+    if (!this.isAvailable()) {
+      console.log('[IAP-SERVICE] Cannot check pending purchases - IAP not available');
+      return;
+    }
+
     try {
       console.log('[IAP-SERVICE] Checking for pending purchases...');
       const purchases = await RNIap.getAvailablePurchases();
@@ -178,9 +207,14 @@ class IAPService {
   }
 
   private async processPurchase(
-    purchase: ProductPurchase,
+    purchase: any,
     source: 'listener' | 'restore' | 'orphan'
   ) {
+    if (!this.isAvailable()) {
+      console.log('[IAP-SERVICE] Cannot process purchase - IAP not available');
+      return;
+    }
+
     const txId = purchase.transactionId;
     console.log(`[IAP-SERVICE] Processing purchase from ${source}:`, {
       productId: purchase.productId,
@@ -308,7 +342,12 @@ class IAPService {
     }
   }
 
-  async getProducts(): Promise<Product[]> {
+  async getProducts(): Promise<any[]> {
+    if (!this.isAvailable()) {
+      console.log('[IAP-SERVICE] IAP not available');
+      return [];
+    }
+
     if (!this.isConnected) {
       await this.initialize();
     }
@@ -329,6 +368,10 @@ class IAPService {
   }
 
   async purchaseProduct(productId: string): Promise<void> {
+    if (!this.isAvailable()) {
+      throw new Error('IAP not available in this environment');
+    }
+
     if (!this.isConnected) {
       console.log('[IAP-SERVICE] Not connected, initializing...');
       await this.initialize();
@@ -404,7 +447,11 @@ class IAPService {
     }
   }
 
-  async restorePurchases(): Promise<ProductPurchase[]> {
+  async restorePurchases(): Promise<any[]> {
+    if (!this.isAvailable()) {
+      throw new Error('IAP not available in this environment');
+    }
+
     if (!this.isConnected) {
       await this.initialize();
     }
@@ -435,16 +482,16 @@ class IAPService {
   }
 
   async checkForOrphanedTransactions(): Promise<void> {
+    if (!this.isAvailable()) {
+      console.log('[IAP-SERVICE] IAP not available, skipping orphaned transaction check');
+      return;
+    }
+
     if (!this.isConnected) {
       await this.initialize();
     }
 
     await this.checkForPendingPurchases();
-  }
-
-  isAvailable(): boolean {
-    // react-native-iap works on both iOS and Android
-    return true;
   }
 
   setDebugCallback(callback: (info: any) => void) {
@@ -463,6 +510,10 @@ class IAPService {
   }
 
   async cleanup() {
+    if (!this.isAvailable()) {
+      return;
+    }
+
     if (this.purchaseUpdateSubscription) {
       this.purchaseUpdateSubscription.remove();
       this.purchaseUpdateSubscription = null;

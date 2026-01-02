@@ -1,8 +1,9 @@
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView, Linking, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { signUpEmail, signInWithApple, signInWithGoogle } from '../src/features/auth/api';
+import { trackScreenView, trackEvent } from '../lib/posthog';
 
 export default function SignUpScreen() {
   const [name, setName] = useState('');
@@ -11,6 +12,10 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    trackScreenView('Sign Up Screen');
+  }, []);
 
   const handleSignUp = async () => {
     if (!name || !email || !password) {
@@ -28,7 +33,11 @@ export default function SignUpScreen() {
     try {
       const data = await signUpEmail(email, password, name);
 
-      if (data.user) {
+      if (data?.user) {
+        trackEvent('account_created', {
+          method: 'email',
+          platform: Platform.OS,
+        });
         router.push('/loadingaccount');
       }
 
@@ -46,7 +55,11 @@ export default function SignUpScreen() {
     try {
       const data = await signInWithApple();
 
-      if (data.user) {
+      if (data?.user) {
+        trackEvent('account_created', {
+          method: 'apple',
+          platform: Platform.OS,
+        });
         // Successfully signed in, navigate to loading account screen
         router.push('/loadingaccount');
       }
@@ -81,7 +94,11 @@ export default function SignUpScreen() {
             try {
               const data = await signInWithGoogle();
 
-              if (data.user) {
+              if (data && 'user' in data && data.user) {
+                trackEvent('account_created', {
+                  method: 'google',
+                  platform: Platform.OS,
+                });
                 // Successfully signed in, navigate to loading account screen
                 router.push('/loadingaccount');
               }

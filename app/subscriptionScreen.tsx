@@ -1,19 +1,23 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Image, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { useState, useEffect, useRef, useCallback } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import IAPService from '../services/IAPService';
+import { supabase } from '../lib/supabase';
+import { trackScreenView, trackEvent } from '../lib/posthog';
 
 // Platform-specific product IDs
 const PRODUCT_IDS = Platform.OS === 'ios' ? {
   yearly: 'thumbnail.yearly',
   monthly: 'thumbnail.monthly',
   weekly: 'thumbnail.weekly',
+  discountedWeekly: 'discounted.weekly',
 } : {
   yearly: 'ai.thumbnail.pro:yearly',
   monthly: 'ai.thumbnail.pro:monthly',
   weekly: 'ai.thumbnail.pro:weekly',
+  discountedWeekly: 'discounted.weekly',
 };
 
 export default function SubscriptionScreen() {
@@ -26,6 +30,8 @@ export default function SubscriptionScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
   const hasProcessedOrphansRef = useRef<boolean>(false);
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const discountModalAnim = useRef(new Animated.Value(0)).current;
 
   // Keep router ref updated
   useEffect(() => {
@@ -59,6 +65,13 @@ export default function SubscriptionScreen() {
     // Handle successful purchase - navigate to generate screen
     if (info.listenerStatus?.includes('SUCCESS') || info.listenerStatus?.includes('Navigating')) {
       console.log('[SUBSCRIPTION] Purchase successful! Navigating to generate screen...');
+      
+      // Track successful subscription
+      trackEvent('subscription_completed', {
+        plan: currentPurchaseAttempt || selectedPlan,
+        platform: Platform.OS,
+      });
+      
       setCurrentPurchaseAttempt(null);
 
       // Use router ref to ensure we have the latest router instance
@@ -86,6 +99,8 @@ export default function SubscriptionScreen() {
   }, [router]);
 
   useEffect(() => {
+    trackScreenView('Subscription Screen');
+
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 600,
@@ -185,7 +200,68 @@ export default function SubscriptionScreen() {
 
   const handleContinue = async () => {
     if (!isIAPAvailable) {
-      Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
+      // For development/testing: Allow bypass in development mode
+      if (__DEV__) {
+        Alert.alert(
+          'Development Mode',
+          'IAP is not available. Would you like to simulate a successful purchase for testing?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Simulate Purchase',
+              onPress: async () => {
+                try {
+                  // Get current user
+                  const { data: { user }, error: userError } = await supabase.auth.getUser();
+                  if (userError || !user) {
+                    throw new Error('User not authenticated');
+                  }
+
+                  // Determine credits based on plan
+                  let credits_max = 0;
+                  switch (selectedPlan) {
+                    case 'yearly': credits_max = 90; break;
+                    case 'monthly': credits_max = 75; break;
+                    case 'weekly': credits_max = 10; break;
+                  }
+
+                  // Update subscription in Supabase with is_pro_version = true
+                  const { error: updateError } = await supabase
+                    .from('profiles')
+                    .update({
+                      subscription_plan: selectedPlan,
+                      is_pro_version: true,
+                      subscription_id: `test_${selectedPlan}_${Date.now()}`,
+                      purchase_time: new Date().toISOString(),
+                      credits_current: credits_max,
+                      credits_max: credits_max,
+                      last_credit_reset: new Date().toISOString()
+                    })
+                    .eq('id', user.id);
+
+                  if (updateError) throw updateError;
+
+                  // Track test subscription
+                  trackEvent('subscription_completed', {
+                    plan: selectedPlan,
+                    platform: Platform.OS,
+                    test_mode: true,
+                  });
+
+                  Alert.alert('Success (Simulated)', 'Your subscription has been activated (development mode).', [
+                    { text: 'Continue', onPress: () => router.replace('/(tabs)/generate') }
+                  ]);
+                } catch (error) {
+                  console.error('Test purchase error:', error);
+                  Alert.alert('Error', 'Failed to activate test subscription.');
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
+      }
       return;
     }
 
@@ -281,7 +357,142 @@ export default function SubscriptionScreen() {
   };
 
   const handleClose = () => {
-    router.replace('/(tabs)/generate');
+    // Track discount modal shown
+    trackEvent('discount_modal_shown', {
+      context: 'subscription_exit',
+    });
+    
+    setShowDiscountModal(true);
+    Animated.timing(discountModalAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleCloseWithoutDiscount = async () => {
+    trackEvent('discount_modal_dismissed', {
+      action: 'continue_without_discount',
+    });
+    
+    Animated.timing(discountModalAnim, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(async () => {
+      setShowDiscountModal(false);
+      // Sign out the user so they can restart onboarding
+      await supabase.auth.signOut();
+      router.replace('/');
+    });
+  };
+
+  const handleDiscountPurchase = async () => {
+    if (!isIAPAvailable) {
+      // For development/testing: Allow bypass in development mode
+      if (__DEV__) {
+        Alert.alert(
+          'Development Mode',
+          'IAP is not available. Would you like to simulate a successful purchase for testing?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Simulate Purchase',
+              onPress: async () => {
+                try {
+                  // Get current user
+                  const { data: { user }, error: userError } = await supabase.auth.getUser();
+                  if (userError || !user) {
+                    throw new Error('User not authenticated');
+                  }
+
+                  // Discounted weekly plan gets 10 credits
+                  const credits_max = 10;
+
+                  // Update subscription in Supabase with is_pro_version = true
+                  const { error: updateError } = await supabase
+                    .from('profiles')
+                    .update({
+                      subscription_plan: 'discounted_weekly',
+                      is_pro_version: true,
+                      subscription_id: `test_discounted_weekly_${Date.now()}`,
+                      purchase_time: new Date().toISOString(),
+                      credits_current: credits_max,
+                      credits_max: credits_max,
+                      last_credit_reset: new Date().toISOString()
+                    })
+                    .eq('id', user.id);
+
+                  if (updateError) throw updateError;
+
+                  // Track test subscription
+                  trackEvent('subscription_completed', {
+                    plan: 'discounted_weekly',
+                    platform: Platform.OS,
+                    test_mode: true,
+                  });
+
+                  Alert.alert('Success (Simulated)', 'Your discounted subscription has been activated (development mode).', [
+                    { text: 'Continue', onPress: () => router.replace('/(tabs)/generate') }
+                  ]);
+                } catch (error) {
+                  console.error('Test discount purchase error:', error);
+                  Alert.alert('Error', 'Failed to activate test subscription.');
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
+      }
+      return;
+    }
+
+    trackEvent('discount_purchase_initiated', {
+      productId: PRODUCT_IDS.discountedWeekly,
+      price: '$1.99',
+    });
+
+    try {
+      setCurrentPurchaseAttempt('weekly');
+      console.log('[SUBSCRIPTION] Attempting to purchase discounted weekly:', PRODUCT_IDS.discountedWeekly);
+      await IAPService.purchaseProduct(PRODUCT_IDS.discountedWeekly);
+    } catch (error: any) {
+      setCurrentPurchaseAttempt(null);
+      console.error('[SUBSCRIPTION] Discount purchase error:', error);
+      
+      const msg = String(error?.message || error);
+
+      // Handle specific error cases
+      if (/already.*(owned|subscribed)/i.test(msg)) {
+        Alert.alert(
+          'Already subscribed',
+          'You already have an active subscription. Manage your subscriptions from the App Store.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      if (/item.*unavailable|product.*not.*available/i.test(msg)) {
+        Alert.alert(
+          'Product Unavailable',
+          'This special offer is currently unavailable. Please try again later or choose a different plan.'
+        );
+        return;
+      }
+
+      trackEvent('discount_purchase_failed', {
+        error: error?.message || String(error),
+      });
+
+      if (error?.message && !error.message.includes('cancelled')) {
+        Alert.alert(
+          'Purchase Failed',
+          error.message || 'Unable to complete purchase. Please try again.'
+        );
+      }
+    }
   };
 
   return (
@@ -411,6 +622,84 @@ export default function SubscriptionScreen() {
           </LinearGradient>
         </TouchableOpacity>
       </View>
+
+      {/* Discount Modal */}
+      {showDiscountModal && (
+        <Animated.View
+          style={[
+            styles.discountModalOverlay,
+            {
+              opacity: discountModalAnim,
+            },
+          ]}
+        >
+          <Animated.View
+            style={[
+              styles.discountModalContent,
+              {
+                transform: [
+                  {
+                    scale: discountModalAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.8, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <View style={styles.discountModalHeader}>
+              <Text style={styles.discountModalTitle}>Wait! Special Offer</Text>
+            </View>
+
+            <View style={styles.discountModalBody}>
+              <View style={styles.discountBadge}>
+                <Text style={styles.discountBadgeText}>33% OFF</Text>
+              </View>
+              
+              <Text style={styles.discountModalSubtitle}>
+                Try it for just
+              </Text>
+              
+              <View style={styles.discountPriceContainer}>
+                <Text style={styles.discountOriginalPrice}>$2.99</Text>
+                <Text style={styles.discountPrice}>$1.99</Text>
+                <Text style={styles.discountPriceLabel}>/week</Text>
+              </View>
+
+              <Text style={styles.discountModalDescription}>
+                Get full access to all premium features and start creating stunning thumbnails today!
+              </Text>
+
+              <TouchableOpacity
+                style={styles.discountButton}
+                onPress={handleDiscountPurchase}
+                disabled={!!currentPurchaseAttempt}
+              >
+                <LinearGradient
+                  colors={['#22c55e', '#16a34a']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.discountButtonGradient}
+                >
+                  <Text style={styles.discountButtonText}>
+                    {currentPurchaseAttempt ? 'Processing...' : 'Claim Special Offer'}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.discountSkipButton}
+                onPress={handleCloseWithoutDiscount}
+              >
+                <Text style={styles.discountSkipButtonText}>
+                  No thanks
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </Animated.View>
+      )}
 
       {/* Debug Panel */}
       {/* {showDebug && (
@@ -825,5 +1114,144 @@ const styles = StyleSheet.create({
   },
   showDebugText: {
     fontSize: 24,
+  },
+  // Discount Modal Styles
+  discountModalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  discountModalContent: {
+    width: '85%',
+    maxWidth: 400,
+    backgroundColor: '#0d1120',
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#1e40af',
+    shadowColor: '#1e40af',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 20,
+    overflow: 'hidden',
+  },
+  discountModalHeader: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+  },
+  discountModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: TEXT,
+    textAlign: 'center',
+  },
+  discountModalClose: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 16,
+  },
+  discountModalCloseText: {
+    fontSize: 18,
+    color: MUTED,
+  },
+  discountModalBody: {
+    padding: 20,
+    paddingTop: 10,
+    alignItems: 'center',
+  },
+  discountBadge: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginBottom: 15,
+    shadowColor: '#22c55e',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  discountBadgeText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 1,
+  },
+  discountModalSubtitle: {
+    fontSize: 16,
+    color: MUTED,
+    marginBottom: 10,
+  },
+  discountPriceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 8,
+  },
+  discountOriginalPrice: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: MUTED,
+    textDecorationLine: 'line-through',
+    opacity: 0.6,
+  },
+  discountPrice: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#22c55e',
+  },
+  discountPriceLabel: {
+    fontSize: 18,
+    color: MUTED,
+    marginTop: 20,
+  },
+  discountModalDescription: {
+    fontSize: 14,
+    color: MUTED,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  discountButton: {
+    width: '100%',
+    borderRadius: 30,
+    overflow: 'hidden',
+    shadowColor: '#22c55e',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+    elevation: 10,
+    marginBottom: 12,
+  },
+  discountButtonGradient: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discountButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  discountSkipButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  discountSkipButtonText: {
+    fontSize: 14,
+    color: MUTED,
+    opacity: 0.7,
   },
 });
