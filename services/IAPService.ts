@@ -18,13 +18,15 @@ try {
 const IOS_PRODUCT_IDS = [
   'thumbnail.yearly',
   'thumbnail.monthly',
-  'thumbnail.weekly'
+  'thumbnail.weekly',
+  'discounted.weekly'
 ];
 
 const ANDROID_PRODUCT_IDS = [
   'ai.thumbnail.pro:yearly',
   'ai.thumbnail.pro:monthly',
-  'ai.thumbnail.pro:weekly'
+  'ai.thumbnail.pro:weekly',
+  'discounted.weekly'
 ];
 
 const INFLIGHT_KEY = 'iapPurchaseInFlight';

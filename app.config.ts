@@ -1,8 +1,8 @@
 export default {
   expo: {
-    name: "Youtube Thumbnail Generator",
+    name: "AI Thumbnails",
     slug: "youtube-thumbnail-generator",
-    version: "1.0.16",
+    version: "1.0.17",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
