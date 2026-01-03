@@ -64,14 +64,48 @@ export default function SubscriptionScreen() {
 
     // Handle successful purchase - navigate to generate screen
     if (info.listenerStatus?.includes('SUCCESS') || info.listenerStatus?.includes('Navigating')) {
-      console.log('[SUBSCRIPTION] Purchase successful! Navigating to generate screen...');
-      
+      console.log('[SUBSCRIPTION] Purchase successful!', {
+        purchaseSource: info.purchaseSource,
+        isOrphaned: info.isOrphanedPurchase
+      });
+
+      // CRITICAL: Only auto-navigate for new purchases (listener), not orphaned transactions
+      // This prevents users from being pushed through without actually completing a purchase
+      if (info.isOrphanedPurchase) {
+        console.log('[SUBSCRIPTION] Orphaned purchase recovered - showing notification instead of auto-navigating');
+
+        setCurrentPurchaseAttempt(null);
+
+        Alert.alert(
+          'Subscription Restored',
+          'We found a previous purchase and restored your subscription. Tap Continue to get started.',
+          [
+            {
+              text: 'Continue',
+              onPress: () => {
+                trackEvent('subscription_completed', {
+                  plan: 'recovered',
+                  platform: Platform.OS,
+                  source: 'orphaned_transaction'
+                });
+                router.replace('/(tabs)/generate');
+              }
+            }
+          ]
+        );
+        return; // Don't auto-navigate
+      }
+
+      // Only auto-navigate for new purchases from the listener
+      console.log('[SUBSCRIPTION] New purchase completed! Navigating to generate screen...');
+
       // Track successful subscription
       trackEvent('subscription_completed', {
         plan: currentPurchaseAttempt || selectedPlan,
         platform: Platform.OS,
+        source: info.purchaseSource || 'listener'
       });
-      
+
       setCurrentPurchaseAttempt(null);
 
       // Use router ref to ensure we have the latest router instance
@@ -199,7 +233,13 @@ export default function SubscriptionScreen() {
   };
 
   const handleContinue = async () => {
+    console.log('[SUBSCRIPTION] ⚠️ PRODUCTION LOG: User tapped Get Started button');
+    console.log('[SUBSCRIPTION] IAP Available:', isIAPAvailable);
+    console.log('[SUBSCRIPTION] IAP Ready:', iapReady);
+    console.log('[SUBSCRIPTION] Current purchase attempt:', currentPurchaseAttempt);
+
     if (!isIAPAvailable) {
+      console.log('[SUBSCRIPTION] ⚠️ IAP not available - this should only happen in Expo Go or if react-native-iap failed to load');
       // For development/testing: Allow bypass in development mode
       if (__DEV__) {
         Alert.alert(
@@ -279,18 +319,23 @@ export default function SubscriptionScreen() {
 
     // Set the current purchase attempt BEFORE starting the purchase
     setCurrentPurchaseAttempt(selectedPlan);
+    console.log('[SUBSCRIPTION] ⚠️ PRODUCTION LOG: Starting purchase flow for:', product.productId);
+    console.log('[SUBSCRIPTION] Selected plan:', selectedPlan);
     await handlePurchase(product.productId);
   };
 
   const handlePurchase = async (productId: string) => {
     if (!isIAPAvailable) {
+      console.error('[SUBSCRIPTION] ⚠️ ERROR: handlePurchase called but IAP not available!');
       Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
       setCurrentPurchaseAttempt(null);
       return;
     }
 
     try {
-      console.log('[SUBSCRIPTION] Attempting to purchase:', productId);
+      console.log('[SUBSCRIPTION] ⚠️ PRODUCTION LOG: Calling IAPService.purchaseProduct');
+      console.log('[SUBSCRIPTION] Product ID:', productId);
+      console.log('[SUBSCRIPTION] Expecting IAP modal to appear...');
       await IAPService.purchaseProduct(productId);
     } catch (e: any) {
       setCurrentPurchaseAttempt(null); // Clear on error

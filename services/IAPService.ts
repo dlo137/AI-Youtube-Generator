@@ -103,7 +103,7 @@ class IAPService {
 
     // Purchase update listener
     this.purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
-      async (purchase: ProductPurchase) => {
+      async (purchase: any) => {
         console.log('[IAP-SERVICE] 🎉 Purchase updated:', purchase);
         this.lastPurchaseResult = purchase;
 
@@ -120,7 +120,7 @@ class IAPService {
 
     // Purchase error listener
     this.purchaseErrorSubscription = RNIap.purchaseErrorListener(
-      (error: PurchaseError) => {
+      (error: any) => {
         console.error('[IAP-SERVICE] Purchase error:', error);
 
         if (this.debugCallback) {
@@ -191,12 +191,19 @@ class IAPService {
       const purchases = await RNIap.getAvailablePurchases();
 
       if (purchases && purchases.length > 0) {
-        console.log(`[IAP-SERVICE] Found ${purchases.length} pending purchases`);
+        console.log(`[IAP-SERVICE] ⚠️ PRODUCTION LOG: Found ${purchases.length} pending/orphaned purchases`);
+        console.log('[IAP-SERVICE] ⚠️ This may cause auto-navigation if not handled properly');
+        console.log('[IAP-SERVICE] Orphaned purchases:', purchases.map((p: any) => ({
+          productId: p.productId,
+          transactionId: p.transactionId,
+          purchaseTime: p.transactionDate
+        })));
 
         for (const purchase of purchases) {
           const txId = purchase.transactionId;
           if (!this.processedIds.has(txId)) {
-            console.log('[IAP-SERVICE] Processing pending purchase:', purchase.productId);
+            console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: Processing orphaned purchase:', purchase.productId);
+            console.log('[IAP-SERVICE] This will grant entitlement but should NOT auto-navigate');
             await this.processPurchase(purchase, 'orphan');
           }
         }
@@ -259,7 +266,21 @@ class IAPService {
         source === 'restore' ||
         source === 'orphan';
 
-      console.log(`[IAP-SERVICE] Should entitle: ${shouldEntitle}`);
+      console.log(`[IAP-SERVICE] ⚠️ PRODUCTION LOG: Entitlement decision:`, {
+        source,
+        inFlight,
+        shouldEntitle,
+        transactionId: purchase.transactionId
+      });
+
+      // CRITICAL SAFEGUARD: Warn if listener purchase without in-flight flag
+      if (source === 'listener' && !inFlight) {
+        console.error('[IAP-SERVICE] ⚠️⚠️⚠️ CRITICAL WARNING: Purchase received from listener but no in-flight flag!');
+        console.error('[IAP-SERVICE] This indicates a purchase that was NOT initiated in this session');
+        console.error('[IAP-SERVICE] This should be treated as an orphaned transaction, not a new purchase');
+        // Don't entitle to prevent potential exploitation
+        return;
+      }
 
       if (shouldEntitle && userId) {
         console.log('[IAP-SERVICE] Granting entitlement...');
@@ -332,7 +353,9 @@ class IAPService {
           this.debugCallback({
             listenerStatus: 'PURCHASE SUCCESS! ✅',
             shouldNavigate: true,
-            purchaseComplete: true
+            purchaseComplete: true,
+            purchaseSource: source, // Add source to distinguish orphaned vs new purchases
+            isOrphanedPurchase: source === 'orphan'
           });
         }
       }
@@ -402,7 +425,11 @@ class IAPService {
     });
 
     try {
-      console.log('[IAP-SERVICE] Requesting purchase...');
+      console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: Requesting subscription purchase...');
+      console.log('[IAP-SERVICE] Product ID:', productId);
+      console.log('[IAP-SERVICE] Platform:', Platform.OS);
+      console.log('[IAP-SERVICE] Connection status:', this.isConnected);
+      console.log('[IAP-SERVICE] ⚠️ CRITICAL: About to call RNIap.requestSubscription - IAP modal should appear now');
 
       if (Platform.OS === 'android') {
         await RNIap.requestSubscription({ sku: productId });
@@ -410,16 +437,19 @@ class IAPService {
         await RNIap.requestSubscription({ sku: productId });
       }
 
+      console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: requestSubscription() called successfully - IAP modal should now be visible to user');
+
       if (this.debugCallback) {
         this.debugCallback({
-          listenerStatus: 'PURCHASE INITIATED - WAITING... ⏳'
+          listenerStatus: 'PURCHASE INITIATED - WAITING... ⏳',
+          productId: productId
         });
       }
 
       // Wait for the purchase to complete via listener
       console.log('[IAP-SERVICE] Waiting for purchase completion...');
       await purchasePromise;
-      console.log('[IAP-SERVICE] Purchase completed successfully!');
+      console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: Purchase completed successfully!');
 
     } catch (error: any) {
       console.error('[IAP-SERVICE] Purchase failed:', error);

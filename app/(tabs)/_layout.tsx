@@ -18,13 +18,6 @@ function TabsContent() {
     refreshCredits();
   }, []);
 
-  // Refresh credits when any tab gains focus
-  useFocusEffect(
-    useCallback(() => {
-      refreshCredits();
-    }, [])
-  );
-
   const loadSubscriptionInfo = async () => {
     const subInfo = await getSubscriptionInfo();
     setSubscriptionInfo(subInfo);

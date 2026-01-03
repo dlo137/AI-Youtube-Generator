@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image, Modal, PanResponder, TouchableWithoutFeedback } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import Svg, { Path, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { PinchGestureHandler, PanGestureHandler, RotationGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../../lib/supabase';
@@ -186,6 +187,13 @@ export default function GenerateScreen() {
   }>>([]);
   const [imageContainerDimensions, setImageContainerDimensions] = useState({ width: 0, height: 0 });
   const insets = useSafeAreaInsets();
+
+  // Refresh credits when screen gains focus (e.g., returning from profile after purchase)
+  useFocusEffect(
+    useCallback(() => {
+      refreshCredits();
+    }, [refreshCredits])
+  );
 
   useEffect(() => {
     if (isLoading || isModalGenerating) {
