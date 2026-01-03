@@ -358,11 +358,11 @@ class IAPService {
       const productIds = Platform.OS === 'ios' ? IOS_PRODUCT_IDS : ANDROID_PRODUCT_IDS;
       console.log('[IAP-SERVICE] Fetching products for', Platform.OS, ':', productIds);
 
-      // Get subscriptions (most IAP products are subscriptions)
-      const products = await RNIap.getSubscriptions({ skus: productIds });
-      console.log('[IAP-SERVICE] Products loaded:', products.length);
+        // Get subscriptions (most IAP products are subscriptions)
+        const products = await RNIap.getSubscriptions(productIds);
+        console.log('[IAP-SERVICE] Products loaded:', products.length);
 
-      return products;
+        return products;
     } catch (err) {
       console.error('[IAP-SERVICE] Error fetching products:', err);
       return [];
