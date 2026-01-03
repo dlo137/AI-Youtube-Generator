@@ -431,10 +431,11 @@ class IAPService {
       console.log('[IAP-SERVICE] Connection status:', this.isConnected);
       console.log('[IAP-SERVICE] ⚠️ CRITICAL: About to call RNIap.requestSubscription - IAP modal should appear now');
 
+      // Pass productId as a string for iOS, as required by react-native-iap
       if (Platform.OS === 'android') {
         await RNIap.requestSubscription({ sku: productId });
       } else {
-        await RNIap.requestSubscription({ sku: productId });
+        await RNIap.requestSubscription(productId);
       }
 
       console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: requestSubscription() called successfully - IAP modal should now be visible to user');
