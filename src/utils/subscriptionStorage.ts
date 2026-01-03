@@ -63,102 +63,54 @@ export const isUserSubscribed = async (): Promise<boolean> => {
 // Track if we're currently resetting to prevent loops
 let isResetting = false;
 
-// Credits Management Functions - Now uses Supabase for real-time tracking with automatic resets
+// Credits Management Functions - Uses Supabase profile as single source of truth
 export const getCredits = async (): Promise<CreditsInfo> => {
   try {
-    // First try to get from Supabase edge function
-    // The edge function now automatically checks if credits need to be reset based on subscription cycle
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
+    // ALWAYS fetch from Supabase profile first - this is the source of truth
+    const { data: { user } } = await supabase.auth.getUser();
 
-      if (session) {
-        // First check what the subscription plan is
-        const supabaseSubInfo = await getSupabaseSubscriptionInfo();
+    if (user) {
+      // Get credits directly from Supabase profile
+      const supabaseSubInfo = await getSupabaseSubscriptionInfo();
 
-        // Invoke the edge function - it will automatically reset if needed
-        const { data, error } = await supabase.functions.invoke('manage-credits', {
-          body: { action: 'get' }
-        });
+      if (supabaseSubInfo) {
+        const credits: CreditsInfo = {
+          current: supabaseSubInfo.credits_current || 0,
+          max: supabaseSubInfo.credits_max || 0,
+          lastResetDate: supabaseSubInfo.last_credit_reset || undefined
+        };
 
-        if (!error && data) {
-          const credits: CreditsInfo = {
-            current: data.current,
-            max: data.max
-          };
-
-          // If credits are 0 but user has subscription, force reset (only once)
-          if (credits.current === 0 && credits.max === 0 && supabaseSubInfo?.is_pro_version && !isResetting) {
-            isResetting = true;
-            console.log('Credits are 0 but user has subscription, forcing reset...');
-
-            const { data: resetData, error: resetError } = await supabase.functions.invoke('manage-credits', {
-              body: { action: 'reset' }
-            });
-
-            isResetting = false;
-
-            if (!resetError && resetData) {
-              const newCredits: CreditsInfo = {
-                current: resetData.current,
-                max: resetData.max
-              };
-              console.log('Reset successful, new credits:', newCredits);
-              await saveCredits(newCredits);
-              return newCredits;
-            } else {
-              console.error('Reset failed:', resetError);
-            }
-          }
-
-          // Cache locally for offline access
-          await saveCredits(credits);
-          return credits;
-        }
+        // Cache locally for offline access only
+        await saveCredits(credits);
+        console.log('[CREDITS] Fetched from Supabase:', credits);
+        return credits;
       }
-    } catch (supabaseError) {
-      console.log('Could not fetch from Supabase, using local cache:', supabaseError);
     }
 
-    // Fallback to local storage if Supabase fails
+    // Fallback to local cache ONLY if offline or not logged in
+    console.log('[CREDITS] No Supabase data, using local cache');
     const stored = await AsyncStorage.getItem(CREDITS_KEY);
     if (stored) {
-      const credits = JSON.parse(stored);
-
-      // Check if we need to update max credits based on current subscription
-      let correctMaxCredits = 0; // No free plan - requires subscription
-
-      try {
-        const supabaseSubInfo = await getSupabaseSubscriptionInfo();
-        if (supabaseSubInfo && supabaseSubInfo.is_pro_version) {
-          if (supabaseSubInfo.subscription_plan === 'yearly') {
-            correctMaxCredits = 90;
-          } else if (supabaseSubInfo.subscription_plan === 'monthly') {
-            correctMaxCredits = 75;
-          } else if (supabaseSubInfo.subscription_plan === 'weekly') {
-            correctMaxCredits = 10;
-          } else if (supabaseSubInfo.subscription_plan === 'discounted_weekly') {
-            correctMaxCredits = 10;
-          }
-        }
-      } catch (error) {
-        console.log('Could not fetch Supabase subscription in getCredits');
-      }
-
-      // If max credits don't match subscription, reset credits
-      if (credits.max !== correctMaxCredits) {
-        await resetCredits();
-        return await getCredits(); // Recursively get the updated credits
-      }
-
-      return credits;
+      return JSON.parse(stored);
     }
 
-    // Initialize with no free credits
-    const initialCredits: CreditsInfo = { current: 0, max: 0 };
-    await saveCredits(initialCredits);
-    return initialCredits;
+    // No data available
+    const noCredits: CreditsInfo = { current: 0, max: 0 };
+    await saveCredits(noCredits);
+    return noCredits;
   } catch (error) {
-    console.error('Error getting credits:', error);
+    console.error('[CREDITS] Error getting credits:', error);
+
+    // Try local cache on error
+    try {
+      const stored = await AsyncStorage.getItem(CREDITS_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (cacheError) {
+      console.error('[CREDITS] Cache error:', cacheError);
+    }
+
     return { current: 0, max: 0 };
   }
 };
@@ -174,43 +126,47 @@ export const saveCredits = async (credits: CreditsInfo): Promise<void> => {
 
 export const deductCredit = async (amount: number = 1): Promise<boolean> => {
   try {
-    // Try to deduct from Supabase first
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
+    const { data: { user } } = await supabase.auth.getUser();
 
-      if (session) {
-        const { data, error } = await supabase.functions.invoke('manage-credits', {
-          body: { action: 'deduct', amount }
-        });
-
-        if (!error && data && data.success) {
-          // Update local cache with new values
-          const updatedCredits: CreditsInfo = {
-            current: data.current,
-            max: data.max
-          };
-          await saveCredits(updatedCredits);
-          return true;
-        } else if (error || (data && data.error)) {
-          console.error('Supabase credit deduction failed:', error || data.error);
-          // Fall through to local deduction
-        }
-      }
-    } catch (supabaseError) {
-      console.log('Could not deduct from Supabase, using local:', supabaseError);
+    if (!user) {
+      console.error('[CREDITS] Cannot deduct - user not authenticated');
+      return false;
     }
 
-    // Fallback to local storage
-    const credits = await getCredits();
-    if (credits.current < amount) {
-      return false; // Not enough credits
+    // Get current credits from Supabase
+    const currentCredits = await getCredits();
+
+    if (currentCredits.current < amount) {
+      console.error('[CREDITS] Not enough credits:', currentCredits.current, '<', amount);
+      return false;
     }
 
-    credits.current -= amount;
-    await saveCredits(credits);
+    // Calculate new credits
+    const newCurrent = currentCredits.current - amount;
+
+    // Update Supabase profile directly
+    const { error } = await supabase
+      .from('profiles')
+      .update({ credits_current: newCurrent })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('[CREDITS] Error deducting from Supabase:', error);
+      return false;
+    }
+
+    // Update local cache
+    const updatedCredits: CreditsInfo = {
+      current: newCurrent,
+      max: currentCredits.max,
+      lastResetDate: currentCredits.lastResetDate
+    };
+    await saveCredits(updatedCredits);
+
+    console.log('[CREDITS] Deducted', amount, '- new balance:', newCurrent);
     return true;
   } catch (error) {
-    console.error('Error deducting credit:', error);
+    console.error('[CREDITS] Error deducting credit:', error);
     return false;
   }
 };

@@ -10,6 +10,9 @@ export interface SubscriptionData {
   is_pro_version: boolean;
   is_trial_version: boolean;
   trial_end_date: string | null;
+  credits_current: number;
+  credits_max: number;
+  last_credit_reset: string | null;
 }
 
 // Get price based on plan
@@ -108,7 +111,7 @@ export async function getSubscriptionInfo(): Promise<SubscriptionData | null> {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('subscription_plan, subscription_id, price, purchase_time, is_pro_version, is_trial_version, trial_end_date')
+      .select('subscription_plan, subscription_id, price, purchase_time, is_pro_version, is_trial_version, trial_end_date, credits_current, credits_max, last_credit_reset')
       .eq('id', user.id)
       .maybeSingle();
 

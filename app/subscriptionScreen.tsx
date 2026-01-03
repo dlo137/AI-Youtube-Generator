@@ -30,6 +30,7 @@ export default function SubscriptionScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
   const hasProcessedOrphansRef = useRef<boolean>(false);
+  const isRestoringRef = useRef<boolean>(false);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const discountModalAnim = useRef(new Animated.Value(0)).current;
 
@@ -369,8 +370,13 @@ export default function SubscriptionScreen() {
   };
 
   const handleRestore = async () => {
+    // Prevent multiple alerts by using a flag
+    if (isRestoringRef.current) return;
+    isRestoringRef.current = true;
+
     if (!isIAPAvailable) {
       Alert.alert('Restore Failed', 'In-app purchases are not available on this device.');
+      isRestoringRef.current = false;
       return;
     }
 
@@ -379,10 +385,16 @@ export default function SubscriptionScreen() {
       const results = await IAPService.restorePurchases();
       if (results.length > 0) {
         Alert.alert('Success', 'Your purchases have been restored!', [
-          { text: 'Continue', onPress: () => router.replace('/(tabs)/generate') }
+          { text: 'Continue', onPress: () => {
+              isRestoringRef.current = false;
+              router.replace('/(tabs)/generate');
+            } }
         ]);
+      } else {
+        isRestoringRef.current = false;
       }
     } catch (err: any) {
+      isRestoringRef.current = false;
       const errorMsg = String(err?.message || err);
       if (errorMsg.includes('No previous purchases')) {
         Alert.alert('No Purchases', 'No previous purchases were found.');
