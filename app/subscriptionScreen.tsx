@@ -73,28 +73,19 @@ export default function SubscriptionScreen() {
       // CRITICAL: Only auto-navigate for new purchases (listener), not orphaned transactions
       // This prevents users from being pushed through without actually completing a purchase
       if (info.isOrphanedPurchase) {
-        console.log('[SUBSCRIPTION] Orphaned purchase recovered - showing notification instead of auto-navigating');
+        console.log('[SUBSCRIPTION] Orphaned purchase recovered - processing silently without alert');
 
+        // Silently process orphaned purchases without showing alerts or auto-navigating
+        // Just like the simulated/dev mode - update happens in background
         setCurrentPurchaseAttempt(null);
 
-        Alert.alert(
-          'Subscription Restored',
-          'We found a previous purchase and restored your subscription. Tap Continue to get started.',
-          [
-            {
-              text: 'Continue',
-              onPress: () => {
-                trackEvent('subscription_completed', {
-                  plan: 'recovered',
-                  platform: Platform.OS,
-                  source: 'orphaned_transaction'
-                });
-                router.replace('/(tabs)/generate');
-              }
-            }
-          ]
-        );
-        return; // Don't auto-navigate
+        trackEvent('subscription_completed', {
+          plan: 'recovered',
+          platform: Platform.OS,
+          source: 'orphaned_transaction'
+        });
+
+        return; // Don't show alert or auto-navigate
       }
 
       // Only auto-navigate for new purchases from the listener
