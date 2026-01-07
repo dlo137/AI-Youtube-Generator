@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, ActivityIndicator, Dimensions, Platform } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -187,13 +187,13 @@ export default function WelcomeScreen() {
         ) : step === 3 ? (
           <Animated.View style={{ transform: [{ translateX }], opacity: fadeAnim, width: '100%', gap: 24, alignItems: 'center' }}>
             <View style={{ width: '100%' }}>
-              <Text style={[styles.title, { textAlign: 'center' }]}>Used by creators who value</Text>
+              <Text style={[styles.title, { textAlign: 'center', fontSize: 22, paddingHorizontal: 16 }]}>Used by creators who value</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'center', gap: 6, alignItems: 'center' }}>
-                <GradientText style={styles.title}>speed</GradientText>
-                <Text style={styles.title}>,</Text>
-                <GradientText style={styles.title}>quality</GradientText>
-                <Text style={styles.title}>, and</Text>
-                <GradientText style={styles.title}>consistency</GradientText>
+                <GradientText style={[styles.title, { fontSize: 22 }]}>speed</GradientText>
+                <Text style={[styles.title, { fontSize: 22 }]}>,</Text>
+                <GradientText style={[styles.title, { fontSize: 22 }]}>quality</GradientText>
+                <Text style={[styles.title, { fontSize: 22 }]}>, and</Text>
+                <GradientText style={[styles.title, { fontSize: 22 }]}>consistency</GradientText>
               </View>
               <Text style={[styles.subtitle, { textAlign: 'center' }]}>
                 Join creators using AI to work faster, not harder
@@ -508,7 +508,6 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontStyle: 'italic',
     lineHeight: 22,
-    marginBottom: 12,
     textAlign: 'center',
   },
   testimonialAuthor: {

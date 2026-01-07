@@ -247,7 +247,7 @@ export async function signInWithGoogle() {
       provider: 'google',
       options: {
         redirectTo: redirectTo,
-        skipBrowserRedirect: Platform.OS === 'android', // Skip auto-redirect on Android
+        skipBrowserRedirect: false, // Let browser handle redirect
         queryParams: {
           prompt: 'select_account',
         },
@@ -266,30 +266,53 @@ export async function signInWithGoogle() {
     console.log('[Google Auth] OAuth URL:', data.url.substring(0, 100) + '...');
     console.log('[Google Auth] Opening browser...');
 
-    // On Android, just open the URL and let the deep link handle the callback
+    // On Android, use openAuthSessionAsync to properly handle deep link callback
     if (Platform.OS === 'android') {
-      const result = await WebBrowser.openBrowserAsync(data.url);
-      console.log('[Google Auth] Browser opened on Android, waiting for deep link callback...');
+      console.log('[Google Auth] Opening auth session on Android...');
+      console.log('[Google Auth] Redirect URL:', redirectTo);
 
-      // Poll for session - the deep link listener will trigger navigation
-      // but we need to wait for the session to be established
-      for (let i = 0; i < 30; i++) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectTo
+      );
 
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      console.log('[Google Auth] Auth session result type:', result.type);
+      if (result.type === 'success' && 'url' in result) {
+        console.log('[Google Auth] Success URL:', result.url);
+      }
 
-        if (sessionData?.session) {
-          console.log(`[Google Auth] ✓ Session found after ${(i + 1) * 500}ms!`);
-          return sessionData;
+      // After browser closes/redirects, poll for session
+      if (result.type === 'success' || result.type === 'dismiss' || result.type === 'cancel') {
+        console.log('[Google Auth] Browser closed/redirected, polling for session...');
+
+        for (let i = 0; i < 30; i++) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+          if (sessionData?.session) {
+            console.log(`[Google Auth] ✓ Session found after ${(i + 1) * 500}ms!`);
+            console.log(`[Google Auth] User:`, sessionData.session.user.email);
+            return sessionData;
+          }
+
+          if (i % 4 === 0) {
+            console.log(`[Google Auth] Poll attempt ${i + 1}/30: No session yet...`);
+          }
         }
 
-        if (i % 5 === 0) {
-          console.log(`[Google Auth] Poll attempt ${i + 1}/30: Waiting for session...`);
+        if (result.type === 'success') {
+          console.log('[Google Auth] No session found after 15 seconds - timing out');
+          console.log('[Google Auth] This might mean the deep link callback failed');
+          throw new Error('Sign in timed out. Please try again.');
+        } else {
+          console.log('[Google Auth] Browser dismissed without success');
+          throw new Error('Sign in was canceled');
         }
       }
 
-      console.log('[Google Auth] No session found after 15 seconds');
-      throw new Error('Sign in timed out. Please try again.');
+      console.log('[Google Auth] Unexpected result type:', result.type);
+      throw new Error('Authentication failed. Please try again.');
     }
 
     // iOS: Use openAuthSessionAsync which properly handles the callback

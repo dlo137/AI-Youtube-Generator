@@ -28,45 +28,115 @@ function RootLayoutNav() {
     initializeAnalytics();
   }, []);
 
-  // Listen for deep links from Google Sign-In
+  // Listen for deep links
   useEffect(() => {
-    const subscription = Linking.addEventListener('url', async ({ url }) => {
-      console.log('[Deep Link] Received:', url);
+    console.log('[Deep Link] Setting up deep link listener...');
 
-      // Handle OAuth callbacks
-      if (url.includes('access_token') || url.includes('code=')) {
-        console.log('[Deep Link] Auth callback detected');
+    const handleDeepLink = async (url: string) => {
+      console.log('[Deep Link] ========================================');
+      console.log('[Deep Link] Received URL:', url);
+      console.log('[Deep Link] ========================================');
+
+      // Handle OAuth callbacks by explicitly routing to auth/callback
+      if (url.includes('code=') || url.includes('access_token=')) {
+        console.log('[Deep Link] OAuth callback detected!');
 
         try {
-          // Import supabase
           const { supabase } = require('../lib/supabase');
-
-          // Parse the URL
           const urlObj = new URL(url);
           const code = urlObj.searchParams.get('code');
-          const accessToken = urlObj.searchParams.get('access_token');
+
+          console.log('[Deep Link] Parsed code from URL:', code ? 'YES' : 'NO');
 
           if (code) {
-            console.log('[Deep Link] Exchanging code for session...');
+            console.log('[Deep Link] Exchanging auth code for session...');
             const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
             if (error) {
-              console.error('[Deep Link] Code exchange error:', error);
-            } else {
-              console.log('[Deep Link] Session created successfully!');
-              router.push('/(tabs)/generate');
+              console.error('[Deep Link] ❌ Code exchange error:', error);
+              console.error('[Deep Link] Error message:', error.message);
+              console.error('[Deep Link] Error details:', JSON.stringify(error));
+
+              // Don't redirect to login - let user try again
+              return;
             }
-          } else if (accessToken) {
-            console.log('[Deep Link] Access token found in URL');
-            router.push('/(tabs)/generate');
+
+            if (!data?.session) {
+              console.error('[Deep Link] ❌ No session returned after code exchange');
+              return;
+            }
+
+            console.log('[Deep Link] ✓ Session created successfully!');
+            console.log('[Deep Link] User email:', data?.session?.user?.email);
+            console.log('[Deep Link] User ID:', data?.session?.user?.id);
+
+            // Check if profile exists, if not create it
+            try {
+              const { data: profile, error: profileError } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', data.session.user.id)
+                .single();
+
+              if (profileError && profileError.code === 'PGRST116') {
+                // Profile doesn't exist, create it
+                console.log('[Deep Link] Profile does not exist, creating...');
+                const { error: createError } = await supabase
+                  .from('profiles')
+                  .insert({
+                    id: data.session.user.id,
+                    name: data.session.user.user_metadata?.full_name || data.session.user.email?.split('@')[0] || 'User',
+                    email: data.session.user.email,
+                  });
+
+                if (createError) {
+                  console.error('[Deep Link] Failed to create profile:', createError);
+                } else {
+                  console.log('[Deep Link] Profile created successfully');
+                }
+              } else if (profile) {
+                console.log('[Deep Link] Profile exists:', profile.name);
+              }
+            } catch (profileCheckError) {
+              console.error('[Deep Link] Error checking/creating profile:', profileCheckError);
+            }
+
+            router.replace('/loadingaccount');
+          } else {
+            console.log('[Deep Link] No code in URL, routing to auth/callback page');
+            router.push('/auth/callback');
           }
-        } catch (error) {
-          console.error('[Deep Link] Error handling OAuth callback:', error);
+        } catch (error: any) {
+          console.error('[Deep Link] ❌ Exception during OAuth handling:', error);
+          console.error('[Deep Link] Error message:', error?.message);
+          console.error('[Deep Link] Error stack:', error?.stack);
+          // Don't redirect to login - just log the error and let user try again
         }
+        return;
+      }
+
+      console.log('[Deep Link] Not an OAuth callback, ignoring');
+    };
+
+    // Check for initial URL (when app is opened from deep link)
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log('[Deep Link] Initial URL detected:', url);
+        handleDeepLink(url);
+      } else {
+        console.log('[Deep Link] No initial URL');
       }
     });
 
-    return () => subscription.remove();
+    // Listen for future deep links (when app is already running)
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      handleDeepLink(url);
+    });
+
+    return () => {
+      console.log('[Deep Link] Removing deep link listener');
+      subscription.remove();
+    };
   }, [router]);
 
   useEffect(() => {

@@ -44,8 +44,8 @@ export default function AuthCallback() {
                 refresh_token: refreshToken,
               });
               if (!setSessionError) {
-                console.log("[Auth Callback] Session set successfully, routing to app");
-                router.replace("/(tabs)/generate");
+                console.log("[Auth Callback] Session set successfully, routing to loading account");
+                router.replace("/loadingaccount");
                 return;
               }
             }
@@ -89,8 +89,8 @@ export default function AuthCallback() {
           console.log("[Auth Callback] Routing to reset-password");
           router.replace("/reset-password");
         } else {
-          console.log("[Auth Callback] Routing to main app");
-          router.replace("/(tabs)/generate");
+          console.log("[Auth Callback] Routing to loading account");
+          router.replace("/loadingaccount");
         }
       } catch (e) {
         console.error("[Auth Callback] Unexpected error:", e);
