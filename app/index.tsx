@@ -82,14 +82,25 @@ export default function WelcomeScreen() {
 
   const checkSession = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      // Handle refresh token errors by clearing the session
+      if (error?.message?.includes('Refresh Token')) {
+        console.log('Refresh token invalid, clearing session');
+        await supabase.auth.signOut();
+        setIsCheckingAuth(false);
+        return;
+      }
+
       if (session) {
         // User is already logged in, redirect to main app
         router.replace('/(tabs)/generate');
       } else {
         setIsCheckingAuth(false);
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Session check error:', error);
+      // On error, show login screen instead of blocking
       setIsCheckingAuth(false);
     }
   };

@@ -9,6 +9,10 @@ const SUPABASE_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_URL ||
 const SUPABASE_ANON_KEY = Constants.expoConfig?.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
   (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_SUPABASE_ANON_KEY) || '';
 
+// Debug logging for environment variables
+console.log('[Supabase] URL loaded:', SUPABASE_URL ? SUPABASE_URL.substring(0, 30) + '...' : 'EMPTY');
+console.log('[Supabase] Key loaded:', SUPABASE_ANON_KEY ? 'Yes (length: ' + SUPABASE_ANON_KEY.length + ')' : 'EMPTY');
+
 // This is the URL Supabase should bounce back to after OAuth/magic link.
 // Always use custom scheme - works in development and production
 const scheme = Constants.expoConfig?.scheme || 'thumbnailgen';
@@ -30,8 +34,10 @@ export const checkAuthErrors = async () => {
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
 
-    if (error?.message?.includes('audience') || error?.message?.includes('id_token')) {
-      console.log('Invalid token detected, clearing session...');
+    if (error?.message?.includes('audience') || 
+        error?.message?.includes('id_token') ||
+        error?.message?.includes('Refresh Token')) {
+      console.log('Invalid or expired token detected, clearing session...');
       await supabase.auth.signOut();
       await AsyncStorage.removeItem('supabase.auth.token');
       return false;
@@ -40,6 +46,23 @@ export const checkAuthErrors = async () => {
     return !!session;
   } catch (error) {
     console.error('Error checking auth:', error);
+    // On any error getting session, try to clear it to prevent loops
+    try {
+      await supabase.auth.signOut();
+      await AsyncStorage.removeItem('supabase.auth.token');
+    } catch (clearError) {
+      console.error('Error clearing session:', clearError);
+    }
     return false;
   }
+};
+
+// Initialize auth state listener on app start
+export const initializeAuth = () => {
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_OUT' || !session) {
+      // Clear storage when signed out
+      await AsyncStorage.removeItem('supabase.auth.token');
+    }
+  });
 };

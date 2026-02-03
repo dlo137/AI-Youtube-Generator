@@ -5,6 +5,71 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as WebBrowser from 'expo-web-browser';
 
+// Initialize credits for a new user or update if not set
+async function initializeUserCredits(userId: string) {
+  try {
+    console.log('[Auth] Checking profile for user:', userId);
+    
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from('profiles')
+      .select('credits_current, credits_max')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.log('[Auth] Error fetching profile:', fetchError.message);
+    }
+
+    console.log('[Auth] Existing profile:', existingProfile);
+
+    // Profile doesn't exist - we need to create it
+    if (!existingProfile) {
+      console.log('[Auth] Profile does not exist, creating with upsert for user:', userId);
+      
+      const { error: upsertError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: userId,
+          credits_current: 5,
+          credits_max: 5,
+          last_credit_reset: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { 
+          onConflict: 'id'
+        });
+
+      if (upsertError) {
+        console.error('[Auth] Error upserting profile:', upsertError.message);
+      } else {
+        console.log('[Auth] Profile created with credits successfully');
+      }
+    } else if (existingProfile.credits_current === null && existingProfile.credits_max === null) {
+      // Profile exists but credits are null - update them
+      console.log('[Auth] Profile exists but credits are null, updating...');
+      
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          credits_current: 5,
+          credits_max: 5,
+          last_credit_reset: new Date().toISOString(),
+        })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('[Auth] Error updating credits:', updateError.message);
+      } else {
+        console.log('[Auth] Credits initialized successfully');
+      }
+    } else {
+      console.log('[Auth] Credits already set:', existingProfile.credits_current, '/', existingProfile.credits_max);
+    }
+  } catch (error) {
+    console.error('[Auth] Error initializing credits:', error);
+    // Don't throw - credits initialization failure shouldn't block login
+  }
+}
+
 export async function signUpEmail(email: string, password: string, fullName?: string) {
   const { data, error } = await supabase.auth.signUp({
     email, password,
@@ -207,21 +272,32 @@ export async function signInWithApple() {
 
     if (error) throw error;
 
-    // Update profile with full name if provided by Apple
-    if (data.user && fullName) {
-      const fullNameString = [
-        fullName.givenName,
-        fullName.familyName,
-      ]
-        .filter(Boolean)
-        .join(' ');
+    // Update profile and initialize credits
+    if (data.user) {
+      const updates: any = {};
+      
+      if (fullName) {
+        const fullNameString = [
+          fullName.givenName,
+          fullName.familyName,
+        ]
+          .filter(Boolean)
+          .join(' ');
 
-      if (fullNameString) {
+        if (fullNameString) {
+          updates.name = fullNameString;
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
         await supabase
           .from('profiles')
-          .update({ name: fullNameString })
+          .update(updates)
           .eq('id', data.user.id);
       }
+
+      // Initialize credits
+      await initializeUserCredits(data.user.id);
     }
 
     return data;
@@ -271,18 +347,18 @@ export async function signInWithGoogle() {
       console.log('[Google Auth] Opening auth session on Android...');
       console.log('[Google Auth] Redirect URL:', redirectTo);
 
-      const result = await WebBrowser.openAuthSessionAsync(
+      const androidResult = await WebBrowser.openAuthSessionAsync(
         data.url,
         redirectTo
       );
 
-      console.log('[Google Auth] Auth session result type:', result.type);
-      if (result.type === 'success' && 'url' in result) {
-        console.log('[Google Auth] Success URL:', result.url);
+      console.log('[Google Auth] Auth session result type:', androidResult.type);
+      if (androidResult.type === 'success' && 'url' in androidResult) {
+        console.log('[Google Auth] Success URL:', androidResult.url);
       }
 
       // After browser closes/redirects, poll for session
-      if (result.type === 'success' || result.type === 'dismiss' || result.type === 'cancel') {
+      if (androidResult.type === 'success' || androidResult.type === 'dismiss' || androidResult.type === 'cancel') {
         console.log('[Google Auth] Browser closed/redirected, polling for session...');
 
         for (let i = 0; i < 30; i++) {
@@ -293,6 +369,10 @@ export async function signInWithGoogle() {
           if (sessionData?.session) {
             console.log(`[Google Auth] ✓ Session found after ${(i + 1) * 500}ms!`);
             console.log(`[Google Auth] User:`, sessionData.session.user.email);
+            // Initialize credits for the user
+            if (sessionData.session.user.id) {
+              await initializeUserCredits(sessionData.session.user.id);
+            }
             return sessionData;
           }
 
@@ -301,7 +381,7 @@ export async function signInWithGoogle() {
           }
         }
 
-        if (result.type === 'success') {
+        if (androidResult.type === 'success') {
           console.log('[Google Auth] No session found after 15 seconds - timing out');
           console.log('[Google Auth] This might mean the deep link callback failed');
           throw new Error('Sign in timed out. Please try again.');
@@ -311,20 +391,20 @@ export async function signInWithGoogle() {
         }
       }
 
-      console.log('[Google Auth] Unexpected result type:', result.type);
+      console.log('[Google Auth] Unexpected result type:', androidResult.type);
       throw new Error('Authentication failed. Please try again.');
     }
 
     // iOS: Use openAuthSessionAsync which properly handles the callback
-    const result = await WebBrowser.openAuthSessionAsync(
+    const iosResult = await WebBrowser.openAuthSessionAsync(
       data.url,
       redirectTo
     );
 
-    console.log('[Google Auth] Browser result type:', result.type);
+    console.log('[Google Auth] Browser result type:', iosResult.type);
 
     // If browser closed/dismissed, check if session was created
-    if (result.type === 'cancel' || result.type === 'dismiss') {
+    if (iosResult.type === 'cancel' || iosResult.type === 'dismiss') {
       console.log('[Google Auth] Browser dismissed, checking for session with polling...');
 
       // Poll for session multiple times (sometimes takes a few seconds)
@@ -335,6 +415,10 @@ export async function signInWithGoogle() {
 
         if (sessionData?.session) {
           console.log(`[Google Auth] ✓ Session found after ${(i + 1) * 500}ms!`);
+          // Initialize credits for the user
+          if (sessionData.session.user.id) {
+            await initializeUserCredits(sessionData.session.user.id);
+          }
           return sessionData;
         }
 
@@ -345,12 +429,12 @@ export async function signInWithGoogle() {
       throw new Error('Sign in was canceled');
     }
 
-    if (result.type === 'success' && result.url) {
+    if (iosResult.type === 'success' && iosResult.url) {
       console.log('[Google Auth] Callback URL received');
-      console.log('[Google Auth] Full URL:', result.url);
+      console.log('[Google Auth] Full URL:', iosResult.url);
 
       // Parse URL properly
-      const url = new URL(result.url);
+      const url = new URL(iosResult.url);
 
       // Check for authorization code (PKCE flow)
       const code = url.searchParams.get('code');
@@ -366,6 +450,10 @@ export async function signInWithGoogle() {
         }
 
         console.log('[Google Auth] Session created!');
+        // Initialize credits for the user
+        if (sessionData.session?.user?.id) {
+          await initializeUserCredits(sessionData.session.user.id);
+        }
         return sessionData;
       }
 
@@ -390,6 +478,10 @@ export async function signInWithGoogle() {
         }
 
         console.log('[Google Auth] Session created!');
+        // Initialize credits for the user
+        if (sessionData.session?.user?.id) {
+          await initializeUserCredits(sessionData.session.user.id);
+        }
         return sessionData;
       }
 

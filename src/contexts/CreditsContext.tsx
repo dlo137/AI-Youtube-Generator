@@ -8,9 +8,13 @@ interface CreditsContextType {
 
 const CreditsContext = createContext<CreditsContextType | undefined>(undefined);
 
+// Minimum time between credit refreshes (5 seconds)
+const MIN_REFRESH_INTERVAL = 5000;
+
 export function CreditsProvider({ children }: { children: ReactNode }) {
   const [credits, setCredits] = useState<CreditsInfo>({ current: 0, max: 0 });
   const isRefreshing = useRef(false);
+  const lastRefreshTime = useRef(0);
 
   const refreshCredits = async () => {
     // Prevent multiple simultaneous refreshes
@@ -18,7 +22,14 @@ export function CreditsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Debounce - don't refresh more than once every 5 seconds
+    const now = Date.now();
+    if (now - lastRefreshTime.current < MIN_REFRESH_INTERVAL) {
+      return;
+    }
+
     isRefreshing.current = true;
+    lastRefreshTime.current = now;
 
     try {
       const creditsInfo = await getCredits();

@@ -105,24 +105,36 @@ export async function getSubscriptionInfo(): Promise<SubscriptionData | null> {
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-    if (userError || !user) {
+    if (userError) {
+      console.log('[Subscription] User error:', userError.message);
+      return null;
+    }
+    
+    if (!user) {
+      console.log('[Subscription] No user logged in');
       return null;
     }
 
-    const { data, error } = await supabase
+    console.log('[Subscription] Fetching profile for user:', user.id);
+    
+    const { data, error, status, statusText } = await supabase
       .from('profiles')
       .select('subscription_plan, subscription_id, price, purchase_time, is_pro_version, is_trial_version, trial_end_date, credits_current, credits_max, last_credit_reset')
       .eq('id', user.id)
       .maybeSingle();
 
+    console.log('[Subscription] Query status:', status, statusText);
+
     if (error) {
-      console.error('Error fetching subscription info:', error);
+      console.error('[Subscription] Error fetching subscription info:', error.message, error.code, error.details);
       return null;
     }
 
+    console.log('[Subscription] Profile data:', data ? 'found' : 'null', 'credits:', data?.credits_current, '/', data?.credits_max);
+    
     return data as SubscriptionData | null;
-  } catch (error) {
-    console.error('Failed to get subscription info:', error);
+  } catch (error: any) {
+    console.error('[Subscription] Failed to get subscription info:', error?.message || error);
     return null;
   }
 }

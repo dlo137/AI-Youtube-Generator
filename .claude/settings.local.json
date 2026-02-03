@@ -51,7 +51,8 @@
       "Bash(del \"C:\\Users\\aidaw\\Desktop\\Code\\ThumbnailGenerator\\nul\")",
       "Bash(git config:*)",
       "Bash(npx expo config:*)",
-      "Bash(npm view:*)"
+      "Bash(npm view:*)",
+      "Bash(npm dedupe:*)"
     ],
     "deny": [],
     "ask": []

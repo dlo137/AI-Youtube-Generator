@@ -465,13 +465,16 @@ export default function GenerateScreen() {
 
       // Call the generation API with the current image as reference
       const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
-        body: {
+        body: JSON.stringify({
           prompt: fullPrompt,
           style: style,
           baseImageUrl: modalImageUrl, // Provide current image as reference for adjustments
           adjustmentMode: true, // Flag to indicate this is an adjustment, not new generation
           subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
           referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
+        }),
+        headers: {
+          'Content-Type': 'application/json',
         },
       });
 
@@ -884,11 +887,14 @@ export default function GenerateScreen() {
 
       // Call your Supabase edge function
       const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
-        body: {
+        body: JSON.stringify({
           prompt: promptToUse,
           style: style,
           subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
           referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
+        }),
+        headers: {
+          'Content-Type': 'application/json',
         },
       });
 
@@ -1678,13 +1684,16 @@ export default function GenerateScreen() {
 
                       // Call the generate function
                       const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
-                        body: {
+                        body: JSON.stringify({
                           prompt: inpaintPrompt,
                           baseImageUrl: modalImageUrl,
                           adjustmentMode: true,
                           eraseMask: eraseMask, // Send the mask path to backend
                           seed: Date.now() + attempts, // Different seed for each attempt
-                        }
+                        }),
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
                       });
 
                       if (error) {

@@ -10,13 +10,13 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const WIDTH = 1280;
 const HEIGHT = 720;
 
-// Gemini 2.5 Flash with native image generation (may be free tier compatible)
-const IMAGES_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-exp:generateContent";
+// Imagen 4 model for image generation
+const IMAGE_GENERATION_ENDPOINT =
+  "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict";
 
-// Gemini 2.5 Flash Image Preview for direct image generation from images+prompt
-const IMAGE_PREVIEW_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent";
+// Gemini for text analysis
+const GEMINI_TEXT_ENDPOINT =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 type GenerateBody = {
   prompt: string;
@@ -195,128 +195,81 @@ Focus on style matching and natural subject integration.` }];
   return enhancedPrompt;
 }
 
-async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean, seed?: number) {
-  // Create explicit prompt based on mode
-  let promptText: string;
+// Note: seed parameter removed - Imagen 4 does not support seeds (unlike Imagen 3)
+async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean) {
+  // Detect if the prompt suggests text should be included
+  const lowerPrompt = prompt.toLowerCase();
+  
+  // Determine if this type of content typically has text on thumbnails
+  const shouldIncludeText = 
+    lowerPrompt.includes('review') ||
+    lowerPrompt.includes(' vs ') ||
+    lowerPrompt.includes('versus') ||
+    lowerPrompt.includes('podcast') ||
+    lowerPrompt.includes('gamer') ||
+    lowerPrompt.includes('tutorial') ||
+    lowerPrompt.includes('how to') ||
+    lowerPrompt.match(/top\s*\d+/i) ||
+    lowerPrompt.includes('best') ||
+    lowerPrompt.includes('unboxing') ||
+    lowerPrompt.includes('reaction');
 
-  const hardRules = `IMPORTANT (obey strictly):
-• Native 16:9 aspect ratio (1280×720 pixels). Do NOT generate a different ratio and add black/white bars.
-• Full-bleed image: background must touch all four canvas edges - top, bottom, left, and right.
-• Absolutely NO borders, frames, strokes, outlines, vignettes, drop-shadow rims, or poster margins.
-• NO black bars, white bars, letterboxing, or pillarboxing at top/bottom or left/right.
-• Safe margins are INVISIBLE spacing only; do not draw lines/boxes to indicate them.
-• Keep a 6–8% safe margin for faces/text; never exceed 10%.
-• No cropped faces or cropped text.
-• Main subject fills 60–75% of frame height (no tiny subject).
-• Headline spans 70–90% of frame width and stays inside safe area.
-• Avoid large empty areas or big white borders.
-• Balanced, center-weighted framing unless otherwise stated.`;
+  // Build the prompt for image generation - pure descriptive language only
+  let fullPrompt = shouldIncludeText 
+    ? `A ${prompt}, large close-up filling the frame, cinematic lighting, clean gradient background, with bold stylized text overlay`
+    : `A ${prompt}, large close-up filling the frame, cinematic lighting, clean gradient background, photorealistic`;
 
-  if (baseImageUrl) {
-    promptText = `${hardRules}
-
-Edit the given 1280×720 image. Keep all faces/text inside safe margins; if needed, tighten composition without creating any border or frame.
-${prompt}`;
-  } else {
-    promptText = `${hardRules}
-
-Generate a 1280×720 YouTube thumbnail. Leave breathing room for faces/text but do not render any visible border.
-${prompt}`;
-  }
-
-  const parts: any[] = [{ text: promptText }];
-
-  // Add base image first if provided (for adjustment mode)
-  if (baseImageUrl) {
-    parts.push({ text: "BASE IMAGE (edit this exact image; maintain full-bleed with no borders):" });
-    const baseImageData = await fetchImageAsBase64(baseImageUrl);
-    parts.push({
-      inlineData: {
-        mimeType: baseImageData.mimeType,
-        data: baseImageData.data
-      }
-    });
-  }
-
-  // Add reference images if provided
+  // Add context about reference images to the prompt (Imagen 4 is text-only for generation)
   if (referenceImageUrls && referenceImageUrls.length > 0) {
-    for (let i = 0; i < referenceImageUrls.length; i++) {
-      parts.push({ text: `REFERENCE IMAGE ${i + 1} (composition only; IGNORE any border/frame/outline in the reference; use interior content only):` });
-      const imageData = await fetchImageAsBase64(referenceImageUrls[i]);
-      parts.push({
-        inlineData: {
-          mimeType: imageData.mimeType,
-          data: imageData.data
-        }
-      });
-    }
+    fullPrompt += ", inspired by reference style";
   }
 
-  // Add subject image if provided
+  // Add context about subject if provided
   if (subjectImageUrl) {
-    parts.push({ text: "SUBJECT IMAGE (face/body to insert; output must be full-bleed with no borders):" });
-    const imageData = await fetchImageAsBase64(subjectImageUrl);
-    parts.push({
-      inlineData: {
-        mimeType: imageData.mimeType,
-        data: imageData.data
-      }
-    });
+    fullPrompt += " Feature a person prominently in the thumbnail.";
   }
 
-  const response = await fetch(IMAGE_PREVIEW_ENDPOINT, {
+  // Imagen 4 API request format
+  // Note: Imagen 4 does NOT support the seed parameter (unlike Imagen 3)
+  const requestBody: any = {
+    instances: [
+      { prompt: fullPrompt }
+    ],
+    parameters: {
+      sampleCount: 1,
+      aspectRatio: "16:9",
+      personGeneration: "allow_adult"
+    }
+  };
+
+  const response = await fetch(IMAGE_GENERATION_ENDPOINT, {
     method: "POST",
     headers: {
       "x-goog-api-key": GEMINI_API_KEY,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      contents: [{
-        parts: parts
-      }],
-      generationConfig: {
-        temperature: seed ? 0.9 : 0.7, // Higher temperature for more variation when seed is provided
-        topK: 40,
-        topP: 0.8,
-        maxOutputTokens: 1000,
-        responseModalities: ["TEXT", "IMAGE"],
-        ...(seed && { seed }) // Add seed if provided for unique generations
-      },
-      systemInstruction: {
-        parts: [{
-          text: "You are an expert thumbnail generator. Always create images in 16:9 aspect ratio (1280x720 pixels) suitable for YouTube thumbnails. The output must be horizontal/landscape orientation."
-        }]
-      }
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Gemini Image Preview API error: ${response.status} ${response.statusText} - ${errorText}`);
+    throw new Error(`Imagen 4 API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
   const result = await response.json();
 
-  if (!result.candidates || !result.candidates[0] || !result.candidates[0].content) {
-    throw new Error("No content generated from Gemini Image Preview API");
+  // Imagen 4 response format
+  if (!result.predictions || result.predictions.length === 0) {
+    console.log('Imagen 4 response:', JSON.stringify(result, null, 2));
+    throw new Error("No image generated from Imagen 4 API");
   }
 
-  // Check if the response contains image data
-  const content = result.candidates[0].content;
-  if (content.parts && content.parts.length > 0) {
-    // Find the first part with image data
-    for (const part of content.parts) {
-      if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith("image/")) {
-        const imageData = part.inlineData.data;
-        return b64ToUint8(imageData);
-      }
-    }
-    // No image found in any part
-    throw new Error("Gemini Image Preview did not return image data");
-  } else {
-    // No parts in response
-    throw new Error("Gemini Image Preview returned empty response");
+  const prediction = result.predictions[0];
+  if (prediction.bytesBase64Encoded) {
+    return b64ToUint8(prediction.bytesBase64Encoded);
   }
+
+  throw new Error("Imagen 4 did not return image data in response");
 }
 
 async function callImagen(prompt: string): Promise<Uint8Array> {
@@ -359,6 +312,9 @@ async function createMaskedImage(baseImageUrl: string, maskSvgPath: string): Pro
 serve(async (req: Request) => {
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
+    const contentType = req.headers.get("Content-Type") ?? "";
+    console.log('Request content-type:', contentType);
+    
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -367,9 +323,37 @@ serve(async (req: Request) => {
     // const { data: { user } } = await supabase.auth.getUser();
     // if (!user) return new Response("Unauthorized", { status: 401 });
 
-    const { prompt, subjectImageUrl, referenceImageUrls, baseImageUrl, adjustmentMode, allowTextFallback, eraseMask }: GenerateBody = await req.json().catch(() => ({} as any));
-    if (!prompt || typeof prompt !== "string")
-      return new Response("Missing prompt", { status: 400 });
+    // Get raw body text first for debugging
+    const rawBody = await req.text();
+    console.log('Raw request body length:', rawBody.length);
+    console.log('Raw request body:', rawBody.substring(0, 500));
+    
+    if (!rawBody || rawBody.length < 10) {
+      return new Response(JSON.stringify({ error: "Empty or invalid request body" }), { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    let body: GenerateBody;
+    try {
+      body = JSON.parse(rawBody);
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      return new Response(JSON.stringify({ error: "Invalid JSON in request body", raw: rawBody.substring(0, 100) }), { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const { prompt, subjectImageUrl, referenceImageUrls, baseImageUrl, adjustmentMode, allowTextFallback, eraseMask } = body;
+    
+    if (!prompt || typeof prompt !== "string") {
+      return new Response(JSON.stringify({ error: "Missing prompt", receivedBody: body }), { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     // If eraseMask is provided, we're doing inpainting
     let effectiveBaseImageUrl = baseImageUrl;
@@ -405,39 +389,36 @@ serve(async (req: Request) => {
     console.log('Base image URL (adjustment mode):', baseImageUrl);
     console.log('Adjustment mode:', adjustmentMode);
 
-    // Always use Gemini Image Preview for image generation
+    // Always use Imagen 4 for image generation
     if (baseImageUrl) {
-      console.log('Using Gemini Image Preview for adjustment mode with base image...');
+      console.log('Using Imagen 4 for adjustment mode...');
     } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
-      console.log('Using Gemini Image Preview for direct image generation with images...');
+      console.log('Using Imagen 4 for generation with image context...');
     } else {
-      console.log('Using Gemini Image Preview for text-only generation...');
+      console.log('Using Imagen 4 for text-only generation...');
     }
 
     // Use blank frame as base image if available and no other base image
     const effectiveBaseImage = effectiveBaseImageUrl || blankFrameUrl;
     const isUsingBlankFrame = !effectiveBaseImageUrl && !!blankFrameUrl;
 
-    // Create 3 distinct variation prompts with unique identifiers to prevent caching
-    const timestamp = Date.now();
-    const randomSeed1 = Math.floor(Math.random() * 1000000);
-    const randomSeed2 = Math.floor(Math.random() * 1000000);
-    const randomSeed3 = Math.floor(Math.random() * 1000000);
+    // Create 3 distinct variation prompts with different visual moods
+    // Note: Imagen 4 doesn't support seeds, so we rely on prompt variations for diversity
 
-    const variation1Prompt = `${finalPrompt} Style: Bold and dramatic, high contrast colors with a sleek modern design. [Variation ID: ${timestamp}-${randomSeed1}]`;
-    const variation2Prompt = `${finalPrompt} Style: Energetic with dynamic composition and aesthetic colors. [Variation ID: ${timestamp}-${randomSeed2}]`;
-    const variation3Prompt = `${finalPrompt} Style: Clean and minimal with soft colors and simple composition. [Variation ID: ${timestamp}-${randomSeed3}]`;
+    const variation1Prompt = `${finalPrompt} Visual mood: dramatic lighting, strong contrast, cinematic framing.`;
+    const variation2Prompt = `${finalPrompt} Visual mood: energetic composition, dynamic angles, vibrant aesthetic.`;
+    const variation3Prompt = `${finalPrompt} Visual mood: clean minimal look, soft tones, simple composition.`;
 
-    // Generate 3 variations in parallel with different prompts and seeds
+    // Generate 3 variations in parallel with different prompts
     let bytes1: Uint8Array, bytes2: Uint8Array, bytes3: Uint8Array;
     try {
       [bytes1, bytes2, bytes3] = await Promise.all([
-        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed1),
-        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed2),
-        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, randomSeed3)
+        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
+        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
+        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame)
       ]);
     } catch (error) {
-      console.error('Gemini Image Preview failed:', error);
+      console.error('Imagen 4 generation failed:', error);
       throw new Error(`Image generation failed: ${error.message}`);
     }
 

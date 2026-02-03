@@ -2,13 +2,14 @@ export default {
   expo: {
     name: "AI Thumbnails",
     slug: "youtube-thumbnail-generator",
-    version: "1.0.21",
+    version: "1.0.22",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     scheme: "thumbnailgen",
     plugins: [
-      "./plugins/withIapFlavor"
+      "./plugins/withIapFlavor",
+      "react-native-iap"
     ],
     updates: {
       fallbackToCacheTimeout: 0,

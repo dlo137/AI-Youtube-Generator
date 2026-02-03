@@ -67,9 +67,14 @@ let isResetting = false;
 export const getCredits = async (): Promise<CreditsInfo> => {
   try {
     // ALWAYS fetch from Supabase profile first - this is the source of truth
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.log('[CREDITS] User fetch error:', userError.message);
+    }
 
     if (user) {
+      console.log('[CREDITS] User logged in:', user.id);
       // Get credits directly from Supabase profile
       const supabaseSubInfo = await getSupabaseSubscriptionInfo();
 
@@ -84,7 +89,11 @@ export const getCredits = async (): Promise<CreditsInfo> => {
         await saveCredits(credits);
         console.log('[CREDITS] Fetched from Supabase:', credits);
         return credits;
+      } else {
+        console.log('[CREDITS] getSupabaseSubscriptionInfo returned null');
       }
+    } else {
+      console.log('[CREDITS] No user logged in');
     }
 
     // Fallback to local cache ONLY if offline or not logged in

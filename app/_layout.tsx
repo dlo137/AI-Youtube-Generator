@@ -4,17 +4,22 @@ import { useEffect } from 'react';
 import { Alert, Linking } from 'react-native';
 import { initPostHog, trackEvent } from '../lib/posthog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeRevenueCat } from '../lib/revenuecat';
+import { initializeAuth } from '../lib/supabase';
 
 function RootLayoutNav() {
   const router = useRouter();
 
   useEffect(() => {
     const initializeAnalytics = async () => {
-      await initPostHog();
+      // Initialize auth first to handle any refresh token errors
+      initializeAuth();
       
+      await initPostHog();
+
       // Check if this is first app launch
       const hasLaunchedBefore = await AsyncStorage.getItem('app_launched_before');
-      
+
       // In development/Expo Go, always track for testing purposes
       // In production, only track on first launch
       if (!hasLaunchedBefore || __DEV__) {
@@ -24,8 +29,21 @@ function RootLayoutNav() {
         }
       }
     };
-    
+
     initializeAnalytics();
+  }, []);
+
+  // Initialize RevenueCat
+  useEffect(() => {
+    const setupRevenueCat = async () => {
+      try {
+        await initializeRevenueCat();
+      } catch (error) {
+        console.error('[App] Failed to initialize RevenueCat:', error);
+      }
+    };
+
+    setupRevenueCat();
   }, []);
 
   // Listen for deep links
