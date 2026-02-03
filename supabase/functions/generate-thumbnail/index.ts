@@ -195,7 +195,7 @@ Focus on style matching and natural subject integration.` }];
   return enhancedPrompt;
 }
 
-// Note: seed parameter removed - Imagen 4 does not support seeds (unlike Imagen 3)
+// Gemini 2.5 Flash Preview Image Generation (Nano Banana)
 async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean) {
   // Detect if the prompt suggests text should be included
   const lowerPrompt = prompt.toLowerCase();
@@ -219,7 +219,7 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
     ? `A ${prompt}, large close-up filling the frame, cinematic lighting, clean gradient background, with bold stylized text overlay`
     : `A ${prompt}, large close-up filling the frame, cinematic lighting, clean gradient background, photorealistic`;
 
-  // Add context about reference images to the prompt (Imagen 4 is text-only for generation)
+  // Add context about reference images
   if (referenceImageUrls && referenceImageUrls.length > 0) {
     fullPrompt += ", inspired by reference style";
   }
@@ -229,47 +229,88 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
     fullPrompt += " Feature a person prominently in the thumbnail.";
   }
 
-  // Imagen 4 API request format
-  // Note: Imagen 4 does NOT support the seed parameter (unlike Imagen 3)
-  const requestBody: any = {
-    instances: [
-      { prompt: fullPrompt }
-    ],
-    parameters: {
-      sampleCount: 1,
-      aspectRatio: "16:9",
-      personGeneration: "allow_adult"
-    }
-  };
+  // Build parts array for the request
+  const parts: any[] = [{ text: fullPrompt }];
 
-  const response = await fetch(IMAGE_GENERATION_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": GEMINI_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(requestBody),
-  });
+  // Add reference images if provided
+  if (referenceImageUrls && referenceImageUrls.length > 0) {
+    for (const refUrl of referenceImageUrls) {
+      try {
+        const imageData = await fetchImageAsBase64(refUrl);
+        parts.push({
+          inlineData: {
+            mimeType: imageData.mimeType,
+            data: imageData.data
+          }
+        });
+      } catch (e) {
+        console.log('Failed to fetch reference image:', e);
+      }
+    }
+  }
+
+  // Add subject image if provided
+  if (subjectImageUrl) {
+    try {
+      const imageData = await fetchImageAsBase64(subjectImageUrl);
+      parts.push({
+        inlineData: {
+          mimeType: imageData.mimeType,
+          data: imageData.data
+        }
+      });
+    } catch (e) {
+      console.log('Failed to fetch subject image:', e);
+    }
+  }
+
+  // Gemini 2.5 Flash Image Generation (Nano Banana)
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+    {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": GEMINI_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: parts
+        }],
+        generationConfig: {
+          responseModalities: ["IMAGE", "TEXT"],
+          // Request 16:9 aspect ratio for YouTube thumbnails
+          imageConfig: {
+            aspectRatio: "16:9"
+          }
+        }
+      }),
+    }
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Imagen 4 API error: ${response.status} ${response.statusText} - ${errorText}`);
+    throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
   const result = await response.json();
 
-  // Imagen 4 response format
-  if (!result.predictions || result.predictions.length === 0) {
-    console.log('Imagen 4 response:', JSON.stringify(result, null, 2));
-    throw new Error("No image generated from Imagen 4 API");
+  // Extract image from response
+  if (!result.candidates || !result.candidates[0] || !result.candidates[0].content) {
+    console.log('Gemini response:', JSON.stringify(result, null, 2));
+    throw new Error("No content generated from Gemini API");
   }
 
-  const prediction = result.predictions[0];
-  if (prediction.bytesBase64Encoded) {
-    return b64ToUint8(prediction.bytesBase64Encoded);
+  const content = result.candidates[0].content;
+  
+  // Find the image part in the response
+  for (const part of content.parts || []) {
+    if (part.inlineData && part.inlineData.data) {
+      return b64ToUint8(part.inlineData.data);
+    }
   }
 
-  throw new Error("Imagen 4 did not return image data in response");
+  throw new Error("Gemini did not return image data in response");
 }
 
 async function callImagen(prompt: string): Promise<Uint8Array> {
@@ -389,13 +430,13 @@ serve(async (req: Request) => {
     console.log('Base image URL (adjustment mode):', baseImageUrl);
     console.log('Adjustment mode:', adjustmentMode);
 
-    // Always use Imagen 4 for image generation
+    // Always use Gemini 2.5 Flash for image generation
     if (baseImageUrl) {
-      console.log('Using Imagen 4 for adjustment mode...');
+      console.log('Using Gemini for adjustment mode...');
     } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
-      console.log('Using Imagen 4 for generation with image context...');
+      console.log('Using Gemini for generation with image context...');
     } else {
-      console.log('Using Imagen 4 for text-only generation...');
+      console.log('Using Gemini for text-only generation...');
     }
 
     // Use blank frame as base image if available and no other base image
@@ -403,7 +444,7 @@ serve(async (req: Request) => {
     const isUsingBlankFrame = !effectiveBaseImageUrl && !!blankFrameUrl;
 
     // Create 3 distinct variation prompts with different visual moods
-    // Note: Imagen 4 doesn't support seeds, so we rely on prompt variations for diversity
+    // We rely on prompt variations for diversity
 
     const variation1Prompt = `${finalPrompt} Visual mood: dramatic lighting, strong contrast, cinematic framing.`;
     const variation2Prompt = `${finalPrompt} Visual mood: energetic composition, dynamic angles, vibrant aesthetic.`;
@@ -418,7 +459,7 @@ serve(async (req: Request) => {
         callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame)
       ]);
     } catch (error) {
-      console.error('Imagen 4 generation failed:', error);
+      console.error('Gemini generation failed:', error);
       throw new Error(`Image generation failed: ${error.message}`);
     }
 
