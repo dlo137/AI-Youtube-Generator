@@ -207,14 +207,14 @@ export default function WelcomeScreen() {
                 <GradientText style={[styles.title, { fontSize: 22 }]}>consistency</GradientText>
               </View>
               <Text style={[styles.subtitle, { textAlign: 'center' }]}>
-                Join creators using AI to work faster, not harder
+                Join creators in working faster, not harder
               </Text>
             </View>
 
             <View style={styles.socialProofContainer}>
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>10K+</Text>
-                <Text style={styles.statLabel}>Stock Deciscions Made Easy </Text>
+                <Text style={styles.statLabel}>Thumbnails Generated </Text>
               </View>
               <View style={[styles.statCard, { flex: 2 }]}>
                 <Text style={[styles.statNumber, { fontSize: 20 }]}>5 Star Rating</Text>

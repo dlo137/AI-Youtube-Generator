@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { Alert, Linking } from 'react-native';
 import { initPostHog, trackEvent } from '../lib/posthog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeRevenueCat } from '../lib/revenuecat';
+// RevenueCat removed - not using it for this app
+// import { initializeRevenueCat } from '../lib/revenuecat';
 import { initializeAuth } from '../lib/supabase';
 
 function RootLayoutNav() {
@@ -33,18 +34,17 @@ function RootLayoutNav() {
     initializeAnalytics();
   }, []);
 
-  // Initialize RevenueCat
-  useEffect(() => {
-    const setupRevenueCat = async () => {
-      try {
-        await initializeRevenueCat();
-      } catch (error) {
-        console.error('[App] Failed to initialize RevenueCat:', error);
-      }
-    };
-
-    setupRevenueCat();
-  }, []);
+  // RevenueCat initialization removed - not using it for this app
+  // useEffect(() => {
+  //   const setupRevenueCat = async () => {
+  //     try {
+  //       await initializeRevenueCat();
+  //     } catch (error) {
+  //       console.error('[App] Failed to initialize RevenueCat:', error);
+  //     }
+  //   };
+  //   setupRevenueCat();
+  // }, []);
 
   // Listen for deep links
   useEffect(() => {
