@@ -374,29 +374,70 @@ class IAPService {
     }
 
     if (!this.isConnected) {
-      await this.initialize();
+      console.log('[IAP-SERVICE] Not connected, initializing first...');
+      const initResult = await this.initialize();
+      console.log('[IAP-SERVICE] Initialize result:', initResult);
     }
 
     try {
       const productIds = Platform.OS === 'ios' ? IOS_PRODUCT_IDS : ANDROID_PRODUCT_IDS;
-      console.log('[IAP-SERVICE] Fetching products for', Platform.OS, ':', productIds);
+      console.log('[IAP-SERVICE] ========== PRODUCT FETCH DEBUG ==========');
+      console.log('[IAP-SERVICE] Platform:', Platform.OS);
+      console.log('[IAP-SERVICE] isConnected:', this.isConnected);
+      console.log('[IAP-SERVICE] Product IDs to fetch:', JSON.stringify(productIds));
+      console.log('[IAP-SERVICE] RNIap module loaded:', !!RNIap);
+      console.log('[IAP-SERVICE] RNIap.getSubscriptions exists:', typeof RNIap?.getSubscriptions);
 
+      // Log available RNIap methods for debugging
+      if (RNIap) {
+        const methods = Object.keys(RNIap).filter(k => typeof RNIap[k] === 'function');
+        console.log('[IAP-SERVICE] Available RNIap methods:', methods.slice(0, 15).join(', '));
+      }
+
+      console.log('[IAP-SERVICE] Calling RNIap.getSubscriptions...');
+      const startTime = Date.now();
+      
       // Get subscriptions using the v14+ API format
       // In react-native-iap v12+, we need to pass skus as an object
       const products = await RNIap.getSubscriptions({ skus: productIds });
-      console.log('[IAP-SERVICE] Products loaded:', products.length);
+      
+      const elapsed = Date.now() - startTime;
+      console.log('[IAP-SERVICE] getSubscriptions completed in', elapsed, 'ms');
+      console.log('[IAP-SERVICE] Products loaded:', products?.length ?? 'null/undefined');
+      console.log('[IAP-SERVICE] Raw products response:', JSON.stringify(products, null, 2));
       
       if (products.length === 0) {
-        console.log('[IAP-SERVICE] No products returned - this may indicate:');
-        console.log('[IAP-SERVICE]   1. Products not configured correctly in App Store Connect');
-        console.log('[IAP-SERVICE]   2. Agreements/tax info not complete in App Store Connect');
-        console.log('[IAP-SERVICE]   3. App bundle ID mismatch');
-        console.log('[IAP-SERVICE]   4. Sandbox testing not properly configured');
+        console.log('[IAP-SERVICE] ❌ NO PRODUCTS RETURNED - Possible causes:');
+        console.log('[IAP-SERVICE]   1. Products not in "Ready to Submit" status in App Store Connect');
+        console.log('[IAP-SERVICE]   2. Paid Apps agreement expired or not signed');
+        console.log('[IAP-SERVICE]   3. Bundle ID mismatch (check app.config.ts ios.bundleIdentifier)');
+        console.log('[IAP-SERVICE]   4. Build not installed from TestFlight');
+        console.log('[IAP-SERVICE]   5. Sandbox account issues');
+        console.log('[IAP-SERVICE]   6. Product IDs have typos or wrong format');
+        
+        // Try alternative API call for older versions
+        console.log('[IAP-SERVICE] Attempting alternative getProducts call...');
+        try {
+          const altProducts = await RNIap.getProducts({ skus: productIds });
+          console.log('[IAP-SERVICE] Alternative getProducts result:', altProducts?.length ?? 'null');
+          if (altProducts?.length > 0) {
+            console.log('[IAP-SERVICE] ✅ Found products via getProducts (non-subscription):', JSON.stringify(altProducts, null, 2));
+            return altProducts;
+          }
+        } catch (altErr) {
+          console.log('[IAP-SERVICE] Alternative getProducts failed:', altErr);
+        }
       }
+      
+      console.log('[IAP-SERVICE] ========== END PRODUCT FETCH DEBUG ==========');
 
       return products;
-    } catch (err) {
-      console.error('[IAP-SERVICE] Error fetching products:', err);
+    } catch (err: any) {
+      console.error('[IAP-SERVICE] ❌ Error fetching products:', err);
+      console.error('[IAP-SERVICE] Error name:', err?.name);
+      console.error('[IAP-SERVICE] Error message:', err?.message);
+      console.error('[IAP-SERVICE] Error code:', err?.code);
+      console.error('[IAP-SERVICE] Error stack:', err?.stack);
       return [];
     }
   }
