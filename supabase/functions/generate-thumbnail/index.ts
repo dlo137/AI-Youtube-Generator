@@ -313,6 +313,76 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
   throw new Error("Gemini did not return image data in response");
 }
 
+// Gemini Image Edit function - edits an existing image based on prompt
+async function callGeminiImageEdit(prompt: string, baseImageUrl: string): Promise<Uint8Array> {
+  // Fetch and encode the base image
+  const baseImageData = await fetchImageAsBase64(baseImageUrl);
+  
+  // Build the edit prompt - focus on modification, not recreation
+  const editPrompt = `Edit this existing image according to the following instruction. Keep everything else exactly the same - only make the specific change requested.
+
+Edit instruction: ${prompt}
+
+IMPORTANT: This is an IMAGE EDIT task. Do NOT create a new image from scratch. Modify the provided image while preserving all other elements, composition, and style.`;
+
+  // Build parts array with the edit prompt and the base image
+  const parts: any[] = [
+    { text: editPrompt },
+    {
+      inlineData: {
+        mimeType: baseImageData.mimeType,
+        data: baseImageData.data
+      }
+    }
+  ];
+
+  // Use Gemini 2.5 Flash for image editing
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+    {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": GEMINI_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: parts
+        }],
+        generationConfig: {
+          responseModalities: ["IMAGE", "TEXT"],
+          imageConfig: {
+            aspectRatio: "16:9"
+          }
+        }
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini Edit API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const result = await response.json();
+
+  if (!result.candidates || !result.candidates[0] || !result.candidates[0].content) {
+    console.log('Gemini edit response:', JSON.stringify(result, null, 2));
+    throw new Error("No content generated from Gemini Edit API");
+  }
+
+  const content = result.candidates[0].content;
+  
+  // Find the image part in the response
+  for (const part of content.parts || []) {
+    if (part.inlineData && part.inlineData.data) {
+      return b64ToUint8(part.inlineData.data);
+    }
+  }
+
+  throw new Error("Gemini Edit did not return image data in response");
+}
+
 async function callImagen(prompt: string): Promise<Uint8Array> {
   // TEMPORARY: Return a demo message until billing is enabled
   // You need to enable billing in Google AI Studio to use Imagen API
@@ -430,10 +500,51 @@ serve(async (req: Request) => {
     console.log('Base image URL (adjustment mode):', baseImageUrl);
     console.log('Adjustment mode:', adjustmentMode);
 
-    // Always use Gemini 2.5 Flash for image generation
-    if (baseImageUrl) {
-      console.log('Using Gemini for adjustment mode...');
-    } else if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
+    // Get user ID from auth for namespacing
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id || 'anonymous';
+    const SEVEN_DAYS = 7 * 24 * 60 * 60; // 7 days in seconds
+
+    // ADJUSTMENT MODE: Edit existing image instead of generating new ones
+    if (adjustmentMode && baseImageUrl) {
+      console.log('Using Gemini for image EDITING (adjustment mode)...');
+      
+      let editedBytes: Uint8Array;
+      try {
+        // Use the edit function to modify the existing image
+        editedBytes = await callGeminiImageEdit(prompt, baseImageUrl);
+      } catch (error: any) {
+        console.error('Gemini image edit failed:', error);
+        throw new Error(`Image edit failed: ${error?.message || String(error)}`);
+      }
+
+      // Store single edited image
+      const filename = `${userId}/${crypto.randomUUID()}.png`;
+      const upload = await supabase.storage.from("thumbnails").upload(filename, editedBytes, { contentType: "image/png", upsert: true });
+      if (upload.error) throw upload.error;
+
+      const signed = await supabase.storage.from("thumbnails").createSignedUrl(filename, SEVEN_DAYS);
+      if (signed.error) throw signed.error;
+
+      // Return single edited image (adjustment mode only returns 1 image)
+      return new Response(JSON.stringify({
+        imageUrl: signed.data?.signedUrl,
+        url: signed.data?.signedUrl,
+        width: WIDTH,
+        height: HEIGHT,
+        file: filename,
+        variation1: {
+          imageUrl: signed.data?.signedUrl,
+          width: WIDTH,
+          height: HEIGHT,
+          file: filename,
+          prompt: prompt
+        }
+      }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // GENERATION MODE: Create new images
+    if (subjectImageUrl || (referenceImageUrls && referenceImageUrls.length > 0)) {
       console.log('Using Gemini for generation with image context...');
     } else {
       console.log('Using Gemini for text-only generation...');
@@ -444,8 +555,6 @@ serve(async (req: Request) => {
     const isUsingBlankFrame = !effectiveBaseImageUrl && !!blankFrameUrl;
 
     // Create 3 distinct variation prompts with different visual moods
-    // We rely on prompt variations for diversity
-
     const variation1Prompt = `${finalPrompt} Visual mood: dramatic lighting, strong contrast, cinematic framing.`;
     const variation2Prompt = `${finalPrompt} Visual mood: energetic composition, dynamic angles, vibrant aesthetic.`;
     const variation3Prompt = `${finalPrompt} Visual mood: clean minimal look, soft tones, simple composition.`;
@@ -458,14 +567,10 @@ serve(async (req: Request) => {
         callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
         callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame)
       ]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Gemini generation failed:', error);
-      throw new Error(`Image generation failed: ${error.message}`);
+      throw new Error(`Image generation failed: ${error?.message || String(error)}`);
     }
-
-    // Get user ID from auth for namespacing
-    const { data: { user } } = await supabase.auth.getUser();
-    const userId = user?.id || 'anonymous';
 
     // Store 3 images to Supabase Storage with user-specific paths
     const filename1 = `${userId}/${crypto.randomUUID()}.png`;
@@ -483,8 +588,6 @@ serve(async (req: Request) => {
     if (upload3.error) throw upload3.error;
 
     // Generate long-lived signed URLs (7 days) for 3 images
-    // The app will download these to permanent local storage immediately
-    const SEVEN_DAYS = 7 * 24 * 60 * 60; // 7 days in seconds
     const [signed1, signed2, signed3] = await Promise.all([
       supabase.storage.from("thumbnails").createSignedUrl(filename1, SEVEN_DAYS),
       supabase.storage.from("thumbnails").createSignedUrl(filename2, SEVEN_DAYS),
@@ -496,8 +599,8 @@ serve(async (req: Request) => {
     if (signed3.error) throw signed3.error;
 
     return new Response(JSON.stringify({
-      imageUrl: signed1.data?.signedUrl, // keep for compatibility
-      url: signed1.data?.signedUrl, // keep for compatibility
+      imageUrl: signed1.data?.signedUrl,
+      url: signed1.data?.signedUrl,
       width: WIDTH,
       height: HEIGHT,
       file: filename1,

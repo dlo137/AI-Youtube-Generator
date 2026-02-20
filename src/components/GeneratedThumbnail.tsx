@@ -1,6 +1,6 @@
 import { View, TouchableOpacity, Image, Text, Alert } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { saveThumbnail } from '../utils/thumbnailStorage';
 import Svg, { Path } from 'react-native-svg';
 
@@ -48,9 +48,17 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, te
         return;
       }
 
-      // Download the image to local filesystem
+      // If the image is already local, just save it directly
+      if (imageUrl.startsWith('file://')) {
+        const asset = await MediaLibrary.createAssetAsync(imageUrl);
+        await MediaLibrary.createAlbumAsync('AI Thumbnails', asset, false);
+        Alert.alert('Success', 'Thumbnail saved to your photo library!');
+        return;
+      }
+
+      // Download the image to local filesystem for remote URLs
       const filename = `thumbnail_${Date.now()}.png`;
-      const docDir = (FileSystem as any).documentDirectory;
+      const docDir = FileSystem.documentDirectory;
       if (!docDir) {
         throw new Error('Document directory not available');
       }
@@ -59,19 +67,29 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, te
       console.log('Downloading image from:', imageUrl);
       console.log('Saving to local path:', localUri);
 
-      const { uri } = await (FileSystem as any).downloadAsync(imageUrl, localUri);
+      const downloadResult = await FileSystem.downloadAsync(imageUrl, localUri);
+
+      if (downloadResult.status !== 200) {
+        throw new Error(`Failed to download image: status ${downloadResult.status}`);
+      }
 
       // Save to photo library
-      const asset = await MediaLibrary.createAssetAsync(uri);
+      const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
       await MediaLibrary.createAlbumAsync('AI Thumbnails', asset, false);
 
       Alert.alert('Success', 'Thumbnail saved to your photo library!');
 
     } catch (error) {
       console.error('Download error:', error);
-      Alert.alert('Error', 'Failed to save thumbnail. Please try again.');
+      Alert.alert('Error', 'Failed to download/save thumbnail. Please try again.');
     }
   };
+
+  // Don't render if no imageUrl
+  if (!imageUrl) {
+    console.warn('[GeneratedThumbnail] No imageUrl provided, skipping render');
+    return null;
+  }
 
   return (
     <View style={style.imageWrapper}>
@@ -118,14 +136,22 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, te
           style={style.saveIcon}
           onPress={async () => {
             try {
+              console.log('[SAVE] Attempting to save thumbnail with URL:', imageUrl?.substring(0, 60));
+              
+              if (!imageUrl) {
+                Alert.alert('Error', 'No image to save');
+                return;
+              }
+              
               const editsToSave = textOverlay ? {
                 textOverlay: textOverlay
               } : null;
               await saveThumbnail(prompt, imageUrl, editsToSave);
               Alert.alert('Saved!', 'Thumbnail saved to your history');
-            } catch (error) {
+            } catch (error: any) {
               console.error('Save error:', error);
-              Alert.alert('Error', 'Failed to save thumbnail');
+              console.error('Save error message:', error?.message);
+              Alert.alert('Error', `Failed to save thumbnail: ${error?.message || 'Unknown error'}`);
             }
           }}
         >

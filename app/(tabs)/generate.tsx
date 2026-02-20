@@ -7,7 +7,7 @@ import Svg, { Path, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { PinchGestureHandler, PanGestureHandler, RotationGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../../lib/supabase';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
 import { saveThumbnail, addThumbnailToHistory, getSavedThumbnails, SavedThumbnail } from '../../src/utils/thumbnailStorage';
@@ -81,6 +81,13 @@ const uploadImageToStorage = async (imageUri: string, fileName: string): Promise
     return null;
   }
 };
+
+// Helper function to delay execution
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry configuration
+const RETRY_DELAY_MS = 3000;
+const GENERATION_ERROR_MESSAGE = "Looks like we hit a temporary issue generating your image.\nPlease try again in a moment, we're on it.";
 
 export default function GenerateScreen() {
   const { credits, refreshCredits } = useCredits();
@@ -157,6 +164,7 @@ export default function GenerateScreen() {
   const [allGenerations, setAllGenerations] = useState<Array<{
     id: string;
     prompt: string;
+    title?: string; // AI-generated short title
     url1: string;
     url2?: string;
     url3?: string;
@@ -329,24 +337,37 @@ export default function GenerateScreen() {
         return;
       }
 
-      // Download the image to local filesystem
+      // If the image is already local, just save it directly
+      if (generatedImageUrl.startsWith('file://')) {
+        const asset = await MediaLibrary.createAssetAsync(generatedImageUrl);
+        await MediaLibrary.createAlbumAsync('AI Thumbnails', asset, false);
+        Alert.alert('Success', 'Thumbnail saved to your photo library!');
+        return;
+      }
+
+      // Download the image to local filesystem for remote URLs
       const filename = `thumbnail_${Date.now()}.png`;
-      const docDir = (FileSystem as any).documentDirectory;
+      const docDir = FileSystem.documentDirectory;
       if (!docDir) {
         throw new Error('Document directory not available');
       }
       const localUri = `${docDir}${filename}`;
 
-      const { uri } = await (FileSystem as any).downloadAsync(generatedImageUrl, localUri);
+      const downloadResult = await FileSystem.downloadAsync(generatedImageUrl, localUri);
+
+      if (downloadResult.status !== 200) {
+        throw new Error(`Failed to download image: status ${downloadResult.status}`);
+      }
 
       // Save to photo library
-      const asset = await MediaLibrary.createAssetAsync(uri);
+      const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
       await MediaLibrary.createAlbumAsync('AI Thumbnails', asset, false);
 
       Alert.alert('Success', 'Thumbnail saved to your photo library!');
 
     } catch (error) {
-      Alert.alert('Error', 'Failed to save thumbnail. Please try again.');
+      console.error('Download error:', error);
+      Alert.alert('Error', 'Failed to download/save thumbnail. Please try again.');
     }
   };
 
@@ -422,12 +443,12 @@ export default function GenerateScreen() {
       return;
     }
 
-    // Check credits before generating edit
+    // Check credits before generating edit - requires 1 credit
     const credits = await getCredits();
-    if (credits.current <= 0) {
+    if (credits.current < 1) {
       Alert.alert(
         'No Credits',
-        'You have run out of credits. Please upgrade your plan to continue editing thumbnails.',
+        'You need at least 1 credit to edit thumbnails. Please upgrade your plan to continue.',
         [{ text: 'OK' }]
       );
       return;
@@ -450,41 +471,59 @@ export default function GenerateScreen() {
       // Create edit-aware prompt
       let enhancedPrompt = modalPrompt.trim();
 
+      let data: any = null;
+      let lastError: any = null;
+      let attempts = 0;
+      const maxAttempts = 2;
 
-      // Create an adjustment-focused prompt
-      // For zoom/framing requests, allow composition changes
-      const isFramingAdjustment = /zoom|show more|show less|pull back|widen|closer|crop|frame|padding|margin/i.test(enhancedPrompt);
+      // Retry loop with delay
+      while (attempts < maxAttempts) {
+        attempts++;
 
-      const fullPrompt = isFramingAdjustment
-        ? `Original thumbnail: "${currentGeneration.prompt}". Adjustment: ${enhancedPrompt}. Keep the same content and style, but adjust the framing/composition as requested.`
-        : `Keep the exact same composition, layout, and core elements from this thumbnail: "${currentGeneration.prompt}". Only make this specific adjustment: ${enhancedPrompt}. Do not change the overall design, just modify the requested aspect while maintaining everything else identical.`;
+        try {
+          // Call the generation API with the current image as reference
+          // The backend handles the edit context, so just pass the user's request directly
+          const response = await supabase.functions.invoke('generate-thumbnail', {
+            body: JSON.stringify({
+              prompt: enhancedPrompt,
+              style: style,
+              baseImageUrl: modalImageUrl, // Provide current image as reference for adjustments
+              adjustmentMode: true, // Flag to indicate this is an adjustment, not new generation
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
 
-      // Only use images that are actively selected for adjustment mode
-      const activeSubjectImageUrl = subjectImage ? subjectImageUrl : null;
-      const activeReferenceImageUrls = referenceImages.length > 0 ? referenceImageUrls : [];
-
-      // Call the generation API with the current image as reference
-      const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
-        body: JSON.stringify({
-          prompt: fullPrompt,
-          style: style,
-          baseImageUrl: modalImageUrl, // Provide current image as reference for adjustments
-          adjustmentMode: true, // Flag to indicate this is an adjustment, not new generation
-          subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
-          referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (error) {
-        Alert.alert('Error', `Failed to generate adjustment: ${error.message || 'Unknown error'}`);
-        return;
+          if (response.error) {
+            lastError = response.error;
+            if (attempts < maxAttempts) {
+              await delay(RETRY_DELAY_MS);
+              continue;
+            }
+          } else if (response.data?.error) {
+            lastError = new Error(response.data.error);
+            if (attempts < maxAttempts) {
+              await delay(RETRY_DELAY_MS);
+              continue;
+            }
+          } else {
+            // Success!
+            data = response.data;
+            break;
+          }
+        } catch (attemptError) {
+          lastError = attemptError;
+          if (attempts < maxAttempts) {
+            await delay(RETRY_DELAY_MS);
+            continue;
+          }
+        }
       }
 
-      if (data?.error) {
-        Alert.alert('Error', data.error || 'Failed to generate thumbnail adjustment');
+      // If we exhausted retries and still have no data
+      if (!data) {
+        Alert.alert('Generation Error', GENERATION_ERROR_MESSAGE);
         return;
       }
 
@@ -509,6 +548,8 @@ export default function GenerateScreen() {
             return { ...gen, url1: newImageUrl };
           } else if (gen.url2 === modalImageUrl && newImageUrl) {
             return { ...gen, url2: newImageUrl };
+          } else if (gen.url3 === modalImageUrl && newImageUrl) {
+            return { ...gen, url3: newImageUrl };
           }
         }
         return gen;
@@ -516,6 +557,7 @@ export default function GenerateScreen() {
 
       // Update modal to show the new image
       setModalImageUrl(newImageUrl);
+      setOriginalModalImageUrl(newImageUrl); // Track new URL for subsequent edits
 
       // Clear the edits for the new image
       setThumbnailEdits({
@@ -839,7 +881,7 @@ export default function GenerateScreen() {
     { id: 'colorful', label: 'Colorful' },
   ];
 
-  const handleGenerate = async (overrideTopic?: string) => {
+  const handleGenerate = async (overrideTopic?: string, overrideTitle?: string) => {
     const topicToUse = overrideTopic || topic;
 
     if (!topicToUse.trim()) {
@@ -847,12 +889,12 @@ export default function GenerateScreen() {
       return;
     }
 
-    // Check credits before generating
+    // Check credits before generating - requires 3 credits for 3 image variations
     const credits = await getCredits();
-    if (credits.current <= 0) {
+    if (credits.current < 3) {
       Alert.alert(
-        'Subscription Required',
-        'You need an active subscription to generate thumbnails. Please subscribe to continue.',
+        'Not Enough Credits',
+        `You need at least 3 credits to generate thumbnails. You currently have ${credits.current} credit${credits.current === 1 ? '' : 's'}.`,
         [{ text: 'OK' }]
       );
       return;
@@ -884,42 +926,59 @@ export default function GenerateScreen() {
     setTopic('');
 
     try {
+      let data: any = null;
+      let lastError: any = null;
+      let attempts = 0;
+      const maxAttempts = 2;
 
-      // Call your Supabase edge function
-      const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
-        body: JSON.stringify({
-          prompt: promptToUse,
-          style: style,
-          subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
-          referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      // Retry loop with delay
+      while (attempts < maxAttempts) {
+        attempts++;
+        
+        try {
+          // Call your Supabase edge function
+          const response = await supabase.functions.invoke('generate-thumbnail', {
+            body: JSON.stringify({
+              prompt: promptToUse,
+              style: style,
+              subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
+              referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
+            }),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
 
-
-      if (error) {
-        const errorMsg = error.message || 'Unknown error';
-
-        // Provide helpful error messages based on common issues
-        let userMessage = 'Failed to generate thumbnail. ';
-        if (errorMsg.includes('429') || errorMsg.includes('rate limit') || errorMsg.includes('quota')) {
-          userMessage += 'The AI service is currently at capacity. Please wait a minute and try again.';
-        } else if (errorMsg.includes('timeout') || errorMsg.includes('timed out')) {
-          userMessage += 'Request timed out. The server might be busy. Please try again.';
-        } else if (errorMsg.includes('503') || errorMsg.includes('unavailable')) {
-          userMessage += 'Service temporarily unavailable. Please try again in a few moments.';
-        } else {
-          userMessage += errorMsg;
+          if (response.error) {
+            lastError = response.error;
+            if (attempts < maxAttempts) {
+              // Wait 3 seconds before retrying
+              await delay(RETRY_DELAY_MS);
+              continue;
+            }
+          } else if (response.data?.error) {
+            lastError = new Error(response.data.error);
+            if (attempts < maxAttempts) {
+              await delay(RETRY_DELAY_MS);
+              continue;
+            }
+          } else {
+            // Success!
+            data = response.data;
+            break;
+          }
+        } catch (attemptError) {
+          lastError = attemptError;
+          if (attempts < maxAttempts) {
+            await delay(RETRY_DELAY_MS);
+            continue;
+          }
         }
-
-        Alert.alert('Generation Error', userMessage);
-        return;
       }
 
-      if (data?.error) {
-        Alert.alert('Error', data.error || 'Failed to generate thumbnail');
+      // If we exhausted retries and still have no data
+      if (!data) {
+        Alert.alert('Generation Error', GENERATION_ERROR_MESSAGE);
         return;
       }
 
@@ -945,16 +1004,40 @@ export default function GenerateScreen() {
           await addThumbnailToHistory(promptToUse, url3);
         }
 
-        // Add to all generations list
+        // Add to all generations list with placeholder title
+        const generationId = Date.now().toString();
         const newGeneration = {
-          id: Date.now().toString(),
+          id: generationId,
           prompt: promptToUse,
+          title: overrideTitle as string | undefined, // Use provided title or will be set by AI
           url1: url1 || '',
           url2: url2,
           url3: url3,
           timestamp: Date.now(),
         };
         setAllGenerations(prev => [newGeneration, ...prev]);
+
+        // Only fetch AI-generated title if no override title was provided
+        if (!overrideTitle) {
+          (async () => {
+            try {
+              const { data: titleData } = await supabase.functions.invoke('generate-title', {
+                body: JSON.stringify({ prompt: promptToUse }),
+                headers: { 'Content-Type': 'application/json' },
+              });
+              
+              if (titleData?.title) {
+                // Update the generation with the AI title
+                setAllGenerations(prev => prev.map(gen => 
+                  gen.id === generationId ? { ...gen, title: titleData.title } : gen
+                ));
+              }
+            } catch (titleError) {
+              console.log('[generate-title] Failed to fetch AI title:', titleError);
+              // Fallback: title will use getShortTitle via the UI
+            }
+          })();
+        }
 
         // Deduct 3 credits for successful generation (1 credit per image, 3 images generated)
         await deductCredit(3);
@@ -1150,8 +1233,8 @@ export default function GenerateScreen() {
             {/* All generations including current one */}
             {allGenerations.map((generation, index) => (
               <View key={generation.id} style={styles.generationSection}>
-                {/* Title for each generation */}
-                <Text style={styles.imageTitle}>{getShortTitle(generation.prompt)}</Text>
+                {/* Title for each generation - use AI title if available, fallback to getShortTitle */}
+                <Text style={styles.imageTitle}>{generation.title || getShortTitle(generation.prompt)}</Text>
 
                 {/* First Generated Image */}
                 {generation.url1 && (
@@ -1279,21 +1362,21 @@ export default function GenerateScreen() {
         <View style={styles.suggestionContainer}>
           <TouchableOpacity
             style={styles.suggestionButton}
-            onPress={() => handleGenerate('Tech Review')}
+            onPress={() => handleGenerate('Tech Review', 'Tech Review')}
             activeOpacity={0.7}
           >
             <Text style={styles.suggestionText} numberOfLines={1}>Tech Review</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.suggestionButton}
-            onPress={() => handleGenerate('Podcast')}
+            onPress={() => handleGenerate('Podcast', 'Podcast')}
             activeOpacity={0.7}
           >
             <Text style={styles.suggestionText} numberOfLines={1}>Podcast</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.suggestionButton}
-            onPress={() => handleGenerate('Gamer vs Gamer')}
+            onPress={() => handleGenerate('Gamer vs Gamer', 'Gamer vs Gamer')}
             activeOpacity={0.7}
           >
             <Text style={styles.suggestionText} numberOfLines={1}>Gamer vs Gamer</Text>
@@ -1656,6 +1739,17 @@ export default function GenerateScreen() {
                   elevation: 5,
                 }}
                 onPress={async () => {
+                  // Check credits before erasing - requires 1 credit
+                  const credits = await getCredits();
+                  if (credits.current < 1) {
+                    Alert.alert(
+                      'No Credits',
+                      'You need at least 1 credit to remove objects. Please upgrade your plan to continue.',
+                      [{ text: 'OK' }]
+                    );
+                    return;
+                  }
+
                   setIsModalGenerating(true);
 
                   try {
@@ -1678,39 +1772,61 @@ export default function GenerateScreen() {
                     let success = false;
                     let finalImageUrl = '';
 
-                    // Retry logic to ensure object removal
+                    // Retry logic to ensure object removal with 3-second delay
                     while (attempts < maxAttempts && !success) {
                       attempts++;
 
-                      // Call the generate function
-                      const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
-                        body: JSON.stringify({
-                          prompt: inpaintPrompt,
-                          baseImageUrl: modalImageUrl,
-                          adjustmentMode: true,
-                          eraseMask: eraseMask, // Send the mask path to backend
-                          seed: Date.now() + attempts, // Different seed for each attempt
-                        }),
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                      });
+                      try {
+                        // Call the generate function
+                        const { data, error } = await supabase.functions.invoke('generate-thumbnail', {
+                          body: JSON.stringify({
+                            prompt: inpaintPrompt,
+                            baseImageUrl: modalImageUrl,
+                            adjustmentMode: true,
+                            eraseMask: eraseMask, // Send the mask path to backend
+                            seed: Date.now() + attempts, // Different seed for each attempt
+                          }),
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                        });
 
-                      if (error) {
-                        if (attempts >= maxAttempts) throw error;
-                        continue;
-                      }
+                        if (error) {
+                          if (attempts < maxAttempts) {
+                            await delay(RETRY_DELAY_MS);
+                            continue;
+                          }
+                          throw error;
+                        }
 
-                      if (data?.imageUrl) {
-                        finalImageUrl = data.imageUrl;
-                        success = true;
-                        break;
+                        if (data?.error) {
+                          if (attempts < maxAttempts) {
+                            await delay(RETRY_DELAY_MS);
+                            continue;
+                          }
+                          throw new Error(data.error);
+                        }
+
+                        if (data?.imageUrl) {
+                          finalImageUrl = data.imageUrl;
+                          success = true;
+                          break;
+                        }
+
+                        // No imageUrl returned, retry
+                        if (attempts < maxAttempts) {
+                          await delay(RETRY_DELAY_MS);
+                        }
+                      } catch (attemptError) {
+                        if (attempts >= maxAttempts) throw attemptError;
+                        await delay(RETRY_DELAY_MS);
                       }
                     }
 
                     if (success && finalImageUrl) {
                       // Update the modal image
                       setModalImageUrl(finalImageUrl);
+                      setOriginalModalImageUrl(finalImageUrl); // Track new URL for subsequent edits
 
                       // Update the generation in the list
                       setAllGenerations(prev => prev.map(gen => {
@@ -1719,6 +1835,8 @@ export default function GenerateScreen() {
                             return { ...gen, url1: finalImageUrl };
                           } else if (gen.url2 === modalImageUrl) {
                             return { ...gen, url2: finalImageUrl };
+                          } else if (gen.url3 === modalImageUrl) {
+                            return { ...gen, url3: finalImageUrl };
                           }
                         }
                         return gen;
@@ -1731,12 +1849,18 @@ export default function GenerateScreen() {
                       erasePathRef.current = '';
                       setShowEraseConfirm(false);
 
+                      // Deduct 1 credit for successful object removal
+                      await deductCredit(1);
+
+                      // Refresh credits display immediately
+                      await refreshCredits();
+
                       Alert.alert('Success', 'Object removed successfully!');
                     } else {
                       throw new Error('Failed to generate image after multiple attempts');
                     }
                   } catch (error) {
-                    Alert.alert('Error', 'Failed to remove object. Please try again.');
+                    Alert.alert('Generation Error', GENERATION_ERROR_MESSAGE);
                     setShowEraseConfirm(true);
                   } finally {
                     setIsModalGenerating(false);
@@ -1841,12 +1965,12 @@ export default function GenerateScreen() {
                     onPress={async () => {
                       if (!textSticker || imageContainerDimensions.width === 0 || imageContainerDimensions.height === 0) return;
 
-                      // Check credits before applying text
+                      // Check credits before applying text - requires 1 credit
                       const credits = await getCredits();
-                      if (credits.current <= 0) {
+                      if (credits.current < 1) {
                         Alert.alert(
                           'No Credits',
-                          'You have run out of credits. Please upgrade your plan to continue editing thumbnails.',
+                          'You need at least 1 credit to add text overlays. Please upgrade your plan to continue.',
                           [{ text: 'OK' }]
                         );
                         return;

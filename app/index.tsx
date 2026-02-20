@@ -214,7 +214,7 @@ export default function WelcomeScreen() {
             <View style={styles.socialProofContainer}>
               <View style={styles.statCard}>
                 <Text style={styles.statNumber}>10K+</Text>
-                <Text style={styles.statLabel}>Thumbnails Generated </Text>
+                <Text style={styles.statLabel}>Stock Deciscions Made Easy </Text>
               </View>
               <View style={[styles.statCard, { flex: 2 }]}>
                 <Text style={[styles.statNumber, { fontSize: 20 }]}>5 Star Rating</Text>

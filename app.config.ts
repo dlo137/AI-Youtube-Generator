@@ -9,7 +9,8 @@ export default {
     scheme: "thumbnailgen",
     plugins: [
       "./plugins/withIapFlavor",
-      "react-native-iap"
+      "react-native-iap",
+      "expo-router"
     ],
     updates: {
       fallbackToCacheTimeout: 0,

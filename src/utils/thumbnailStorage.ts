@@ -166,12 +166,16 @@ export const saveThumbnail = async (
   } | null
 ): Promise<SavedThumbnail> => {
   try {
+    console.log('[saveThumbnail] Starting save for URL:', imageUrl?.substring(0, 60));
+    
     const storageKey = await getStorageKey();
     if (!storageKey) {
       throw new Error('User not authenticated');
     }
+    console.log('[saveThumbnail] Storage key obtained:', storageKey?.substring(0, 30));
 
     const existingThumbnails = await getSavedThumbnails();
+    console.log('[saveThumbnail] Existing thumbnails count:', existingThumbnails.length);
 
     // Generate ID first (we'll need it for download)
     const thumbnailId = Date.now().toString();
@@ -182,6 +186,7 @@ export const saveThumbnail = async (
     );
 
     if (existingIndex !== -1) {
+      console.log('[saveThumbnail] Thumbnail already exists, updating to favorited');
       // Update existing thumbnail to be favorited
       const updatedThumbnail = {
         ...existingThumbnails[existingIndex],
@@ -198,7 +203,9 @@ export const saveThumbnail = async (
     }
 
     // Download image to permanent local storage
+    console.log('[saveThumbnail] Downloading image to local storage...');
     const localImageUrl = await downloadImageToLocal(imageUrl, thumbnailId);
+    console.log('[saveThumbnail] Downloaded to:', localImageUrl?.substring(0, 60));
 
     // Create new thumbnail if it doesn't exist
     const newThumbnail: SavedThumbnail = {
