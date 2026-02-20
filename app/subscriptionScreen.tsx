@@ -46,7 +46,23 @@ export default function SubscriptionScreen() {
     lastPurchaseResult: null,
     timestamp: new Date().toISOString()
   });
-  const [showDebug, setShowDebug] = useState(true); // Set to false to hide debug panel
+  const [showDebug, setShowDebug] = useState(false); // Production debug panel
+  const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
+  const [productFetchStatus, setProductFetchStatus] = useState<{
+    attempted: boolean;
+    success: boolean;
+    error: string | null;
+    productIds: string[];
+    foundProducts: string[];
+    missingProducts: string[];
+  }>({
+    attempted: false,
+    success: false,
+    error: null,
+    productIds: [],
+    foundProducts: [],
+    missingProducts: []
+  });
 
   // Check if IAP is available
   const isIAPAvailable = IAPService.isAvailable();
@@ -188,24 +204,83 @@ export default function SubscriptionScreen() {
     }
   };
 
+  const addDebugLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setProductDebugLogs(prev => [...prev.slice(-19), `[${timestamp}] ${message}`]);
+  };
+
   const fetchProducts = async (showErrors = false) => {
+    const expectedProductIds = Object.values(PRODUCT_IDS);
+    addDebugLog(`Platform: ${Platform.OS}`);
+    addDebugLog(`Expected IDs: ${expectedProductIds.join(', ')}`);
+    
     if (!isIAPAvailable) {
+      addDebugLog('❌ IAP module not available (Expo Go?)');
+      setProductFetchStatus({
+        attempted: true,
+        success: false,
+        error: 'IAP module not available - running in Expo Go or react-native-iap not linked',
+        productIds: expectedProductIds,
+        foundProducts: [],
+        missingProducts: expectedProductIds
+      });
       if (showErrors) {
         Alert.alert('IAP Unavailable', 'In-app purchases are not available on this platform.');
       }
       return [];
     }
 
+    addDebugLog('✅ IAP module available');
     console.log('[SUBSCRIPTION] Fetching products...');
     try {
       setLoadingProducts(true);
+      addDebugLog('Calling IAPService.getProducts()...');
+      
       const results = await IAPService.getProducts();
+      
+      const foundIds = results?.map((p: any) => p.productId) || [];
+      const missingIds = expectedProductIds.filter(id => !foundIds.includes(id));
+      
+      addDebugLog(`Received ${results?.length || 0} products`);
+      
       if (results?.length) {
         setProducts(results);
-        console.log('[SUBSCRIPTION] Products loaded:', results.map(p => `${p.productId}: ${p.price}`).join(', '));
+        results.forEach((p: any) => {
+          addDebugLog(`✅ Found: ${p.productId} - ${p.localizedPrice || p.price}`);
+        });
+        missingIds.forEach(id => {
+          addDebugLog(`❌ Missing: ${id}`);
+        });
+        
+        setProductFetchStatus({
+          attempted: true,
+          success: true,
+          error: null,
+          productIds: expectedProductIds,
+          foundProducts: foundIds,
+          missingProducts: missingIds
+        });
+        
+        console.log('[SUBSCRIPTION] Products loaded:', results.map((p: any) => `${p.productId}: ${p.price}`).join(', '));
         return results;
       } else {
         setProducts([]);
+        addDebugLog('❌ No products returned from App Store');
+        addDebugLog('Possible causes:');
+        addDebugLog('  1. Products not in "Ready to Submit" status');
+        addDebugLog('  2. Agreements/banking not complete');
+        addDebugLog('  3. Bundle ID mismatch');
+        addDebugLog('  4. Product IDs incorrect');
+        
+        setProductFetchStatus({
+          attempted: true,
+          success: false,
+          error: 'No products returned from App Store Connect',
+          productIds: expectedProductIds,
+          foundProducts: [],
+          missingProducts: expectedProductIds
+        });
+        
         console.log('[SUBSCRIPTION] No products available');
         if (showErrors) {
           Alert.alert('Products Unavailable', 'Could not load subscription products. Please check your internet connection and try again.');
@@ -214,9 +289,21 @@ export default function SubscriptionScreen() {
       }
     } catch (err) {
       setProducts([]);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      addDebugLog(`❌ Error: ${errorMsg}`);
+      
+      setProductFetchStatus({
+        attempted: true,
+        success: false,
+        error: errorMsg,
+        productIds: expectedProductIds,
+        foundProducts: [],
+        missingProducts: expectedProductIds
+      });
+      
       console.error('[SUBSCRIPTION] Error fetching products:', err);
       if (showErrors) {
-        Alert.alert('Error', 'Failed to load products: ' + String(err instanceof Error ? err.message : err));
+        Alert.alert('Error', 'Failed to load products: ' + errorMsg);
       }
       return [];
     } finally {
@@ -232,65 +319,56 @@ export default function SubscriptionScreen() {
 
     if (!isIAPAvailable) {
       console.log('[SUBSCRIPTION] ⚠️ IAP not available - this should only happen in Expo Go or if react-native-iap failed to load');
-      // For development/testing: Allow bypass in development mode
+      // For development/testing: Automatically simulate purchase in Expo Go
       if (__DEV__) {
-        Alert.alert(
-          'Development Mode',
-          'IAP is not available. Would you like to simulate a successful purchase for testing?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Simulate Purchase',
-              onPress: async () => {
-                try {
-                  // Get current user
-                  const { data: { user }, error: userError } = await supabase.auth.getUser();
-                  if (userError || !user) {
-                    throw new Error('User not authenticated');
-                  }
+        try {
+          setCurrentPurchaseAttempt(selectedPlan);
+          
+          // Get current user
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          if (userError || !user) {
+            throw new Error('User not authenticated');
+          }
 
-                  // Determine credits based on plan
-                  let credits_max = 0;
-                  switch (selectedPlan) {
-                    case 'yearly': credits_max = 90; break;
-                    case 'monthly': credits_max = 75; break;
-                    case 'weekly': credits_max = 10; break;
-                  }
+          // Determine credits based on plan
+          let credits_max = 0;
+          switch (selectedPlan) {
+            case 'yearly': credits_max = 90; break;
+            case 'monthly': credits_max = 75; break;
+            case 'weekly': credits_max = 10; break;
+          }
 
-                  // Update subscription in Supabase with is_pro_version = true
-                  const { error: updateError } = await supabase
-                    .from('profiles')
-                    .update({
-                      subscription_plan: selectedPlan,
-                      is_pro_version: true,
-                      subscription_id: `test_${selectedPlan}_${Date.now()}`,
-                      purchase_time: new Date().toISOString(),
-                      credits_current: credits_max,
-                      credits_max: credits_max,
-                      last_credit_reset: new Date().toISOString()
-                    })
-                    .eq('id', user.id);
+          // Update subscription in Supabase with is_pro_version = true
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              subscription_plan: selectedPlan,
+              is_pro_version: true,
+              subscription_id: `dev_${selectedPlan}_${Date.now()}`,
+              purchase_time: new Date().toISOString(),
+              credits_current: credits_max,
+              credits_max: credits_max,
+              last_credit_reset: new Date().toISOString()
+            })
+            .eq('id', user.id);
 
-                  if (updateError) throw updateError;
+          if (updateError) throw updateError;
 
-                  // Track test subscription
-                  trackEvent('subscription_completed', {
-                    plan: selectedPlan,
-                    platform: Platform.OS,
-                    test_mode: true,
-                  });
+          // Track test subscription
+          trackEvent('subscription_completed', {
+            plan: selectedPlan,
+            platform: Platform.OS,
+            test_mode: true,
+          });
 
-                  Alert.alert('Success (Simulated)', 'Your subscription has been activated (development mode).', [
-                    { text: 'Continue', onPress: () => router.replace('/(tabs)/generate') }
-                  ]);
-                } catch (error) {
-                  console.error('Test purchase error:', error);
-                  Alert.alert('Error', 'Failed to activate test subscription.');
-                }
-              }
-            }
-          ]
-        );
+          console.log('[SUBSCRIPTION] ✅ Expo Go: Simulated purchase successful');
+          setCurrentPurchaseAttempt(null);
+          router.replace('/(tabs)/generate');
+        } catch (error) {
+          console.error('Expo Go simulation error:', error);
+          setCurrentPurchaseAttempt(null);
+          Alert.alert('Error', 'Failed to simulate subscription.');
+        }
       } else {
         Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
       }
@@ -437,60 +515,51 @@ export default function SubscriptionScreen() {
 
   const handleDiscountPurchase = async () => {
     if (!isIAPAvailable) {
-      // For development/testing: Allow bypass in development mode
+      // For development/testing: Automatically simulate purchase in Expo Go
       if (__DEV__) {
-        Alert.alert(
-          'Development Mode',
-          'IAP is not available. Would you like to simulate a successful purchase for testing?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Simulate Purchase',
-              onPress: async () => {
-                try {
-                  // Get current user
-                  const { data: { user }, error: userError } = await supabase.auth.getUser();
-                  if (userError || !user) {
-                    throw new Error('User not authenticated');
-                  }
+        try {
+          setCurrentPurchaseAttempt('weekly');
+          
+          // Get current user
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          if (userError || !user) {
+            throw new Error('User not authenticated');
+          }
 
-                  // Discounted weekly plan gets 10 credits
-                  const credits_max = 10;
+          // Discounted weekly plan gets 10 credits
+          const credits_max = 10;
 
-                  // Update subscription in Supabase with is_pro_version = true
-                  const { error: updateError } = await supabase
-                    .from('profiles')
-                    .update({
-                      subscription_plan: 'discounted_weekly',
-                      is_pro_version: true,
-                      subscription_id: `test_discounted_weekly_${Date.now()}`,
-                      purchase_time: new Date().toISOString(),
-                      credits_current: credits_max,
-                      credits_max: credits_max,
-                      last_credit_reset: new Date().toISOString()
-                    })
-                    .eq('id', user.id);
+          // Update subscription in Supabase with is_pro_version = true
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({
+              subscription_plan: 'discounted_weekly',
+              is_pro_version: true,
+              subscription_id: `dev_discounted_weekly_${Date.now()}`,
+              purchase_time: new Date().toISOString(),
+              credits_current: credits_max,
+              credits_max: credits_max,
+              last_credit_reset: new Date().toISOString()
+            })
+            .eq('id', user.id);
 
-                  if (updateError) throw updateError;
+          if (updateError) throw updateError;
 
-                  // Track test subscription
-                  trackEvent('subscription_completed', {
-                    plan: 'discounted_weekly',
-                    platform: Platform.OS,
-                    test_mode: true,
-                  });
+          // Track test subscription
+          trackEvent('subscription_completed', {
+            plan: 'discounted_weekly',
+            platform: Platform.OS,
+            test_mode: true,
+          });
 
-                  Alert.alert('Success (Simulated)', 'Your discounted subscription has been activated (development mode).', [
-                    { text: 'Continue', onPress: () => router.replace('/(tabs)/generate') }
-                  ]);
-                } catch (error) {
-                  console.error('Test discount purchase error:', error);
-                  Alert.alert('Error', 'Failed to activate test subscription.');
-                }
-              }
-            }
-          ]
-        );
+          console.log('[SUBSCRIPTION] ✅ Expo Go: Simulated discount purchase successful');
+          setCurrentPurchaseAttempt(null);
+          router.replace('/(tabs)/generate');
+        } catch (error) {
+          console.error('Expo Go discount simulation error:', error);
+          setCurrentPurchaseAttempt(null);
+          Alert.alert('Error', 'Failed to simulate subscription.');
+        }
       } else {
         Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
       }
@@ -669,6 +738,7 @@ export default function SubscriptionScreen() {
             </Text>
           </LinearGradient>
         </TouchableOpacity>
+        <Text style={styles.cancelAnytimeText}>Cancel Anytime. No Commitment.</Text>
       </View>
 
       {/* Discount Modal */}
@@ -750,10 +820,10 @@ export default function SubscriptionScreen() {
       )}
 
       {/* Debug Panel */}
-      {/* {showDebug && (
+      {showDebug && (
         <View style={styles.debugPanel}>
           <View style={styles.debugHeader}>
-            <Text style={styles.debugTitle}>🔧 IAP Debug Monitor</Text>
+            <Text style={styles.debugTitle}>🔧 IAP Product Debug</Text>
             <TouchableOpacity onPress={() => setShowDebug(false)} style={styles.debugCloseButton}>
               <Text style={styles.debugCloseText}>✕</Text>
             </TouchableOpacity>
@@ -761,86 +831,90 @@ export default function SubscriptionScreen() {
 
           <ScrollView style={styles.debugContent} showsVerticalScrollIndicator={true}>
             <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Current Status</Text>
-              <View style={styles.debugRow}>
-                <View style={[styles.statusIndicator, currentPurchaseAttempt ? styles.statusActive : styles.statusInactive]} />
-                <Text style={styles.debugText}>{debugInfo.listenerStatus || 'Idle'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Connection</Text>
+              <Text style={styles.debugSectionTitle}>Product Fetch Status</Text>
               <Text style={styles.debugText}>
                 IAP Available: {isIAPAvailable ? '✅' : '❌'}
               </Text>
               <Text style={styles.debugText}>
-                Connected: {debugInfo.connectionStatus?.isConnected ? '✅' : '❌'}
-              </Text>
-              <Text style={styles.debugText}>
-                Listener Active: {debugInfo.connectionStatus?.hasListener ? '✅' : '❌'}
-              </Text>
-              <Text style={styles.debugText}>
                 IAP Ready: {iapReady ? '✅' : '❌'}
               </Text>
-            </View>
-
-            <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Purchase State</Text>
               <Text style={styles.debugText}>
-                Current Attempt: {currentPurchaseAttempt || 'None'}
+                Fetch Attempted: {productFetchStatus.attempted ? '✅' : '❌'}
               </Text>
               <Text style={styles.debugText}>
-                Selected Plan: {selectedPlan}
+                Fetch Success: {productFetchStatus.success ? '✅' : '❌'}
               </Text>
-              <Text style={styles.debugText}>
-                Products Loaded: {products.length}
-              </Text>
-            </View>
-
-            {debugInfo.lastPurchaseResult && (
-              <View style={styles.debugSection}>
-                <Text style={styles.debugSectionTitle}>Last Purchase Result</Text>
-                <Text style={[styles.debugText, styles.debugCode]}>
-                  {JSON.stringify(debugInfo.lastPurchaseResult, null, 2)}
+              {productFetchStatus.error && (
+                <Text style={[styles.debugText, { color: '#ef4444' }]}>
+                  Error: {productFetchStatus.error}
                 </Text>
-              </View>
-            )}
+              )}
+            </View>
 
             <View style={styles.debugSection}>
-              <Text style={styles.debugTextSmall}>
-                Last Update: {new Date(debugInfo.timestamp).toLocaleTimeString()}
-              </Text>
+              <Text style={styles.debugSectionTitle}>Expected Product IDs</Text>
+              {Object.entries(PRODUCT_IDS).map(([key, value]) => (
+                <Text key={key} style={styles.debugText}>
+                  {key}: {value}
+                </Text>
+              ))}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Found Products ({productFetchStatus.foundProducts.length})</Text>
+              {productFetchStatus.foundProducts.length > 0 ? (
+                productFetchStatus.foundProducts.map(id => (
+                  <Text key={id} style={[styles.debugText, { color: '#22c55e' }]}>✅ {id}</Text>
+                ))
+              ) : (
+                <Text style={styles.debugText}>None found</Text>
+              )}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Missing Products ({productFetchStatus.missingProducts.length})</Text>
+              {productFetchStatus.missingProducts.length > 0 ? (
+                productFetchStatus.missingProducts.map(id => (
+                  <Text key={id} style={[styles.debugText, { color: '#ef4444' }]}>❌ {id}</Text>
+                ))
+              ) : (
+                <Text style={[styles.debugText, { color: '#22c55e' }]}>All products found!</Text>
+              )}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Debug Log</Text>
+              {productDebugLogs.length > 0 ? (
+                productDebugLogs.map((log, i) => (
+                  <Text key={i} style={[styles.debugText, styles.debugCode]}>{log}</Text>
+                ))
+              ) : (
+                <Text style={styles.debugText}>No logs yet</Text>
+              )}
             </View>
 
             <TouchableOpacity
               style={styles.debugButton}
-              onPress={() => {
-                const status = IAPService.getConnectionStatus();
-                const lastResult = IAPService.getLastPurchaseResult();
-                setDebugInfo((prev: any) => ({
-                  ...prev,
-                  connectionStatus: status,
-                  lastPurchaseResult: lastResult,
-                  timestamp: new Date().toISOString(),
-                  manualCheck: true
-                }));
+              onPress={async () => {
+                addDebugLog('Manual refresh triggered');
+                await fetchProducts(false);
               }}
             >
-              <Text style={styles.debugButtonText}>🔄 Refresh Debug Info</Text>
+              <Text style={styles.debugButtonText}>🔄 Retry Fetch Products</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
-      )} */}
+      )}
 
       {/* Show Debug Button when panel is hidden */}
-      {/* {!showDebug && (
+      {!showDebug && (
         <TouchableOpacity
           style={styles.showDebugButton}
           onPress={() => setShowDebug(true)}
         >
           <Text style={styles.showDebugText}>🔧</Text>
         </TouchableOpacity>
-      )} */}
+      )}
     </LinearGradient>
   );
 }
@@ -1027,6 +1101,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
     letterSpacing: 0.5,
+  },
+  cancelAnytimeText: {
+    fontSize: 12,
+    color: MUTED,
+    textAlign: 'center',
+    marginTop: 12,
   },
   // Debug Panel Styles
   debugPanel: {

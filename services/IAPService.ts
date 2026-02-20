@@ -381,11 +381,20 @@ class IAPService {
       const productIds = Platform.OS === 'ios' ? IOS_PRODUCT_IDS : ANDROID_PRODUCT_IDS;
       console.log('[IAP-SERVICE] Fetching products for', Platform.OS, ':', productIds);
 
-        // Get subscriptions (most IAP products are subscriptions)
-        const products = await RNIap.getSubscriptions(productIds);
-        console.log('[IAP-SERVICE] Products loaded:', products.length);
+      // Get subscriptions using the v14+ API format
+      // In react-native-iap v12+, we need to pass skus as an object
+      const products = await RNIap.getSubscriptions({ skus: productIds });
+      console.log('[IAP-SERVICE] Products loaded:', products.length);
+      
+      if (products.length === 0) {
+        console.log('[IAP-SERVICE] No products returned - this may indicate:');
+        console.log('[IAP-SERVICE]   1. Products not configured correctly in App Store Connect');
+        console.log('[IAP-SERVICE]   2. Agreements/tax info not complete in App Store Connect');
+        console.log('[IAP-SERVICE]   3. App bundle ID mismatch');
+        console.log('[IAP-SERVICE]   4. Sandbox testing not properly configured');
+      }
 
-        return products;
+      return products;
     } catch (err) {
       console.error('[IAP-SERVICE] Error fetching products:', err);
       return [];
@@ -431,12 +440,8 @@ class IAPService {
       console.log('[IAP-SERVICE] Connection status:', this.isConnected);
       console.log('[IAP-SERVICE] ⚠️ CRITICAL: About to call RNIap.requestSubscription - IAP modal should appear now');
 
-      // Pass productId as a string for iOS, as required by react-native-iap
-      if (Platform.OS === 'android') {
-        await RNIap.requestSubscription({ sku: productId });
-      } else {
-        await RNIap.requestSubscription(productId);
-      }
+      // Use the v14+ API format - pass sku in an object for both platforms
+      await RNIap.requestSubscription({ sku: productId });
 
       console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: requestSubscription() called successfully - IAP modal should now be visible to user');
 
