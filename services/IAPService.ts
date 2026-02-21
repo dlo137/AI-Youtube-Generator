@@ -27,10 +27,21 @@ let RNIap: any = null;
 // StorekitMode enum for setup() - extracted from module
 let StorekitMode: any = null;
 
+// Diagnostic info for debugging
+let iapDiagnostics = {
+  requireSucceeded: false,
+  requireError: null as string | null,
+  moduleExports: [] as string[],
+  hasInitConnection: false,
+  hasGetSubscriptions: false,
+  nativeModulesFound: [] as string[],
+};
+
 // Import react-native-iap with explicit named exports for production reliability
 try {
   // Direct static import check - this ensures Metro includes the module
   const iapModule = require('react-native-iap');
+  iapDiagnostics.requireSucceeded = true;
   
   // Extract StorekitMode enum if available and log its contents for debugging
   StorekitMode = iapModule.StorekitMode;
@@ -40,47 +51,78 @@ try {
     console.log('[IAP-SERVICE] StorekitMode enum not found in module');
   }
   
-  // Check if native module is actually present (not just JS layer)
-  const nativeIap = NativeModules.RNIapIos || NativeModules.RNIapModule || NativeModules.RNIap;
+  // Log all available exports from the module
+  const moduleKeys = Object.keys(iapModule);
+  iapDiagnostics.moduleExports = moduleKeys.slice(0, 30);
+  console.log('[IAP-SERVICE] iapModule exports:', moduleKeys.slice(0, 20).join(', '));
   
-  if (nativeIap) {
-    console.log('[IAP-SERVICE] ✅ Native IAP module found');
-    console.log('[IAP-SERVICE] Native module keys:', Object.keys(nativeIap).slice(0, 10).join(', '));
+  // Try to find initConnection - it could be a named export, default export property, or direct property
+  let initConnectionFn = iapModule.initConnection;
+  let getSubscriptionsFn = iapModule.getSubscriptions;
+  
+  // Fallback: check default export if direct exports not found
+  if (!initConnectionFn && iapModule.default) {
+    console.log('[IAP-SERVICE] Checking default export...');
+    initConnectionFn = iapModule.default.initConnection;
+    getSubscriptionsFn = iapModule.default.getSubscriptions;
+  }
+  
+  const hasInitConnection = typeof initConnectionFn === 'function';
+  const hasGetSubscriptions = typeof getSubscriptionsFn === 'function';
+  iapDiagnostics.hasInitConnection = hasInitConnection;
+  iapDiagnostics.hasGetSubscriptions = hasGetSubscriptions;
+  
+  console.log('[IAP-SERVICE] initConnection available:', hasInitConnection);
+  console.log('[IAP-SERVICE] getSubscriptions available:', hasGetSubscriptions);
+  
+  // Also check NativeModules for debugging (but don't gate on it)
+  const nativeModuleNames = Object.keys(NativeModules).filter(k => 
+    k.toLowerCase().includes('iap') || k.toLowerCase().includes('rniap')
+  );
+  iapDiagnostics.nativeModulesFound = nativeModuleNames;
+  console.log('[IAP-SERVICE] Related NativeModules:', nativeModuleNames.join(', ') || 'none found');
+  
+  // Use whichever source has the functions (direct or default export)
+  const sourceModule = initConnectionFn ? 
+    (iapModule.initConnection ? iapModule : iapModule.default) : 
+    null;
+  
+  if (hasInitConnection && hasGetSubscriptions && sourceModule) {
+    console.log('[IAP-SERVICE] ✅ IAP functions found - module is available');
     
     // Extract functions from the module (v14+ uses named exports)
     iapFunctions = {
-      initConnection: iapModule.initConnection,
-      endConnection: iapModule.endConnection,
-      getSubscriptions: iapModule.getSubscriptions,
-      getProducts: iapModule.getProducts,
-      requestSubscription: iapModule.requestSubscription,
-      requestPurchase: iapModule.requestPurchase,
-      finishTransaction: iapModule.finishTransaction,
-      purchaseUpdatedListener: iapModule.purchaseUpdatedListener,
-      purchaseErrorListener: iapModule.purchaseErrorListener,
-      getPendingPurchasesIOS: iapModule.getPendingPurchasesIOS,
-      getAvailablePurchases: iapModule.getAvailablePurchases,
-      setup: iapModule.setup,
-      isIosStorekit2: iapModule.isIosStorekit2,
-      flushFailedPurchasesCachedAsPendingAndroid: iapModule.flushFailedPurchasesCachedAsPendingAndroid,
+      initConnection: sourceModule.initConnection,
+      endConnection: sourceModule.endConnection,
+      getSubscriptions: sourceModule.getSubscriptions,
+      getProducts: sourceModule.getProducts,
+      requestSubscription: sourceModule.requestSubscription,
+      requestPurchase: sourceModule.requestPurchase,
+      finishTransaction: sourceModule.finishTransaction,
+      purchaseUpdatedListener: sourceModule.purchaseUpdatedListener,
+      purchaseErrorListener: sourceModule.purchaseErrorListener,
+      getPendingPurchasesIOS: sourceModule.getPendingPurchasesIOS,
+      getAvailablePurchases: sourceModule.getAvailablePurchases,
+      setup: sourceModule.setup,
+      isIosStorekit2: sourceModule.isIosStorekit2,
+      flushFailedPurchasesCachedAsPendingAndroid: sourceModule.flushFailedPurchasesCachedAsPendingAndroid,
     };
     
     // Create wrapper for compatibility with existing code
     RNIap = iapFunctions;
     iapAvailable = true;
     
-    console.log('[IAP-SERVICE] IAP functions loaded:');
-    console.log('[IAP-SERVICE]   initConnection:', typeof iapFunctions.initConnection);
-    console.log('[IAP-SERVICE]   getSubscriptions:', typeof iapFunctions.getSubscriptions);
-    console.log('[IAP-SERVICE]   requestSubscription:', typeof iapFunctions.requestSubscription);
+    console.log('[IAP-SERVICE] IAP functions loaded successfully');
   } else {
-    console.log('[IAP-SERVICE] ⚠️ JS module loaded but native module NOT found');
-    console.log('[IAP-SERVICE] Available NativeModules with "iap":', 
-      Object.keys(NativeModules).filter(k => k.toLowerCase().includes('iap')).join(', ') || 'none');
-    console.log('[IAP-SERVICE] This app may not have been built with react-native-iap native code');
+    console.log('[IAP-SERVICE] ⚠️ IAP module loaded but critical functions missing');
+    console.log('[IAP-SERVICE] This may indicate the native module is not properly linked');
+    console.log('[IAP-SERVICE] Module type:', typeof iapModule);
+    console.log('[IAP-SERVICE] Has default:', !!iapModule.default);
+    console.log('[IAP-SERVICE] Try rebuilding with: eas build --clear-cache');
   }
 } catch (error: any) {
   // Silently ignore the error - this is expected in Expo Go
+  iapDiagnostics.requireError = error?.message || 'Unknown error';
   console.log('[IAP-SERVICE] Running in Expo Go or IAP module not available');
   console.log('[IAP-SERVICE] Error:', error?.message);
 }
@@ -129,6 +171,13 @@ class IAPService {
     // Only return true if native module is actually present and RNIap wrapper is set
     // RNIap === iapFunctions, but checking both guards against accidental reassignment
     return iapAvailable && iapFunctions !== null && RNIap !== null;
+  }
+
+  getDiagnostics(): typeof iapDiagnostics & { iapAvailable: boolean } {
+    return {
+      ...iapDiagnostics,
+      iapAvailable,
+    };
   }
 
   async initialize(): Promise<boolean> {

@@ -211,12 +211,30 @@ export default function SubscriptionScreen() {
     addDebugLog(`Platform: ${Platform.OS}`);
     addDebugLog(`Expected IDs: ${expectedProductIds.join(', ')}`);
     
-    if (!isIAPAvailable) {
-      addDebugLog('❌ IAP module not available (Expo Go?)');
+    // Use IAPService.isAvailable() directly instead of state (state may be stale)
+    const iapCurrentlyAvailable = IAPService.isAvailable();
+    
+    if (!iapCurrentlyAvailable) {
+      // Get diagnostic info to help debug
+      const diagnostics = IAPService.getDiagnostics();
+      addDebugLog('❌ IAP module not available');
+      addDebugLog(`  require succeeded: ${diagnostics.requireSucceeded}`);
+      addDebugLog(`  require error: ${diagnostics.requireError || 'none'}`);
+      addDebugLog(`  hasInitConnection: ${diagnostics.hasInitConnection}`);
+      addDebugLog(`  hasGetSubscriptions: ${diagnostics.hasGetSubscriptions}`);
+      addDebugLog(`  exports: ${diagnostics.moduleExports.slice(0, 10).join(', ')}`);
+      addDebugLog(`  native modules: ${diagnostics.nativeModulesFound.join(', ') || 'none'}`);
+      
+      const errorDetail = diagnostics.requireError 
+        ? `Error: ${diagnostics.requireError}`
+        : diagnostics.requireSucceeded 
+          ? `Module loaded but functions missing (initConnection: ${diagnostics.hasInitConnection}, getSubscriptions: ${diagnostics.hasGetSubscriptions})`
+          : 'Module failed to load';
+      
       setProductFetchStatus({
         attempted: true,
         success: false,
-        error: 'IAP module not available - running in Expo Go or react-native-iap not linked',
+        error: `IAP module not available - ${errorDetail}`,
         productIds: expectedProductIds,
         foundProducts: [],
         missingProducts: expectedProductIds

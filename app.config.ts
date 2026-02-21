@@ -8,8 +8,8 @@ export default {
     userInterfaceStyle: "light",
     scheme: "thumbnailgen",
     plugins: [
-      "./plugins/withIapFlavor",
       "react-native-iap",
+      "./plugins/withIapFlavor",
       "expo-router"
     ],
     updates: {
