@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Image, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -30,8 +30,16 @@ export default function SubscriptionScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [iapReady, setIapReady] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
-  // ...existing code...
-  // Restore ref
+  const [showDebug, setShowDebug] = useState(false);
+  const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
+  const [productFetchStatus, setProductFetchStatus] = useState({
+    attempted: false,
+    success: false,
+    error: '',
+    foundProducts: [] as string[],
+    missingProducts: [] as string[],
+  });
+  const [isIAPAvailable, setIsIAPAvailable] = useState(false);
   const isRestoringRef = useRef(false);
 
   // Fade in on mount
@@ -529,7 +537,108 @@ export default function SubscriptionScreen() {
         </Animated.View>
       )}
 
-      {/* ...existing code... */}
+      {/* Debug Panel */}
+      {showDebug && (
+        <View style={styles.debugPanel}>
+          <View style={styles.debugHeader}>
+            <Text style={styles.debugTitle}>🔧 IAP Product Debug</Text>
+            <TouchableOpacity onPress={() => setShowDebug(false)} style={styles.debugCloseButton}>
+              <Text style={styles.debugCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.debugContent} showsVerticalScrollIndicator={true}>
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Product Fetch Status</Text>
+              <Text style={styles.debugText}>IAP Available: {isIAPAvailable ? '✅' : '❌'}</Text>
+              <Text style={styles.debugText}>IAP Ready: {iapReady ? '✅' : '❌'}</Text>
+              <Text style={styles.debugText}>Fetch Attempted: {productFetchStatus.attempted ? '✅' : '❌'}</Text>
+              <Text style={styles.debugText}>Fetch Success: {productFetchStatus.success ? '✅' : '❌'}</Text>
+              {productFetchStatus.error ? (
+                <Text style={[styles.debugText, { color: '#ef4444' }]}>Error: {productFetchStatus.error}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Expected Product IDs</Text>
+              {Object.entries(PRODUCT_IDS).map(([key, value]) => (
+                <Text key={key} style={styles.debugText}>{key}: {value}</Text>
+              ))}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Found Products ({productFetchStatus.foundProducts.length})</Text>
+              {productFetchStatus.foundProducts.length > 0 ? (
+                productFetchStatus.foundProducts.map(id => (
+                  <Text key={id} style={[styles.debugText, { color: '#22c55e' }]}>✅ {id}</Text>
+                ))
+              ) : (
+                <Text style={styles.debugText}>None found</Text>
+              )}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Missing Products ({productFetchStatus.missingProducts.length})</Text>
+              {productFetchStatus.missingProducts.length > 0 ? (
+                productFetchStatus.missingProducts.map(id => (
+                  <Text key={id} style={[styles.debugText, { color: '#ef4444' }]}>❌ {id}</Text>
+                ))
+              ) : (
+                <Text style={[styles.debugText, { color: '#22c55e' }]}>All products found!</Text>
+              )}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Debug Log</Text>
+              {productDebugLogs.length > 0 ? (
+                productDebugLogs.map((log, i) => (
+                  <Text key={i} style={[styles.debugText, styles.debugCode]}>{log}</Text>
+                ))
+              ) : (
+                <Text style={styles.debugText}>No logs yet</Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.debugButton}
+              onPress={async () => {
+                setProductDebugLogs(logs => [...logs, `[${new Date().toLocaleTimeString()}] Manual refresh triggered`]);
+                setLoadingProducts(true);
+                setProductFetchStatus(prev => ({ ...prev, attempted: true, error: '', foundProducts: [], missingProducts: [] }));
+                try {
+                  const results = await IAPService.getProducts();
+                  setProducts(results);
+                  setIapReady(true);
+                  setIsIAPAvailable(IAPService.isAvailable());
+                  const found = results.map(p => p.id);
+                  const expected = Object.values(PRODUCT_IDS);
+                  setProductFetchStatus({
+                    attempted: true,
+                    success: true,
+                    error: '',
+                    foundProducts: found,
+                    missingProducts: expected.filter(id => !found.includes(id)),
+                  });
+                } catch (err: any) {
+                  setProducts([]);
+                  setIapReady(false);
+                  setIsIAPAvailable(false);
+                  setProductFetchStatus(prev => ({ ...prev, success: false, error: String(err), foundProducts: [], missingProducts: Object.values(PRODUCT_IDS) }));
+                } finally {
+                  setLoadingProducts(false);
+                }
+              }}
+            >
+              <Text style={styles.debugButtonText}>🔄 Retry Fetch Products</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {!showDebug && (
+        <TouchableOpacity style={styles.showDebugButton} onPress={() => setShowDebug(true)}>
+          <Text style={styles.showDebugText}>🔧</Text>
+        </TouchableOpacity>
+      )}
     </LinearGradient>
   );
 }
