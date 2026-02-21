@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // react-native-iap v14 (Nitro) API reference:
@@ -26,16 +27,26 @@ import { supabase } from '../lib/supabase';
 let iapAvailable = false;
 let iapModule: any = null;
 
-try {
-  iapModule = require('react-native-iap');
-  if (typeof iapModule.initConnection === 'function') {
-    iapAvailable = true;
-    console.log('[IAP] ✅ Module loaded, initConnection present');
-  } else {
-    console.log('[IAP] ❌ initConnection missing — module may not be linked');
+// react-native-iap v14 uses Nitro Modules, which throw a fatal native error
+// when imported in Expo Go ("NitroModules are not supported in Expo Go").
+// Gate the import behind an Expo Go check so the error never surfaces —
+// the subscription screen will use the simulated purchase flow instead.
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+if (!isExpoGo) {
+  try {
+    iapModule = require('react-native-iap');
+    if (typeof iapModule.initConnection === 'function') {
+      iapAvailable = true;
+      console.log('[IAP] ✅ Module loaded, initConnection present');
+    } else {
+      console.log('[IAP] ❌ initConnection missing — module may not be linked');
+    }
+  } catch (e: any) {
+    console.log('[IAP] require failed:', e?.message);
   }
-} catch (e: any) {
-  console.log('[IAP] require failed:', e?.message);
+} else {
+  console.log('[IAP] Expo Go detected — skipping Nitro IAP import, simulation mode active');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -47,27 +47,51 @@ export default function SubscriptionScreen() {
   // Restore ref
   const isRestoringRef = useRef(false);
 
+  // Fade in on mount
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
   // Fetch products on mount
   useEffect(() => {
-    const fetchProducts = async (updateDebug = true) => {
+    const fetchProducts = async () => {
+      // In Expo Go, IAP native module is unavailable. Enable the buttons in DEV
+      // so the simulated purchase flow can be tested without a real build.
+      if (!IAPService.isAvailable()) {
+        if (__DEV__) {
+          setIapReady(true);
+          setIsIAPAvailable(false);
+          setProductFetchStatus({
+            attempted: true,
+            success: true,
+            error: '',
+            foundProducts: [],
+            missingProducts: Object.values(PRODUCT_IDS),
+          });
+        }
+        return;
+      }
+
       setLoadingProducts(true);
       setProductFetchStatus(prev => ({ ...prev, attempted: true, error: '', foundProducts: [], missingProducts: [] }));
       try {
         const results = await IAPService.getProducts();
         setProducts(results);
         setIapReady(true);
-        setIsIAPAvailable(IAPService.isAvailable());
-        if (updateDebug) {
-          const found = results.map(p => p.productId);
-          const expected = Object.values(PRODUCT_IDS);
-          setProductFetchStatus({
-            attempted: true,
-            success: true,
-            error: '',
-            foundProducts: found,
-            missingProducts: expected.filter(id => !found.includes(id)),
-          });
-        }
+        setIsIAPAvailable(true);
+        const found = results.map(p => p.productId);
+        const expected = Object.values(PRODUCT_IDS);
+        setProductFetchStatus({
+          attempted: true,
+          success: true,
+          error: '',
+          foundProducts: found,
+          missingProducts: expected.filter(id => !found.includes(id)),
+        });
       } catch (err: any) {
         setProducts([]);
         setIapReady(false);
@@ -78,11 +102,60 @@ export default function SubscriptionScreen() {
       }
     };
     fetchProducts();
-    // Debug log helper
-    const addDebugLog = (msg: string) => setProductDebugLogs(logs => [...logs, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   }, []);
 
+  // ── Expo Go simulation ──────────────────────────────────────────────────────
+  // In a real build (EAS / bare workflow) this is never called — IAPService.isAvailable()
+  // returns true and the normal purchase flow runs instead.
+  const simulatePurchase = async (plan: 'yearly' | 'monthly' | 'weekly' | 'discountedWeekly') => {
+    const planKey = plan === 'discountedWeekly' ? 'discounted_weekly' : plan;
+    const credits_max = plan === 'yearly' ? 90 : plan === 'monthly' ? 75 : 10;
+
+    setCurrentPurchaseAttempt(plan === 'discountedWeekly' ? 'weekly' : plan);
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error('User not authenticated');
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          subscription_plan: planKey,
+          is_pro_version: true,
+          subscription_id: `dev_${planKey}_${Date.now()}`,
+          purchase_time: new Date().toISOString(),
+          credits_current: credits_max,
+          credits_max,
+          last_credit_reset: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      trackEvent('subscription_completed', { plan: planKey, platform: Platform.OS, test_mode: true });
+      console.log(`[SUBSCRIPTION] ✅ Expo Go: Simulated ${planKey} purchase`);
+      setCurrentPurchaseAttempt(null);
+      router.replace('/(tabs)/generate');
+    } catch (error) {
+      console.error('[SUBSCRIPTION] Simulation error:', error);
+      setCurrentPurchaseAttempt(null);
+      Alert.alert('Simulation Error', 'Could not simulate subscription. Are you logged in?');
+    }
+  };
+
   const handleContinue = async () => {
+    // Expo Go: the IAP JS module loads (so isAvailable() = true) but the Nitro
+    // native layer is absent, so initConnection() throws and products stays empty.
+    // Detect this by checking products, not isAvailable().
+    if (__DEV__ && products.length === 0) {
+      await simulatePurchase(selectedPlan);
+      return;
+    }
+
+    if (!IAPService.isAvailable()) {
+      Alert.alert('Purchases Unavailable', 'In-app purchases are not supported on this device.');
+      return;
+    }
+
     const planId = PRODUCT_IDS[selectedPlan];
     const product = products.find(p => p.productId === planId);
     if (!product) {
@@ -90,7 +163,15 @@ export default function SubscriptionScreen() {
       return;
     }
     setCurrentPurchaseAttempt(selectedPlan);
-    await IAPService.purchaseProduct(product.productId);
+    try {
+      await IAPService.purchaseProduct(product.productId);
+    } catch (error: any) {
+      setCurrentPurchaseAttempt(null);
+      const msg = String(error?.message || error);
+      if (!msg.includes('cancel') && !msg.includes('Cancel')) {
+        Alert.alert('Purchase Failed', msg || 'Unable to complete purchase. Please try again.');
+      }
+    }
   };
 
   const handleRestore = async () => {
@@ -194,56 +275,13 @@ export default function SubscriptionScreen() {
   };
 
   const handleDiscountPurchase = async () => {
-    // Use direct service check to avoid stale state
+    if (__DEV__ && products.length === 0) {
+      await simulatePurchase('discountedWeekly');
+      return;
+    }
+
     if (!IAPService.isAvailable()) {
-      // For development/testing: Automatically simulate purchase in Expo Go
-      if (__DEV__) {
-        try {
-          setCurrentPurchaseAttempt('weekly');
-          
-          // Get current user
-          const { data: { user }, error: userError } = await supabase.auth.getUser();
-          if (userError || !user) {
-            throw new Error('User not authenticated');
-          }
-
-          // Discounted weekly plan gets 10 credits
-          const credits_max = 10;
-
-          // Update subscription in Supabase with is_pro_version = true
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({
-              subscription_plan: 'discounted_weekly',
-              is_pro_version: true,
-              subscription_id: `dev_discounted_weekly_${Date.now()}`,
-              purchase_time: new Date().toISOString(),
-              credits_current: credits_max,
-              credits_max: credits_max,
-              last_credit_reset: new Date().toISOString()
-            })
-            .eq('id', user.id);
-
-          if (updateError) throw updateError;
-
-          // Track test subscription
-          trackEvent('subscription_completed', {
-            plan: 'discounted_weekly',
-            platform: Platform.OS,
-            test_mode: true,
-          });
-
-          console.log('[SUBSCRIPTION] ✅ Expo Go: Simulated discount purchase successful');
-          setCurrentPurchaseAttempt(null);
-          router.replace('/(tabs)/generate');
-        } catch (error) {
-          console.error('Expo Go discount simulation error:', error);
-          setCurrentPurchaseAttempt(null);
-          Alert.alert('Error', 'Failed to simulate subscription.');
-        }
-      } else {
-        Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
-      }
+      Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
       return;
     }
 
