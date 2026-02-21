@@ -4,11 +4,28 @@ import { supabase } from '../lib/supabase';
 
 // Conditionally import react-native-iap to avoid crashes in Expo Go
 let RNIap: any = null;
+let RNIapModule: any = null;
 
 // Suppress the error completely by wrapping in try-catch
 try {
   // Try to load the module - will fail silently in Expo Go
-  RNIap = require('react-native-iap');
+  RNIapModule = require('react-native-iap');
+  
+  // Handle different module formats (ESM vs CommonJS)
+  // react-native-iap v14+ may export differently
+  if (RNIapModule && typeof RNIapModule === 'object') {
+    // Check if it's a default export wrapped module
+    if (RNIapModule.default) {
+      console.log('[IAP-SERVICE] Using RNIapModule.default');
+      RNIap = RNIapModule.default;
+    } else {
+      console.log('[IAP-SERVICE] Using RNIapModule directly');
+      RNIap = RNIapModule;
+    }
+    
+    // Log what we got
+    console.log('[IAP-SERVICE] RNIap keys:', Object.keys(RNIap || {}).slice(0, 20).join(', '));
+  }
 } catch (error) {
   // Silently ignore the error - this is expected in Expo Go
   console.log('[IAP-SERVICE] Running in Expo Go - IAP features disabled');
@@ -387,151 +404,207 @@ class IAPService {
     }
   }
 
+  // Debug logs that can be retrieved by UI
+  private productFetchLogs: string[] = [];
+
+  private addProductLog(message: string) {
+    const timestamp = new Date().toLocaleTimeString();
+    this.productFetchLogs.push(`[${timestamp}] ${message}`);
+    console.log('[IAP-SERVICE]', message);
+  }
+
+  getProductFetchLogs(): string[] {
+    return [...this.productFetchLogs];
+  }
+
+  clearProductFetchLogs() {
+    this.productFetchLogs = [];
+  }
+
   async getProducts(): Promise<any[]> {
+    // Clear previous logs
+    this.productFetchLogs = [];
+    
     if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] IAP not available');
+      this.addProductLog('❌ IAP not available');
       return [];
     }
 
     if (!this.isConnected) {
-      console.log('[IAP-SERVICE] Not connected, initializing first...');
+      this.addProductLog('Not connected, initializing first...');
       const initResult = await this.initialize();
-      console.log('[IAP-SERVICE] Initialize result:', initResult);
+      this.addProductLog(`Initialize result: ${initResult}`);
     }
 
     try {
       const productIds = Platform.OS === 'ios' ? IOS_PRODUCT_IDS : ANDROID_PRODUCT_IDS;
-      console.log('[IAP-SERVICE] ========== PRODUCT FETCH DEBUG ==========');
-      console.log('[IAP-SERVICE] Platform:', Platform.OS);
-      console.log('[IAP-SERVICE] isConnected:', this.isConnected);
-      console.log('[IAP-SERVICE] Product IDs to fetch:', JSON.stringify(productIds));
-      console.log('[IAP-SERVICE] RNIap module loaded:', !!RNIap);
-      console.log('[IAP-SERVICE] RNIap version check - available methods:');
+      this.addProductLog('========== PRODUCT FETCH DEBUG ==========');
+      this.addProductLog(`Platform: ${Platform.OS}`);
+      this.addProductLog(`isConnected: ${this.isConnected}`);
+      this.addProductLog(`Product IDs: ${productIds.join(', ')}`);
+      this.addProductLog(`RNIap loaded: ${!!RNIap}`);
 
       // Log ALL available RNIap methods for debugging
       if (RNIap) {
         const allKeys = Object.keys(RNIap);
-        console.log('[IAP-SERVICE] All RNIap exports:', allKeys.join(', '));
-        console.log('[IAP-SERVICE] getSubscriptions type:', typeof RNIap.getSubscriptions);
-        console.log('[IAP-SERVICE] getProducts type:', typeof RNIap.getProducts);
-        console.log('[IAP-SERVICE] requestSubscription type:', typeof RNIap.requestSubscription);
+        this.addProductLog(`RNIap has ${allKeys.length} exports`);
+        // Log each export and its type
+        allKeys.forEach(key => {
+          const type = typeof RNIap[key];
+          if (type === 'function') {
+            this.addProductLog(`  ✅ ${key}: function`);
+          }
+        });
+        
+        // Also check module-level exports
+        if (RNIapModule && RNIapModule !== RNIap) {
+          this.addProductLog('RNIapModule exports:');
+          Object.keys(RNIapModule).forEach(key => {
+            this.addProductLog(`  ${key}: ${typeof RNIapModule[key]}`);
+          });
+        }
+      } else {
+        this.addProductLog('❌ RNIap is null/undefined!');
       }
 
-      // Guard: ensure connection before fetching. Add a short delay so StoreKit
-      // has time to fully settle after initConnection() returns.
+      // Guard: ensure connection before fetching
       if (!this.isConnected) {
-        console.warn('[IAP-SERVICE] getProducts called before connection — re-initializing');
+        this.addProductLog('⚠️ Re-initializing connection...');
         await this.initialize();
       }
       
       // Longer delay to ensure StoreKit is fully ready
-      console.log('[IAP-SERVICE] Waiting 1s for StoreKit to settle...');
+      this.addProductLog('Waiting 1s for StoreKit...');
       await new Promise(resolve => setTimeout(resolve, 1000));
 
+      // Determine which API to use based on what's available
+      const getSubsFn = RNIap.getSubscriptions || RNIap.default?.getSubscriptions;
+      const getProdFn = RNIap.getProducts || RNIap.default?.getProducts;
+      
+      this.addProductLog(`Using getSubscriptions: ${typeof getSubsFn}`);
+      this.addProductLog(`Using getProducts: ${typeof getProdFn}`);
+
       // ============ ATTEMPT 1: Standard getSubscriptions with object format ============
-      console.log('[IAP-SERVICE] ATTEMPT 1: RNIap.getSubscriptions({ skus: [...] })');
-      let products: any[] = [];
-      try {
-        const startTime = Date.now();
-        products = await RNIap.getSubscriptions({ skus: productIds });
-        const elapsed = Date.now() - startTime;
-        console.log('[IAP-SERVICE] Attempt 1 completed in', elapsed, 'ms, found:', products?.length ?? 0);
-        if (products?.length > 0) {
-          console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 1');
-          console.log('[IAP-SERVICE] Products:', JSON.stringify(products, null, 2));
-          return products;
-        }
-      } catch (err: any) {
-        console.log('[IAP-SERVICE] Attempt 1 failed:', err?.message || err);
-      }
-
-      // ============ ATTEMPT 2: getSubscriptions with array directly (older API) ============
-      console.log('[IAP-SERVICE] ATTEMPT 2: RNIap.getSubscriptions([...]) - array format');
-      try {
-        const startTime = Date.now();
-        products = await RNIap.getSubscriptions(productIds);
-        const elapsed = Date.now() - startTime;
-        console.log('[IAP-SERVICE] Attempt 2 completed in', elapsed, 'ms, found:', products?.length ?? 0);
-        if (products?.length > 0) {
-          console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 2');
-          return products;
-        }
-      } catch (err: any) {
-        console.log('[IAP-SERVICE] Attempt 2 failed:', err?.message || err);
-      }
-
-      // ============ ATTEMPT 3: getProducts (for non-subscription IAPs) ============
-      console.log('[IAP-SERVICE] ATTEMPT 3: RNIap.getProducts({ skus: [...] })');
-      try {
-        const startTime = Date.now();
-        products = await RNIap.getProducts({ skus: productIds });
-        const elapsed = Date.now() - startTime;
-        console.log('[IAP-SERVICE] Attempt 3 completed in', elapsed, 'ms, found:', products?.length ?? 0);
-        if (products?.length > 0) {
-          console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 3 (getProducts)');
-          return products;
-        }
-      } catch (err: any) {
-        console.log('[IAP-SERVICE] Attempt 3 failed:', err?.message || err);
-      }
-
-      // ============ ATTEMPT 4: Fetch each product individually ============
-      console.log('[IAP-SERVICE] ATTEMPT 4: Fetching products one by one...');
-      const foundProducts: any[] = [];
-      for (const sku of productIds) {
+      if (typeof getSubsFn === 'function') {
+        this.addProductLog('ATTEMPT 1: getSubscriptions({ skus })');
+        let products: any[] = [];
         try {
-          console.log('[IAP-SERVICE] Trying single SKU:', sku);
-          const singleResult = await RNIap.getSubscriptions({ skus: [sku] });
-          if (singleResult?.length > 0) {
-            console.log('[IAP-SERVICE] ✅ Found:', sku);
-            foundProducts.push(...singleResult);
-          } else {
-            console.log('[IAP-SERVICE] ❌ Not found:', sku);
+          const startTime = Date.now();
+          products = await getSubsFn({ skus: productIds });
+          const elapsed = Date.now() - startTime;
+          this.addProductLog(`Attempt 1: ${products?.length ?? 0} products in ${elapsed}ms`);
+          if (products?.length > 0) {
+            this.addProductLog('✅ SUCCESS with attempt 1');
+            return products;
           }
         } catch (err: any) {
-          console.log('[IAP-SERVICE] ❌ Error fetching', sku, ':', err?.message || err);
+          this.addProductLog(`❌ Attempt 1 failed: ${err?.message || err}`);
         }
-      }
-      
-      if (foundProducts.length > 0) {
-        console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 4, found', foundProducts.length, 'products');
-        return foundProducts;
+
+        // ============ ATTEMPT 2: getSubscriptions with array directly ============
+        this.addProductLog('ATTEMPT 2: getSubscriptions([skus])');
+        try {
+          const startTime = Date.now();
+          products = await getSubsFn(productIds);
+          const elapsed = Date.now() - startTime;
+          this.addProductLog(`Attempt 2: ${products?.length ?? 0} products in ${elapsed}ms`);
+          if (products?.length > 0) {
+            this.addProductLog('✅ SUCCESS with attempt 2');
+            return products;
+          }
+        } catch (err: any) {
+          this.addProductLog(`❌ Attempt 2 failed: ${err?.message || err}`);
+        }
+      } else {
+        this.addProductLog('❌ getSubscriptions not available!');
       }
 
-      // ============ ATTEMPT 5: Check if we need to use withIapContext or similar ============
-      console.log('[IAP-SERVICE] ATTEMPT 5: Checking RNIap setup...');
-      try {
-        // Check if there's a setup or configure method we're missing
-        if (typeof RNIap.setup === 'function') {
-          console.log('[IAP-SERVICE] Found RNIap.setup, calling it...');
-          await RNIap.setup({ storekitMode: 'STOREKIT1_MODE' });
+      // ============ ATTEMPT 3: getProducts (non-subscription API) ============
+      if (typeof getProdFn === 'function') {
+        this.addProductLog('ATTEMPT 3: getProducts({ skus })');
+        let products: any[] = [];
+        try {
+          const startTime = Date.now();
+          products = await getProdFn({ skus: productIds });
+          const elapsed = Date.now() - startTime;
+          this.addProductLog(`Attempt 3: ${products?.length ?? 0} products in ${elapsed}ms`);
+          if (products?.length > 0) {
+            this.addProductLog('✅ SUCCESS with attempt 3');
+            return products;
+          }
+        } catch (err: any) {
+          this.addProductLog(`❌ Attempt 3 failed: ${err?.message || err}`);
         }
-        if (typeof RNIap.isIosStorekit2 === 'function') {
-          const isStoreKit2 = await RNIap.isIosStorekit2();
-          console.log('[IAP-SERVICE] Using StoreKit 2:', isStoreKit2);
+
+        // Try array format
+        this.addProductLog('ATTEMPT 3b: getProducts([skus])');
+        try {
+          const products = await getProdFn(productIds);
+          this.addProductLog(`Attempt 3b: ${products?.length ?? 0} products`);
+          if (products?.length > 0) {
+            this.addProductLog('✅ SUCCESS with attempt 3b');
+            return products;
+          }
+        } catch (err: any) {
+          this.addProductLog(`❌ Attempt 3b failed: ${err?.message || err}`);
+        }
+      } else {
+        this.addProductLog('❌ getProducts not available!');
+      }
+
+      // ============ ATTEMPT 4: Try accessing via withIapContext pattern ============
+      this.addProductLog('ATTEMPT 4: Checking for alternative APIs...');
+      try {
+        // Some versions use different method names
+        const alternativeMethods = ['fetchProducts', 'loadProducts', 'getItems', 'getAvailableProducts'];
+        for (const methodName of alternativeMethods) {
+          const method = RNIap[methodName] || RNIap.default?.[methodName];
+          if (typeof method === 'function') {
+            this.addProductLog(`Found alternative: ${methodName}`);
+            try {
+              const result = await method(productIds);
+              if (result?.length > 0) {
+                this.addProductLog(`✅ SUCCESS with ${methodName}`);
+                return result;
+              }
+            } catch (e: any) {
+              this.addProductLog(`${methodName} failed: ${e?.message}`);
+            }
+          }
         }
       } catch (err: any) {
-        console.log('[IAP-SERVICE] Attempt 5 check failed:', err?.message || err);
+        this.addProductLog(`Attempt 4 failed: ${err?.message || err}`);
+      }
+
+      // ============ ATTEMPT 5: StoreKit mode check ============
+      this.addProductLog('ATTEMPT 5: Checking StoreKit mode...');
+      const isStoreKit2Fn = RNIap.isIosStorekit2 || RNIap.default?.isIosStorekit2;
+      try {
+        if (typeof isStoreKit2Fn === 'function') {
+          const isStoreKit2 = await isStoreKit2Fn();
+          this.addProductLog(`Using StoreKit 2: ${isStoreKit2}`);
+        } else {
+          this.addProductLog('isIosStorekit2 not available');
+        }
+      } catch (err: any) {
+        this.addProductLog(`StoreKit check failed: ${err?.message || err}`);
       }
 
       // ============ ALL ATTEMPTS FAILED ============
-      console.log('[IAP-SERVICE] ❌❌❌ ALL ATTEMPTS FAILED - NO PRODUCTS FOUND ❌❌❌');
-      console.log('[IAP-SERVICE] Additional troubleshooting:');
-      console.log('[IAP-SERVICE]   - Is this build installed via TestFlight? Direct Xcode installs cannot fetch products.');
-      console.log('[IAP-SERVICE]   - Have you waited 24-48 hours after creating products in App Store Connect?');
-      console.log('[IAP-SERVICE]   - Try signing out of App Store on device and signing back in with sandbox account');
-      console.log('[IAP-SERVICE]   - Check if products are in a subscription group and properly configured');
-      console.log('[IAP-SERVICE]   - Verify the build number in TestFlight matches what you uploaded');
+      this.addProductLog('❌❌❌ ALL ATTEMPTS FAILED ❌❌❌');
+      this.addProductLog('CRITICAL: getSubscriptions is undefined!');
+      this.addProductLog('This means react-native-iap native module');
+      this.addProductLog('is not properly linked. Try:');
+      this.addProductLog('  1. Rebuild with: eas build --clear-cache');
+      this.addProductLog('  2. Check react-native-iap version');
+      this.addProductLog('  3. Verify plugin in app.config.ts');
       
-      console.log('[IAP-SERVICE] ========== END PRODUCT FETCH DEBUG ==========');
+      this.addProductLog('========== END DEBUG ==========');
 
       return [];
     } catch (err: any) {
-      console.error('[IAP-SERVICE] ❌ Error fetching products:', err);
-      console.error('[IAP-SERVICE] Error name:', err?.name);
-      console.error('[IAP-SERVICE] Error message:', err?.message);
-      console.error('[IAP-SERVICE] Error code:', err?.code);
-      console.error('[IAP-SERVICE] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+      this.addProductLog(`❌ CRITICAL ERROR: ${err?.message || err}`);
+      this.addProductLog(`Error code: ${err?.code || 'none'}`);
       return [];
     }
   }

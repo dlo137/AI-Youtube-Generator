@@ -236,7 +236,14 @@ export default function SubscriptionScreen() {
       setLoadingProducts(true);
       addDebugLog('Calling IAPService.getProducts()...');
       
+      // Clear previous logs
+      IAPService.clearProductFetchLogs();
+      
       const results = await IAPService.getProducts();
+      
+      // Get the detailed logs from IAPService and add them to UI
+      const serviceLogs = IAPService.getProductFetchLogs();
+      serviceLogs.forEach(log => addDebugLog(log));
       
       const foundIds = results?.map((p: any) => p.productId) || [];
       const missingIds = expectedProductIds.filter(id => !foundIds.includes(id));
