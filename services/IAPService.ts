@@ -66,10 +66,25 @@ class IAPService {
 
     try {
       console.log('[IAP-SERVICE] Initializing react-native-iap...');
+      console.log('[IAP-SERVICE] Platform:', Platform.OS);
+
+      // For iOS with react-native-iap v14+, try to use setup() to configure StoreKit mode
+      if (Platform.OS === 'ios' && typeof RNIap.setup === 'function') {
+        console.log('[IAP-SERVICE] Calling RNIap.setup() to configure StoreKit mode...');
+        try {
+          // Try StoreKit 1 mode first for better compatibility with sandbox
+          await RNIap.setup({ storekitMode: 'STOREKIT1_MODE' });
+          console.log('[IAP-SERVICE] ✅ Configured for StoreKit 1 mode');
+        } catch (setupErr: any) {
+          console.log('[IAP-SERVICE] setup() failed (may not be needed):', setupErr?.message);
+        }
+      }
 
       if (!this.isConnected) {
+        console.log('[IAP-SERVICE] Calling initConnection...');
         const result = await RNIap.initConnection();
         console.log('[IAP-SERVICE] Connection result:', result);
+        console.log('[IAP-SERVICE] Connection result type:', typeof result);
         this.isConnected = true;
       }
 
@@ -80,17 +95,22 @@ class IAPService {
         this.hasListener = true;
       }
 
-      // Clear any pending transactions on iOS
-      if (Platform.OS === 'ios') {
-        await RNIap.clearTransactionIOS();
-      }
+      // NOTE: clearTransactionIOS() was removed in react-native-iap v12+.
+      // Do NOT call it here — it will throw and break initialization.
+      // Pending transactions are handled automatically by the purchase listener
+      // and finishTransaction() calls in processPurchase().
 
       // Check for unfinished transactions (important for Android)
       await this.checkForPendingPurchases();
 
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('[IAP-SERVICE] Failed to initialize:', error);
+      console.error('[IAP-SERVICE] Error details:', {
+        name: error?.name,
+        message: error?.message,
+        code: error?.code
+      });
       return false;
     }
   }
@@ -386,58 +406,132 @@ class IAPService {
       console.log('[IAP-SERVICE] isConnected:', this.isConnected);
       console.log('[IAP-SERVICE] Product IDs to fetch:', JSON.stringify(productIds));
       console.log('[IAP-SERVICE] RNIap module loaded:', !!RNIap);
-      console.log('[IAP-SERVICE] RNIap.getSubscriptions exists:', typeof RNIap?.getSubscriptions);
+      console.log('[IAP-SERVICE] RNIap version check - available methods:');
 
-      // Log available RNIap methods for debugging
+      // Log ALL available RNIap methods for debugging
       if (RNIap) {
-        const methods = Object.keys(RNIap).filter(k => typeof RNIap[k] === 'function');
-        console.log('[IAP-SERVICE] Available RNIap methods:', methods.slice(0, 15).join(', '));
+        const allKeys = Object.keys(RNIap);
+        console.log('[IAP-SERVICE] All RNIap exports:', allKeys.join(', '));
+        console.log('[IAP-SERVICE] getSubscriptions type:', typeof RNIap.getSubscriptions);
+        console.log('[IAP-SERVICE] getProducts type:', typeof RNIap.getProducts);
+        console.log('[IAP-SERVICE] requestSubscription type:', typeof RNIap.requestSubscription);
       }
 
-      console.log('[IAP-SERVICE] Calling RNIap.getSubscriptions...');
-      const startTime = Date.now();
+      // Guard: ensure connection before fetching. Add a short delay so StoreKit
+      // has time to fully settle after initConnection() returns.
+      if (!this.isConnected) {
+        console.warn('[IAP-SERVICE] getProducts called before connection — re-initializing');
+        await this.initialize();
+      }
       
-      // Get subscriptions using the v14+ API format
-      // In react-native-iap v12+, we need to pass skus as an object
-      const products = await RNIap.getSubscriptions({ skus: productIds });
-      
-      const elapsed = Date.now() - startTime;
-      console.log('[IAP-SERVICE] getSubscriptions completed in', elapsed, 'ms');
-      console.log('[IAP-SERVICE] Products loaded:', products?.length ?? 'null/undefined');
-      console.log('[IAP-SERVICE] Raw products response:', JSON.stringify(products, null, 2));
-      
-      if (products.length === 0) {
-        console.log('[IAP-SERVICE] ❌ NO PRODUCTS RETURNED - Possible causes:');
-        console.log('[IAP-SERVICE]   1. Products not in "Ready to Submit" status in App Store Connect');
-        console.log('[IAP-SERVICE]   2. Paid Apps agreement expired or not signed');
-        console.log('[IAP-SERVICE]   3. Bundle ID mismatch (check app.config.ts ios.bundleIdentifier)');
-        console.log('[IAP-SERVICE]   4. Build not installed from TestFlight');
-        console.log('[IAP-SERVICE]   5. Sandbox account issues');
-        console.log('[IAP-SERVICE]   6. Product IDs have typos or wrong format');
-        
-        // Try alternative API call for older versions
-        console.log('[IAP-SERVICE] Attempting alternative getProducts call...');
+      // Longer delay to ensure StoreKit is fully ready
+      console.log('[IAP-SERVICE] Waiting 1s for StoreKit to settle...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // ============ ATTEMPT 1: Standard getSubscriptions with object format ============
+      console.log('[IAP-SERVICE] ATTEMPT 1: RNIap.getSubscriptions({ skus: [...] })');
+      let products: any[] = [];
+      try {
+        const startTime = Date.now();
+        products = await RNIap.getSubscriptions({ skus: productIds });
+        const elapsed = Date.now() - startTime;
+        console.log('[IAP-SERVICE] Attempt 1 completed in', elapsed, 'ms, found:', products?.length ?? 0);
+        if (products?.length > 0) {
+          console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 1');
+          console.log('[IAP-SERVICE] Products:', JSON.stringify(products, null, 2));
+          return products;
+        }
+      } catch (err: any) {
+        console.log('[IAP-SERVICE] Attempt 1 failed:', err?.message || err);
+      }
+
+      // ============ ATTEMPT 2: getSubscriptions with array directly (older API) ============
+      console.log('[IAP-SERVICE] ATTEMPT 2: RNIap.getSubscriptions([...]) - array format');
+      try {
+        const startTime = Date.now();
+        products = await RNIap.getSubscriptions(productIds);
+        const elapsed = Date.now() - startTime;
+        console.log('[IAP-SERVICE] Attempt 2 completed in', elapsed, 'ms, found:', products?.length ?? 0);
+        if (products?.length > 0) {
+          console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 2');
+          return products;
+        }
+      } catch (err: any) {
+        console.log('[IAP-SERVICE] Attempt 2 failed:', err?.message || err);
+      }
+
+      // ============ ATTEMPT 3: getProducts (for non-subscription IAPs) ============
+      console.log('[IAP-SERVICE] ATTEMPT 3: RNIap.getProducts({ skus: [...] })');
+      try {
+        const startTime = Date.now();
+        products = await RNIap.getProducts({ skus: productIds });
+        const elapsed = Date.now() - startTime;
+        console.log('[IAP-SERVICE] Attempt 3 completed in', elapsed, 'ms, found:', products?.length ?? 0);
+        if (products?.length > 0) {
+          console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 3 (getProducts)');
+          return products;
+        }
+      } catch (err: any) {
+        console.log('[IAP-SERVICE] Attempt 3 failed:', err?.message || err);
+      }
+
+      // ============ ATTEMPT 4: Fetch each product individually ============
+      console.log('[IAP-SERVICE] ATTEMPT 4: Fetching products one by one...');
+      const foundProducts: any[] = [];
+      for (const sku of productIds) {
         try {
-          const altProducts = await RNIap.getProducts({ skus: productIds });
-          console.log('[IAP-SERVICE] Alternative getProducts result:', altProducts?.length ?? 'null');
-          if (altProducts?.length > 0) {
-            console.log('[IAP-SERVICE] ✅ Found products via getProducts (non-subscription):', JSON.stringify(altProducts, null, 2));
-            return altProducts;
+          console.log('[IAP-SERVICE] Trying single SKU:', sku);
+          const singleResult = await RNIap.getSubscriptions({ skus: [sku] });
+          if (singleResult?.length > 0) {
+            console.log('[IAP-SERVICE] ✅ Found:', sku);
+            foundProducts.push(...singleResult);
+          } else {
+            console.log('[IAP-SERVICE] ❌ Not found:', sku);
           }
-        } catch (altErr) {
-          console.log('[IAP-SERVICE] Alternative getProducts failed:', altErr);
+        } catch (err: any) {
+          console.log('[IAP-SERVICE] ❌ Error fetching', sku, ':', err?.message || err);
         }
       }
       
+      if (foundProducts.length > 0) {
+        console.log('[IAP-SERVICE] ✅ SUCCESS with attempt 4, found', foundProducts.length, 'products');
+        return foundProducts;
+      }
+
+      // ============ ATTEMPT 5: Check if we need to use withIapContext or similar ============
+      console.log('[IAP-SERVICE] ATTEMPT 5: Checking RNIap setup...');
+      try {
+        // Check if there's a setup or configure method we're missing
+        if (typeof RNIap.setup === 'function') {
+          console.log('[IAP-SERVICE] Found RNIap.setup, calling it...');
+          await RNIap.setup({ storekitMode: 'STOREKIT1_MODE' });
+        }
+        if (typeof RNIap.isIosStorekit2 === 'function') {
+          const isStoreKit2 = await RNIap.isIosStorekit2();
+          console.log('[IAP-SERVICE] Using StoreKit 2:', isStoreKit2);
+        }
+      } catch (err: any) {
+        console.log('[IAP-SERVICE] Attempt 5 check failed:', err?.message || err);
+      }
+
+      // ============ ALL ATTEMPTS FAILED ============
+      console.log('[IAP-SERVICE] ❌❌❌ ALL ATTEMPTS FAILED - NO PRODUCTS FOUND ❌❌❌');
+      console.log('[IAP-SERVICE] Additional troubleshooting:');
+      console.log('[IAP-SERVICE]   - Is this build installed via TestFlight? Direct Xcode installs cannot fetch products.');
+      console.log('[IAP-SERVICE]   - Have you waited 24-48 hours after creating products in App Store Connect?');
+      console.log('[IAP-SERVICE]   - Try signing out of App Store on device and signing back in with sandbox account');
+      console.log('[IAP-SERVICE]   - Check if products are in a subscription group and properly configured');
+      console.log('[IAP-SERVICE]   - Verify the build number in TestFlight matches what you uploaded');
+      
       console.log('[IAP-SERVICE] ========== END PRODUCT FETCH DEBUG ==========');
 
-      return products;
+      return [];
     } catch (err: any) {
       console.error('[IAP-SERVICE] ❌ Error fetching products:', err);
       console.error('[IAP-SERVICE] Error name:', err?.name);
       console.error('[IAP-SERVICE] Error message:', err?.message);
       console.error('[IAP-SERVICE] Error code:', err?.code);
-      console.error('[IAP-SERVICE] Error stack:', err?.stack);
+      console.error('[IAP-SERVICE] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
       return [];
     }
   }
