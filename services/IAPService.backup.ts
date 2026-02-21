@@ -618,7 +618,7 @@ class IAPService {
       console.log('[IAP-SERVICE] Product fetch response:', { responseCode, results });
 
       if (responseCode === IAP.IAPResponseCode.OK && results?.length) {
-        console.log('[IAP-SERVICE] Products loaded:', results.map(p => `${p.productId}: ${p.price}`).join(', '));
+        console.log('[IAP-SERVICE] Products loaded:', results.map((p: { productId: string; price: string }) => `${p.productId}: ${p.price}`).join(', '));
         return results;
       } else {
         console.log('[IAP-SERVICE] No products available or error:', { responseCode, results });

@@ -1,21 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-// Removed Nitro API imports (not used)
-  // Debug panel state
-  const [showDebug, setShowDebug] = useState(false);
-  // Debug log
-  const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
-  // Product fetch status for debug panel
-  const [productFetchStatus, setProductFetchStatus] = useState({
-    attempted: false,
-    success: false,
-    error: '',
-    foundProducts: [] as string[],
-    missingProducts: [] as string[],
-  });
-  // IAP available for debug
-  const [isIAPAvailable, setIsIAPAvailable] = useState(false);
-  // Restore ref
-  const isRestoringRef = useRef(false);
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Image, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -47,6 +30,22 @@ export default function SubscriptionScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [iapReady, setIapReady] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
+  // Debug panel state
+  const [showDebug, setShowDebug] = useState(false);
+  // Debug log
+  const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
+  // Product fetch status for debug panel
+  const [productFetchStatus, setProductFetchStatus] = useState({
+    attempted: false,
+    success: false,
+    error: '',
+    foundProducts: [] as string[],
+    missingProducts: [] as string[],
+  });
+  // IAP available for debug
+  const [isIAPAvailable, setIsIAPAvailable] = useState(false);
+  // Restore ref
+  const isRestoringRef = useRef(false);
 
   // Fetch products on mount
   useEffect(() => {
