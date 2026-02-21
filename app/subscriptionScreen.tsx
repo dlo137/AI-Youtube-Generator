@@ -83,7 +83,7 @@ export default function SubscriptionScreen() {
         setProducts(results);
         setIapReady(true);
         setIsIAPAvailable(true);
-        const found = results.map(p => p.productId);
+        const found = results.map(p => p.id);
         const expected = Object.values(PRODUCT_IDS);
         setProductFetchStatus({
           attempted: true,
@@ -157,14 +157,14 @@ export default function SubscriptionScreen() {
     }
 
     const planId = PRODUCT_IDS[selectedPlan];
-    const product = products.find(p => p.productId === planId);
+    const product = products.find(p => p.id === planId);
     if (!product) {
       Alert.alert('Plan not available', 'We couldn\'t find that plan. Please check your internet connection and try again.');
       return;
     }
     setCurrentPurchaseAttempt(selectedPlan);
     try {
-      await IAPService.purchaseProduct(product.productId);
+      await IAPService.purchaseProduct(product.id);
     } catch (error: any) {
       setCurrentPurchaseAttempt(null);
       const msg = String(error?.message || error);
@@ -625,7 +625,7 @@ export default function SubscriptionScreen() {
                     setProducts(results);
                     setIapReady(true);
                     setIsIAPAvailable(IAPService.isAvailable());
-                    const found = results.map(p => p.productId);
+                    const found = results.map(p => p.id);
                     const expected = Object.values(PRODUCT_IDS);
                     setProductFetchStatus({
                       attempted: true,
