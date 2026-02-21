@@ -9,14 +9,7 @@ export default {
     scheme: "thumbnailgen",
     plugins: [
       "./plugins/withIapFlavor",
-      [
-        "react-native-iap",
-        {
-          paymentProvider: "Apple",
-          // Force StoreKit 1 mode for better compatibility
-          // StoreKit 2 (default in v14+) may have issues with sandbox/TestFlight
-        }
-      ],
+      "react-native-iap",
       "expo-router"
     ],
     updates: {

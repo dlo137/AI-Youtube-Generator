@@ -552,7 +552,7 @@ class IAPService {
         this.addProductLog('❌ getProducts not available!');
       }
 
-      // ============ ATTEMPT 4: Try accessing via withIapContext pattern ============
+      // ============ ATTEMPT 4: Try alternative APIs with different signatures ============
       this.addProductLog('ATTEMPT 4: Checking for alternative APIs...');
       try {
         // Some versions use different method names
@@ -561,14 +561,28 @@ class IAPService {
           const method = RNIap[methodName] || RNIap.default?.[methodName];
           if (typeof method === 'function') {
             this.addProductLog(`Found alternative: ${methodName}`);
-            try {
-              const result = await method(productIds);
-              if (result?.length > 0) {
-                this.addProductLog(`✅ SUCCESS with ${methodName}`);
-                return result;
+            
+            // Try different parameter formats
+            const paramFormats = [
+              { skus: productIds },  // Object with skus key
+              productIds,            // Direct array
+              { productIds },        // Object with productIds key
+              { ids: productIds },   // Object with ids key
+            ];
+            
+            for (let i = 0; i < paramFormats.length; i++) {
+              try {
+                this.addProductLog(`  Trying format ${i + 1}...`);
+                const result = await method(paramFormats[i]);
+                if (result?.length > 0) {
+                  this.addProductLog(`✅ SUCCESS with ${methodName} format ${i + 1}`);
+                  return result;
+                } else {
+                  this.addProductLog(`  Format ${i + 1}: 0 products`);
+                }
+              } catch (e: any) {
+                this.addProductLog(`  Format ${i + 1} failed: ${e?.message?.slice(0, 50)}`);
               }
-            } catch (e: any) {
-              this.addProductLog(`${methodName} failed: ${e?.message}`);
             }
           }
         }
@@ -576,8 +590,43 @@ class IAPService {
         this.addProductLog(`Attempt 4 failed: ${err?.message || err}`);
       }
 
-      // ============ ATTEMPT 5: StoreKit mode check ============
-      this.addProductLog('ATTEMPT 5: Checking StoreKit mode...');
+      // ============ ATTEMPT 5: Direct native module call ============
+      this.addProductLog('ATTEMPT 5: Trying direct module calls...');
+      try {
+        // Try to access the native module directly
+        const NativeModules = require('react-native').NativeModules;
+        const nativeIap = NativeModules.RNIapIos || NativeModules.RNIapModule || NativeModules.RNIap;
+        
+        if (nativeIap) {
+          this.addProductLog(`Found native module: ${Object.keys(nativeIap).join(', ')}`);
+          
+          if (typeof nativeIap.getItems === 'function') {
+            this.addProductLog('Trying nativeIap.getItems...');
+            const items = await nativeIap.getItems(productIds);
+            if (items?.length > 0) {
+              this.addProductLog(`✅ SUCCESS with native getItems`);
+              return items;
+            }
+          }
+          
+          if (typeof nativeIap.getSubscriptions === 'function') {
+            this.addProductLog('Trying nativeIap.getSubscriptions...');
+            const subs = await nativeIap.getSubscriptions(productIds);
+            if (subs?.length > 0) {
+              this.addProductLog(`✅ SUCCESS with native getSubscriptions`);
+              return subs;
+            }
+          }
+        } else {
+          this.addProductLog('❌ No native IAP module found');
+          this.addProductLog(`Available NativeModules: ${Object.keys(NativeModules).filter(k => k.toLowerCase().includes('iap') || k.toLowerCase().includes('purchase')).join(', ') || 'none related to IAP'}`);
+        }
+      } catch (err: any) {
+        this.addProductLog(`Attempt 5 failed: ${err?.message || err}`);
+      }
+
+      // ============ ATTEMPT 6: StoreKit mode check ============
+      this.addProductLog('ATTEMPT 6: Checking StoreKit mode...');
       const isStoreKit2Fn = RNIap.isIosStorekit2 || RNIap.default?.isIosStorekit2;
       try {
         if (typeof isStoreKit2Fn === 'function') {
