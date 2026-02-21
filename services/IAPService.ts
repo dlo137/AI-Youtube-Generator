@@ -1,34 +1,88 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, NativeModules } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-// Conditionally import react-native-iap to avoid crashes in Expo Go
-let RNIap: any = null;
-let RNIapModule: any = null;
+// IAP module state
+let iapAvailable = false;
+let iapFunctions: {
+  initConnection: any;
+  endConnection: any;
+  getSubscriptions: any;
+  getProducts: any;
+  requestSubscription: any;
+  requestPurchase: any;
+  finishTransaction: any;
+  purchaseUpdatedListener: any;
+  purchaseErrorListener: any;
+  getPendingPurchasesIOS: any;
+  getAvailablePurchases: any;
+  setup: any;
+  isIosStorekit2: any;
+  flushFailedPurchasesCachedAsPendingAndroid: any;
+} | null = null;
 
-// Suppress the error completely by wrapping in try-catch
+// Wrapper object that maintains compatibility with existing RNIap.* calls
+let RNIap: any = null;
+
+// StorekitMode enum for setup() - extracted from module
+let StorekitMode: any = null;
+
+// Import react-native-iap with explicit named exports for production reliability
 try {
-  // Try to load the module - will fail silently in Expo Go
-  RNIapModule = require('react-native-iap');
+  // Direct static import check - this ensures Metro includes the module
+  const iapModule = require('react-native-iap');
   
-  // Handle different module formats (ESM vs CommonJS)
-  // react-native-iap v14+ may export differently
-  if (RNIapModule && typeof RNIapModule === 'object') {
-    // Check if it's a default export wrapped module
-    if (RNIapModule.default) {
-      console.log('[IAP-SERVICE] Using RNIapModule.default');
-      RNIap = RNIapModule.default;
-    } else {
-      console.log('[IAP-SERVICE] Using RNIapModule directly');
-      RNIap = RNIapModule;
-    }
-    
-    // Log what we got
-    console.log('[IAP-SERVICE] RNIap keys:', Object.keys(RNIap || {}).slice(0, 20).join(', '));
+  // Extract StorekitMode enum if available and log its contents for debugging
+  StorekitMode = iapModule.StorekitMode;
+  if (StorekitMode) {
+    console.log('[IAP-SERVICE] StorekitMode enum keys:', Object.keys(StorekitMode).join(', '));
+  } else {
+    console.log('[IAP-SERVICE] StorekitMode enum not found in module');
   }
-} catch (error) {
+  
+  // Check if native module is actually present (not just JS layer)
+  const nativeIap = NativeModules.RNIapIos || NativeModules.RNIapModule || NativeModules.RNIap;
+  
+  if (nativeIap) {
+    console.log('[IAP-SERVICE] ✅ Native IAP module found');
+    console.log('[IAP-SERVICE] Native module keys:', Object.keys(nativeIap).slice(0, 10).join(', '));
+    
+    // Extract functions from the module (v14+ uses named exports)
+    iapFunctions = {
+      initConnection: iapModule.initConnection,
+      endConnection: iapModule.endConnection,
+      getSubscriptions: iapModule.getSubscriptions,
+      getProducts: iapModule.getProducts,
+      requestSubscription: iapModule.requestSubscription,
+      requestPurchase: iapModule.requestPurchase,
+      finishTransaction: iapModule.finishTransaction,
+      purchaseUpdatedListener: iapModule.purchaseUpdatedListener,
+      purchaseErrorListener: iapModule.purchaseErrorListener,
+      getPendingPurchasesIOS: iapModule.getPendingPurchasesIOS,
+      getAvailablePurchases: iapModule.getAvailablePurchases,
+      setup: iapModule.setup,
+      isIosStorekit2: iapModule.isIosStorekit2,
+      flushFailedPurchasesCachedAsPendingAndroid: iapModule.flushFailedPurchasesCachedAsPendingAndroid,
+    };
+    
+    // Create wrapper for compatibility with existing code
+    RNIap = iapFunctions;
+    iapAvailable = true;
+    
+    console.log('[IAP-SERVICE] IAP functions loaded:');
+    console.log('[IAP-SERVICE]   initConnection:', typeof iapFunctions.initConnection);
+    console.log('[IAP-SERVICE]   getSubscriptions:', typeof iapFunctions.getSubscriptions);
+    console.log('[IAP-SERVICE]   requestSubscription:', typeof iapFunctions.requestSubscription);
+  } else {
+    console.log('[IAP-SERVICE] ⚠️ JS module loaded but native module NOT found');
+    console.log('[IAP-SERVICE] Available NativeModules with "iap":', 
+      Object.keys(NativeModules).filter(k => k.toLowerCase().includes('iap')).join(', ') || 'none');
+    console.log('[IAP-SERVICE] This app may not have been built with react-native-iap native code');
+  }
+} catch (error: any) {
   // Silently ignore the error - this is expected in Expo Go
-  console.log('[IAP-SERVICE] Running in Expo Go - IAP features disabled');
+  console.log('[IAP-SERVICE] Running in Expo Go or IAP module not available');
+  console.log('[IAP-SERVICE] Error:', error?.message);
 }
 
 // Platform-specific product IDs
@@ -72,12 +126,14 @@ class IAPService {
   }
 
   isAvailable(): boolean {
-    return RNIap !== null;
+    // Only return true if native module is actually present and RNIap wrapper is set
+    // RNIap === iapFunctions, but checking both guards against accidental reassignment
+    return iapAvailable && iapFunctions !== null && RNIap !== null;
   }
 
   async initialize(): Promise<boolean> {
     if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] IAP not available in this environment (Expo Go)');
+      console.log('[IAP-SERVICE] IAP not available - native module not linked');
       return false;
     }
 
@@ -89,8 +145,13 @@ class IAPService {
       if (Platform.OS === 'ios' && typeof RNIap.setup === 'function') {
         console.log('[IAP-SERVICE] Calling RNIap.setup() to configure StoreKit mode...');
         try {
-          // Try StoreKit 1 mode first for better compatibility with sandbox
-          await RNIap.setup({ storekitMode: 'STOREKIT1_MODE' });
+          // Use StorekitMode enum for correct value with fallback chain
+          // Note: v14+ uses STOREKIT_MODE (not STOREKIT1_MODE) for StoreKit 1
+          const mode = StorekitMode?.STOREKIT_MODE 
+            ?? StorekitMode?.STOREKIT1_MODE 
+            ?? 'STOREKIT1_MODE';
+          console.log('[IAP-SERVICE] Using StoreKit mode:', mode);
+          await RNIap.setup({ storekitMode: mode });
           console.log('[IAP-SERVICE] ✅ Configured for StoreKit 1 mode');
         } catch (setupErr: any) {
           console.log('[IAP-SERVICE] setup() failed (may not be needed):', setupErr?.message);
@@ -366,14 +427,9 @@ class IAPService {
       }
 
       // Acknowledge/finish the purchase
+      // In react-native-iap v12+, finishTransaction handles acknowledgment on both platforms
       console.log('[IAP-SERVICE] Finishing transaction...');
-      if (Platform.OS === 'android') {
-        // On Android, acknowledge the purchase
-        await RNIap.acknowledgePurchaseAndroid(purchase.purchaseToken);
-      } else {
-        // On iOS, finish the transaction
-        await RNIap.finishTransaction({ purchase, isConsumable: false });
-      }
+      await RNIap.finishTransaction({ purchase, isConsumable: false });
 
       // Navigate and clear flag for deliberate purchases
       if (shouldEntitle) {
@@ -455,14 +511,6 @@ class IAPService {
             this.addProductLog(`  ✅ ${key}: function`);
           }
         });
-        
-        // Also check module-level exports
-        if (RNIapModule && RNIapModule !== RNIap) {
-          this.addProductLog('RNIapModule exports:');
-          Object.keys(RNIapModule).forEach(key => {
-            this.addProductLog(`  ${key}: ${typeof RNIapModule[key]}`);
-          });
-        }
       } else {
         this.addProductLog('❌ RNIap is null/undefined!');
       }
@@ -478,8 +526,8 @@ class IAPService {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Determine which API to use based on what's available
-      const getSubsFn = RNIap.getSubscriptions || RNIap.default?.getSubscriptions;
-      const getProdFn = RNIap.getProducts || RNIap.default?.getProducts;
+      const getSubsFn = RNIap?.getSubscriptions;
+      const getProdFn = RNIap?.getProducts;
       
       this.addProductLog(`Using getSubscriptions: ${typeof getSubsFn}`);
       this.addProductLog(`Using getProducts: ${typeof getProdFn}`);
@@ -519,15 +567,13 @@ class IAPService {
         this.addProductLog('❌ getSubscriptions not available!');
       }
 
-      // ============ ATTEMPT 3: getProducts (non-subscription API) ============
+      // ============ ATTEMPT 3: getProducts (for non-subscription products) ============
       if (typeof getProdFn === 'function') {
         this.addProductLog('ATTEMPT 3: getProducts({ skus })');
         let products: any[] = [];
         try {
-          const startTime = Date.now();
           products = await getProdFn({ skus: productIds });
-          const elapsed = Date.now() - startTime;
-          this.addProductLog(`Attempt 3: ${products?.length ?? 0} products in ${elapsed}ms`);
+          this.addProductLog(`Attempt 3: ${products?.length ?? 0} products`);
           if (products?.length > 0) {
             this.addProductLog('✅ SUCCESS with attempt 3');
             return products;
@@ -535,119 +581,17 @@ class IAPService {
         } catch (err: any) {
           this.addProductLog(`❌ Attempt 3 failed: ${err?.message || err}`);
         }
-
-        // Try array format
-        this.addProductLog('ATTEMPT 3b: getProducts([skus])');
-        try {
-          const products = await getProdFn(productIds);
-          this.addProductLog(`Attempt 3b: ${products?.length ?? 0} products`);
-          if (products?.length > 0) {
-            this.addProductLog('✅ SUCCESS with attempt 3b');
-            return products;
-          }
-        } catch (err: any) {
-          this.addProductLog(`❌ Attempt 3b failed: ${err?.message || err}`);
-        }
-      } else {
-        this.addProductLog('❌ getProducts not available!');
-      }
-
-      // ============ ATTEMPT 4: Try alternative APIs with different signatures ============
-      this.addProductLog('ATTEMPT 4: Checking for alternative APIs...');
-      try {
-        // Some versions use different method names
-        const alternativeMethods = ['fetchProducts', 'loadProducts', 'getItems', 'getAvailableProducts'];
-        for (const methodName of alternativeMethods) {
-          const method = RNIap[methodName] || RNIap.default?.[methodName];
-          if (typeof method === 'function') {
-            this.addProductLog(`Found alternative: ${methodName}`);
-            
-            // Try different parameter formats
-            const paramFormats = [
-              { skus: productIds },  // Object with skus key
-              productIds,            // Direct array
-              { productIds },        // Object with productIds key
-              { ids: productIds },   // Object with ids key
-            ];
-            
-            for (let i = 0; i < paramFormats.length; i++) {
-              try {
-                this.addProductLog(`  Trying format ${i + 1}...`);
-                const result = await method(paramFormats[i]);
-                if (result?.length > 0) {
-                  this.addProductLog(`✅ SUCCESS with ${methodName} format ${i + 1}`);
-                  return result;
-                } else {
-                  this.addProductLog(`  Format ${i + 1}: 0 products`);
-                }
-              } catch (e: any) {
-                this.addProductLog(`  Format ${i + 1} failed: ${e?.message?.slice(0, 50)}`);
-              }
-            }
-          }
-        }
-      } catch (err: any) {
-        this.addProductLog(`Attempt 4 failed: ${err?.message || err}`);
-      }
-
-      // ============ ATTEMPT 5: Direct native module call ============
-      this.addProductLog('ATTEMPT 5: Trying direct module calls...');
-      try {
-        // Try to access the native module directly
-        const NativeModules = require('react-native').NativeModules;
-        const nativeIap = NativeModules.RNIapIos || NativeModules.RNIapModule || NativeModules.RNIap;
-        
-        if (nativeIap) {
-          this.addProductLog(`Found native module: ${Object.keys(nativeIap).join(', ')}`);
-          
-          if (typeof nativeIap.getItems === 'function') {
-            this.addProductLog('Trying nativeIap.getItems...');
-            const items = await nativeIap.getItems(productIds);
-            if (items?.length > 0) {
-              this.addProductLog(`✅ SUCCESS with native getItems`);
-              return items;
-            }
-          }
-          
-          if (typeof nativeIap.getSubscriptions === 'function') {
-            this.addProductLog('Trying nativeIap.getSubscriptions...');
-            const subs = await nativeIap.getSubscriptions(productIds);
-            if (subs?.length > 0) {
-              this.addProductLog(`✅ SUCCESS with native getSubscriptions`);
-              return subs;
-            }
-          }
-        } else {
-          this.addProductLog('❌ No native IAP module found');
-          this.addProductLog(`Available NativeModules: ${Object.keys(NativeModules).filter(k => k.toLowerCase().includes('iap') || k.toLowerCase().includes('purchase')).join(', ') || 'none related to IAP'}`);
-        }
-      } catch (err: any) {
-        this.addProductLog(`Attempt 5 failed: ${err?.message || err}`);
-      }
-
-      // ============ ATTEMPT 6: StoreKit mode check ============
-      this.addProductLog('ATTEMPT 6: Checking StoreKit mode...');
-      const isStoreKit2Fn = RNIap.isIosStorekit2 || RNIap.default?.isIosStorekit2;
-      try {
-        if (typeof isStoreKit2Fn === 'function') {
-          const isStoreKit2 = await isStoreKit2Fn();
-          this.addProductLog(`Using StoreKit 2: ${isStoreKit2}`);
-        } else {
-          this.addProductLog('isIosStorekit2 not available');
-        }
-      } catch (err: any) {
-        this.addProductLog(`StoreKit check failed: ${err?.message || err}`);
       }
 
       // ============ ALL ATTEMPTS FAILED ============
-      this.addProductLog('❌❌❌ ALL ATTEMPTS FAILED ❌❌❌');
-      this.addProductLog('CRITICAL: getSubscriptions is undefined!');
-      this.addProductLog('This means react-native-iap native module');
-      this.addProductLog('is not properly linked. Try:');
-      this.addProductLog('  1. Rebuild with: eas build --clear-cache');
-      this.addProductLog('  2. Check react-native-iap version');
-      this.addProductLog('  3. Verify plugin in app.config.ts');
-      
+      this.addProductLog('========== PRODUCT FETCH FAILED ==========');
+      this.addProductLog('Both getSubscriptions formats returned 0 products.');
+      this.addProductLog('This is likely a configuration issue:');
+      this.addProductLog('  1. Verify product IDs match App Store Connect exactly');
+      this.addProductLog('  2. Ensure products are in "Ready to Submit" state');
+      this.addProductLog('  3. App must be signed with correct provisioning profile');
+      this.addProductLog('  4. For sandbox: use sandbox Apple ID');
+      this.addProductLog(`Requested IDs: ${productIds.join(', ')}`);
       this.addProductLog('========== END DEBUG ==========');
 
       return [];

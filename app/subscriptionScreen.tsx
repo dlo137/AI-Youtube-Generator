@@ -64,8 +64,8 @@ export default function SubscriptionScreen() {
     missingProducts: []
   });
 
-  // Check if IAP is available
-  const isIAPAvailable = IAPService.isAvailable();
+  // Check if IAP is available - use state so it can be updated after initialization
+  const [isIAPAvailable, setIsIAPAvailable] = useState(IAPService.isAvailable());
 
   // Stable callback for IAP events
   const handleIAPCallback = useCallback((info: any) => {
@@ -169,16 +169,16 @@ export default function SubscriptionScreen() {
   }, [handleIAPCallback, iapReady]);
 
   const initializeIAP = async () => {
-    if (!isIAPAvailable) {
-      console.log('[SUBSCRIPTION] IAP not available on this platform');
-      // Set IAP ready to true even if unavailable so button is not stuck
-      setIapReady(true);
-      return;
-    }
-
     try {
+      // Let IAPService.initialize() handle availability check internally
       const initialized = await IAPService.initialize();
-      setIapReady(initialized);
+      
+      // Update availability state after initialization completes
+      const available = IAPService.isAvailable();
+      setIsIAPAvailable(available);
+      
+      // Ready if initialized successfully OR if IAP is unavailable (e.g., Expo Go)
+      setIapReady(initialized || !available);
 
       if (initialized) {
         // Set up debug callback using the stable callback
@@ -192,9 +192,6 @@ export default function SubscriptionScreen() {
 
         // Fetch products
         await fetchProducts();
-      } else {
-        // If initialization failed, still set ready to true to unblock the button
-        setIapReady(true);
       }
     } catch (error) {
       console.error('[SUBSCRIPTION] Error initializing IAP:', error);
@@ -482,10 +479,11 @@ export default function SubscriptionScreen() {
     }
   };
 
-  // Helper function to format price - always use fallback to show "/week" format
-  const formatPrice = (plan: string, fallbackPrice: string) => {
-    // Always return the fallback price to maintain consistent "/week" format
-    // Apple's IAP prices don't include the duration suffix
+  // Helper function to format price
+  // TODO: In the future, use real App Store prices from `products` state
+  // For now, returns fallback to maintain consistent "/week" format
+  // (Apple's IAP prices don't include the duration suffix)
+  const formatPrice = (_plan: string, fallbackPrice: string) => {
     return fallbackPrice;
   };
 
@@ -514,7 +512,30 @@ export default function SubscriptionScreen() {
       useNativeDriver: true,
     }).start(async () => {
       setShowDiscountModal(false);
-      // Sign out the user so they can restart onboarding
+      
+      // Check if this is a returning user (has existing subscription) or new onboarding
+      // Only sign out for new users going through onboarding
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('subscription_plan, is_pro_version')
+            .eq('id', user.id)
+            .single();
+          
+          // If user has an existing subscription, just navigate back without signing out
+          if (profile?.subscription_plan || profile?.is_pro_version) {
+            console.log('[SUBSCRIPTION] Returning user dismissed subscription screen - not signing out');
+            router.back();
+            return;
+          }
+        }
+      } catch (err) {
+        console.log('[SUBSCRIPTION] Error checking user subscription status:', err);
+      }
+      
+      // Sign out only for new users during onboarding flow
       await supabase.auth.signOut();
       router.replace('/');
     });
