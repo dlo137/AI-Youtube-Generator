@@ -1,154 +1,108 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, Platform, NativeModules } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-// IAP module state
+// ─────────────────────────────────────────────────────────────────────────────
+// react-native-iap v14 (Nitro) no longer exports getSubscriptions / getProducts
+// as standalone functions. They live inside hooks/context. However the native
+// module (RNIapIos on iOS, RNIapModule on Android) is still registered and
+// exposes getItems() directly. We call that instead and keep every other call
+// (initConnection, requestSubscription, finishTransaction, listeners) via the
+// JS named exports that still exist in v14.
+// ─────────────────────────────────────────────────────────────────────────────
+
 let iapAvailable = false;
-let iapFunctions: {
-  initConnection: any;
-  endConnection: any;
-  getSubscriptions: any;
-  getProducts: any;
-  requestSubscription: any;
-  requestPurchase: any;
-  finishTransaction: any;
-  purchaseUpdatedListener: any;
-  purchaseErrorListener: any;
-  getPendingPurchasesIOS: any;
-  getAvailablePurchases: any;
-  setup: any;
-  isIosStorekit2: any;
-  flushFailedPurchasesCachedAsPendingAndroid: any;
-} | null = null;
+let iapModule: any = null;
+let nativeIapModule: any = null; // direct NativeModules reference for getItems
 
-// Wrapper object that maintains compatibility with existing RNIap.* calls
-let RNIap: any = null;
-
-// StorekitMode enum for setup() - extracted from module
-let StorekitMode: any = null;
-
-// Diagnostic info for debugging
+// Diagnostic info surfaced to the debug panel
 let iapDiagnostics = {
   requireSucceeded: false,
   requireError: null as string | null,
-  moduleExports: [] as string[],
+  allExports: [] as string[],
+  functionExports: [] as string[],
   hasInitConnection: false,
-  hasGetSubscriptions: false,
-  nativeModulesFound: [] as string[],
+  hasGetSubscriptions: false,   // will be false in v14 - that's expected
+  hasNativeModule: false,
+  nativeModuleKey: null as string | null,
+  nativeModuleExports: [] as string[],
 };
 
-// Import react-native-iap with explicit named exports for production reliability
 try {
-  // Direct static import check - this ensures Metro includes the module
-  const iapModule = require('react-native-iap');
+  iapModule = require('react-native-iap');
   iapDiagnostics.requireSucceeded = true;
-  
-  // Extract StorekitMode enum if available and log its contents for debugging
-  StorekitMode = iapModule.StorekitMode;
-  if (StorekitMode) {
-    console.log('[IAP-SERVICE] StorekitMode enum keys:', Object.keys(StorekitMode).join(', '));
+
+  const allKeys = Object.keys(iapModule);
+  iapDiagnostics.allExports = allKeys;
+  iapDiagnostics.functionExports = allKeys.filter(k => typeof iapModule[k] === 'function');
+  iapDiagnostics.hasInitConnection = typeof iapModule.initConnection === 'function';
+  iapDiagnostics.hasGetSubscriptions = typeof iapModule.getSubscriptions === 'function';
+
+  console.log('[IAP] Module loaded. exports:', iapDiagnostics.functionExports.join(', '));
+  console.log('[IAP] initConnection:', iapDiagnostics.hasInitConnection);
+  console.log('[IAP] getSubscriptions (v14 removed this - expected false):', iapDiagnostics.hasGetSubscriptions);
+
+  // ── Find the native module ────────────────────────────────────────────────
+  // iOS registers as RNIapIos, Android as RNIapModule. Check both.
+  const nativeKey = Object.keys(NativeModules).find(k =>
+    k === 'RNIapIos' || k === 'RNIapModule' || k === 'RNIap' ||
+    k.toLowerCase().includes('rniap')
+  ) || null;
+
+  iapDiagnostics.nativeModuleKey = nativeKey;
+
+  if (nativeKey) {
+    nativeIapModule = NativeModules[nativeKey];
+    iapDiagnostics.hasNativeModule = true;
+    iapDiagnostics.nativeModuleExports = Object.keys(nativeIapModule);
+    console.log('[IAP] ✅ Native module found:', nativeKey);
+    console.log('[IAP] Native exports:', iapDiagnostics.nativeModuleExports.join(', '));
   } else {
-    console.log('[IAP-SERVICE] StorekitMode enum not found in module');
+    console.log('[IAP] ⚠️ No native module found in NativeModules');
+    console.log('[IAP] All NativeModule keys:', Object.keys(NativeModules).join(', '));
   }
-  
-  // Log all available exports from the module
-  const moduleKeys = Object.keys(iapModule);
-  iapDiagnostics.moduleExports = moduleKeys.slice(0, 30);
-  console.log('[IAP-SERVICE] iapModule exports:', moduleKeys.slice(0, 20).join(', '));
-  
-  // Try to find initConnection - it could be a named export, default export property, or direct property
-  let initConnectionFn = iapModule.initConnection;
-  let getSubscriptionsFn = iapModule.getSubscriptions;
-  
-  // Fallback: check default export if direct exports not found
-  if (!initConnectionFn && iapModule.default) {
-    console.log('[IAP-SERVICE] Checking default export...');
-    initConnectionFn = iapModule.default.initConnection;
-    getSubscriptionsFn = iapModule.default.getSubscriptions;
-  }
-  
-  const hasInitConnection = typeof initConnectionFn === 'function';
-  const hasGetSubscriptions = typeof getSubscriptionsFn === 'function';
-  iapDiagnostics.hasInitConnection = hasInitConnection;
-  iapDiagnostics.hasGetSubscriptions = hasGetSubscriptions;
-  
-  console.log('[IAP-SERVICE] initConnection available:', hasInitConnection);
-  console.log('[IAP-SERVICE] getSubscriptions available:', hasGetSubscriptions);
-  
-  // Also check NativeModules for debugging (but don't gate on it)
-  const nativeModuleNames = Object.keys(NativeModules).filter(k => 
-    k.toLowerCase().includes('iap') || k.toLowerCase().includes('rniap')
-  );
-  iapDiagnostics.nativeModulesFound = nativeModuleNames;
-  console.log('[IAP-SERVICE] Related NativeModules:', nativeModuleNames.join(', ') || 'none found');
-  
-  // Use whichever source has the functions (direct or default export)
-  const sourceModule = initConnectionFn ? 
-    (iapModule.initConnection ? iapModule : iapModule.default) : 
-    null;
-  
-  if (hasInitConnection && hasGetSubscriptions && sourceModule) {
-    console.log('[IAP-SERVICE] ✅ IAP functions found - module is available');
-    
-    // Extract functions from the module (v14+ uses named exports)
-    iapFunctions = {
-      initConnection: sourceModule.initConnection,
-      endConnection: sourceModule.endConnection,
-      getSubscriptions: sourceModule.getSubscriptions,
-      getProducts: sourceModule.getProducts,
-      requestSubscription: sourceModule.requestSubscription,
-      requestPurchase: sourceModule.requestPurchase,
-      finishTransaction: sourceModule.finishTransaction,
-      purchaseUpdatedListener: sourceModule.purchaseUpdatedListener,
-      purchaseErrorListener: sourceModule.purchaseErrorListener,
-      getPendingPurchasesIOS: sourceModule.getPendingPurchasesIOS,
-      getAvailablePurchases: sourceModule.getAvailablePurchases,
-      setup: sourceModule.setup,
-      isIosStorekit2: sourceModule.isIosStorekit2,
-      flushFailedPurchasesCachedAsPendingAndroid: sourceModule.flushFailedPurchasesCachedAsPendingAndroid,
-    };
-    
-    // Create wrapper for compatibility with existing code
-    RNIap = iapFunctions;
+
+  // Mark available if we have initConnection (the JS layer) regardless of
+  // whether getSubscriptions exists - v14 removed it intentionally.
+  if (iapDiagnostics.hasInitConnection) {
     iapAvailable = true;
-    
-    console.log('[IAP-SERVICE] IAP functions loaded successfully');
+    console.log('[IAP] ✅ IAP marked as available');
   } else {
-    console.log('[IAP-SERVICE] ⚠️ IAP module loaded but critical functions missing');
-    console.log('[IAP-SERVICE] This may indicate the native module is not properly linked');
-    console.log('[IAP-SERVICE] Module type:', typeof iapModule);
-    console.log('[IAP-SERVICE] Has default:', !!iapModule.default);
-    console.log('[IAP-SERVICE] Try rebuilding with: eas build --clear-cache');
+    console.log('[IAP] ❌ initConnection missing - module may not be linked');
   }
-} catch (error: any) {
-  // Silently ignore the error - this is expected in Expo Go
-  iapDiagnostics.requireError = error?.message || 'Unknown error';
-  console.log('[IAP-SERVICE] Running in Expo Go or IAP module not available');
-  console.log('[IAP-SERVICE] Error:', error?.message);
+
+} catch (e: any) {
+  iapDiagnostics.requireError = e?.message ?? 'unknown';
+  console.log('[IAP] require failed:', e?.message);
 }
 
-// Platform-specific product IDs
+// ─────────────────────────────────────────────────────────────────────────────
+// Product ID constants
+// ─────────────────────────────────────────────────────────────────────────────
 const IOS_PRODUCT_IDS = [
   'thumbnail.yearly',
   'thumbnail.monthly',
   'thumbnail.weekly',
-  'discounted.weekly'
+  'discounted.weekly',
 ];
 
 const ANDROID_PRODUCT_IDS = [
   'ai.thumbnail.pro:yearly',
   'ai.thumbnail.pro:monthly',
   'ai.thumbnail.pro:weekly',
-  'discounted.weekly'
+  'discounted.weekly',
 ];
 
 const INFLIGHT_KEY = 'iapPurchaseInFlight';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// IAPService singleton
+// ─────────────────────────────────────────────────────────────────────────────
 class IAPService {
   private static instance: IAPService;
-  private isConnected: boolean = false;
-  private hasListener: boolean = false;
-  private processedIds: Set<string> = new Set();
+  private isConnected = false;
+  private hasListener = false;
+  private processedIds = new Set<string>();
   private lastPurchaseResult: any = null;
   private debugCallback: ((info: any) => void) | null = null;
   private currentPurchaseStartTime: number | null = null;
@@ -157,365 +111,35 @@ class IAPService {
   private purchasePromiseReject: ((reason?: any) => void) | null = null;
   private purchaseUpdateSubscription: any = null;
   private purchaseErrorSubscription: any = null;
+  private productFetchLogs: string[] = [];
 
   private constructor() {}
 
   static getInstance(): IAPService {
-    if (!IAPService.instance) {
-      IAPService.instance = new IAPService();
-    }
+    if (!IAPService.instance) IAPService.instance = new IAPService();
     return IAPService.instance;
   }
 
+  // ── Public API ─────────────────────────────────────────────────────────────
+
   isAvailable(): boolean {
-    // Only return true if native module is actually present and RNIap wrapper is set
-    // RNIap === iapFunctions, but checking both guards against accidental reassignment
-    return iapAvailable && iapFunctions !== null && RNIap !== null;
+    return iapAvailable && iapModule !== null;
   }
 
-  getDiagnostics(): typeof iapDiagnostics & { iapAvailable: boolean } {
-    return {
-      ...iapDiagnostics,
-      iapAvailable,
-    };
+  getDiagnostics() {
+    return { ...iapDiagnostics, iapAvailable };
   }
 
-  async initialize(): Promise<boolean> {
-    if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] IAP not available - native module not linked');
-      return false;
-    }
-
-    try {
-      console.log('[IAP-SERVICE] Initializing react-native-iap...');
-      console.log('[IAP-SERVICE] Platform:', Platform.OS);
-
-      // For iOS with react-native-iap v14+, try to use setup() to configure StoreKit mode
-      if (Platform.OS === 'ios' && typeof RNIap.setup === 'function') {
-        console.log('[IAP-SERVICE] Calling RNIap.setup() to configure StoreKit mode...');
-        try {
-          // Use StorekitMode enum for correct value with fallback chain
-          // Note: v14+ uses STOREKIT_MODE (not STOREKIT1_MODE) for StoreKit 1
-          const mode = StorekitMode?.STOREKIT_MODE 
-            ?? StorekitMode?.STOREKIT1_MODE 
-            ?? 'STOREKIT1_MODE';
-          console.log('[IAP-SERVICE] Using StoreKit mode:', mode);
-          await RNIap.setup({ storekitMode: mode });
-          console.log('[IAP-SERVICE] ✅ Configured for StoreKit 1 mode');
-        } catch (setupErr: any) {
-          console.log('[IAP-SERVICE] setup() failed (may not be needed):', setupErr?.message);
-        }
-      }
-
-      if (!this.isConnected) {
-        console.log('[IAP-SERVICE] Calling initConnection...');
-        const result = await RNIap.initConnection();
-        console.log('[IAP-SERVICE] Connection result:', result);
-        console.log('[IAP-SERVICE] Connection result type:', typeof result);
-        this.isConnected = true;
-      }
-
-      // Set up purchase listeners
-      if (!this.hasListener) {
-        console.log('[IAP-SERVICE] Setting up purchase listeners...');
-        this.setupPurchaseListeners();
-        this.hasListener = true;
-      }
-
-      // NOTE: clearTransactionIOS() was removed in react-native-iap v12+.
-      // Do NOT call it here — it will throw and break initialization.
-      // Pending transactions are handled automatically by the purchase listener
-      // and finishTransaction() calls in processPurchase().
-
-      // Check for unfinished transactions (important for Android)
-      await this.checkForPendingPurchases();
-
-      return true;
-    } catch (error: any) {
-      console.error('[IAP-SERVICE] Failed to initialize:', error);
-      console.error('[IAP-SERVICE] Error details:', {
-        name: error?.name,
-        message: error?.message,
-        code: error?.code
-      });
-      return false;
-    }
+  getConnectionStatus() {
+    return { isConnected: this.isConnected, hasListener: this.hasListener };
   }
 
-  private setupPurchaseListeners() {
-    if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] Cannot setup listeners - IAP not available');
-      return;
-    }
-
-    // Purchase update listener
-    this.purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(
-      async (purchase: any) => {
-        console.log('[IAP-SERVICE] 🎉 Purchase updated:', purchase);
-        this.lastPurchaseResult = purchase;
-
-        if (this.debugCallback) {
-          this.debugCallback({
-            lastPurchase: purchase,
-            listenerStatus: 'PURCHASE RECEIVED ✅'
-          });
-        }
-
-        await this.handlePurchaseUpdate(purchase);
-      }
-    );
-
-    // Purchase error listener
-    this.purchaseErrorSubscription = RNIap.purchaseErrorListener(
-      (error: any) => {
-        console.error('[IAP-SERVICE] Purchase error:', error);
-
-        if (this.debugCallback) {
-          this.debugCallback({
-            listenerStatus: `PURCHASE ERROR ❌: ${error.message}`
-          });
-        }
-
-        // Clear purchase tracking
-        this.currentPurchaseStartTime = null;
-        this.currentPurchaseProductId = null;
-        AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-
-        // Reject the purchase promise
-        if (this.purchasePromiseReject) {
-          this.purchasePromiseReject(new Error(error.message));
-          this.purchasePromiseResolve = null;
-          this.purchasePromiseReject = null;
-        }
-      }
-    );
-
-    console.log('[IAP-SERVICE] Purchase listeners set up successfully');
+  getLastPurchaseResult() {
+    return this.lastPurchaseResult;
   }
 
-  private async handlePurchaseUpdate(purchase: any) {
-    if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] Cannot handle purchase update - IAP not available');
-      return;
-    }
-
-    try {
-      console.log('[IAP-SERVICE] Processing purchase update:', {
-        productId: purchase.productId,
-        transactionId: purchase.transactionId,
-        purchaseToken: purchase.purchaseToken
-      });
-
-      await this.processPurchase(purchase, 'listener');
-
-      // Resolve the purchase promise
-      if (this.purchasePromiseResolve) {
-        console.log('[IAP-SERVICE] Resolving purchase promise (success)');
-        this.purchasePromiseResolve();
-        this.purchasePromiseResolve = null;
-        this.purchasePromiseReject = null;
-      }
-
-    } catch (error) {
-      console.error('[IAP-SERVICE] Error handling purchase update:', error);
-
-      if (this.purchasePromiseReject) {
-        this.purchasePromiseReject(error);
-        this.purchasePromiseResolve = null;
-        this.purchasePromiseReject = null;
-      }
-    }
-  }
-
-  private async checkForPendingPurchases() {
-    if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] Cannot check pending purchases - IAP not available');
-      return;
-    }
-
-    try {
-      console.log('[IAP-SERVICE] Checking for pending purchases...');
-      const purchases = await RNIap.getAvailablePurchases();
-
-      if (purchases && purchases.length > 0) {
-        console.log(`[IAP-SERVICE] ⚠️ PRODUCTION LOG: Found ${purchases.length} pending/orphaned purchases`);
-        console.log('[IAP-SERVICE] ⚠️ This may cause auto-navigation if not handled properly');
-        console.log('[IAP-SERVICE] Orphaned purchases:', purchases.map((p: any) => ({
-          productId: p.productId,
-          transactionId: p.transactionId,
-          purchaseTime: p.transactionDate
-        })));
-
-        for (const purchase of purchases) {
-          const txId = purchase.transactionId;
-          if (!this.processedIds.has(txId)) {
-            console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: Processing orphaned purchase:', purchase.productId);
-            console.log('[IAP-SERVICE] This will grant entitlement but should NOT auto-navigate');
-            await this.processPurchase(purchase, 'orphan');
-          }
-        }
-      } else {
-        console.log('[IAP-SERVICE] No pending purchases found');
-      }
-    } catch (error) {
-      console.error('[IAP-SERVICE] Error checking pending purchases:', error);
-    }
-  }
-
-  private async processPurchase(
-    purchase: any,
-    source: 'listener' | 'restore' | 'orphan'
-  ) {
-    if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] Cannot process purchase - IAP not available');
-      return;
-    }
-
-    const txId = purchase.transactionId;
-    console.log(`[IAP-SERVICE] Processing purchase from ${source}:`, {
-      productId: purchase.productId,
-      transactionId: txId,
-    });
-
-    if (!txId || this.processedIds.has(txId)) {
-      console.log(`[IAP-SERVICE] Skipping already processed transaction: ${txId}`);
-      return;
-    }
-
-    this.processedIds.add(txId);
-
-    try {
-      // Map productId to plan
-      let planToUse: 'yearly' | 'monthly' | 'weekly' = 'yearly';
-      const productId = purchase.productId.toLowerCase();
-
-      if (productId.includes('monthly')) {
-        planToUse = 'monthly';
-      } else if (productId.includes('weekly')) {
-        planToUse = 'weekly';
-      }
-
-      const subscriptionId = `${purchase.productId}_${Date.now()}`;
-      const { data: userData } = await supabase.auth.getUser();
-      const userId = userData?.user?.id;
-
-      console.log(`[IAP-SERVICE] Purchase details:`, {
-        planToUse,
-        subscriptionId,
-        userId: userId ? 'found' : 'missing',
-        source
-      });
-
-      // Determine if we should grant entitlement
-      const inFlight = (await AsyncStorage.getItem(INFLIGHT_KEY)) === 'true';
-      const shouldEntitle =
-        (source === 'listener' && inFlight) ||
-        source === 'restore' ||
-        source === 'orphan';
-
-      console.log(`[IAP-SERVICE] ⚠️ PRODUCTION LOG: Entitlement decision:`, {
-        source,
-        inFlight,
-        shouldEntitle,
-        transactionId: purchase.transactionId
-      });
-
-      // CRITICAL SAFEGUARD: Warn if listener purchase without in-flight flag
-      if (source === 'listener' && !inFlight) {
-        console.error('[IAP-SERVICE] ⚠️⚠️⚠️ CRITICAL WARNING: Purchase received from listener but no in-flight flag!');
-        console.error('[IAP-SERVICE] This indicates a purchase that was NOT initiated in this session');
-        console.error('[IAP-SERVICE] This should be treated as an orphaned transaction, not a new purchase');
-        // Don't entitle to prevent potential exploitation
-        return;
-      }
-
-      if (shouldEntitle && userId) {
-        console.log('[IAP-SERVICE] Granting entitlement...');
-
-        // Determine credits based on plan
-        let credits_max = 0;
-        switch (planToUse) {
-          case 'yearly': credits_max = 90; break;
-          case 'monthly': credits_max = 75; break;
-          case 'weekly': credits_max = 10; break;
-        }
-
-        // Update Supabase profile
-        const now = new Date().toISOString();
-        const updateData = {
-          subscription_plan: planToUse,
-          subscription_id: subscriptionId,
-          is_pro_version: true,
-          product_id: purchase.productId,
-          purchase_time: now,
-          credits_current: credits_max,
-          credits_max: credits_max,
-          subscription_start_date: now,
-          last_credit_reset: now
-        };
-
-        console.log('[IAP-SERVICE] Updating profile with data:', updateData);
-
-        const { error: supabaseError } = await supabase.from('profiles')
-          .update(updateData)
-          .eq('id', userId);
-
-        if (supabaseError) {
-          console.error('[IAP-SERVICE] Supabase update error:', supabaseError);
-          throw supabaseError;
-        }
-
-        // Update AsyncStorage
-        await AsyncStorage.multiSet([
-          ['profile.subscription_plan', planToUse],
-          ['profile.subscription_id', subscriptionId],
-          ['profile.is_pro_version', 'true'],
-        ]);
-
-        console.log('[IAP-SERVICE] Entitlement granted successfully');
-      }
-
-      // Acknowledge/finish the purchase
-      // In react-native-iap v12+, finishTransaction handles acknowledgment on both platforms
-      console.log('[IAP-SERVICE] Finishing transaction...');
-      await RNIap.finishTransaction({ purchase, isConsumable: false });
-
-      // Navigate and clear flag for deliberate purchases
-      if (shouldEntitle) {
-        console.log('[IAP-SERVICE] Clearing in-flight flag...');
-        await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-
-        // Clear purchase session tracking on success
-        this.currentPurchaseStartTime = null;
-        this.currentPurchaseProductId = null;
-
-        console.log(`[IAP-SERVICE] ✅ Purchase complete from ${source}!`);
-
-        if (this.debugCallback) {
-          this.debugCallback({
-            listenerStatus: 'PURCHASE SUCCESS! ✅',
-            shouldNavigate: true,
-            purchaseComplete: true,
-            purchaseSource: source, // Add source to distinguish orphaned vs new purchases
-            isOrphanedPurchase: source === 'orphan'
-          });
-        }
-      }
-
-    } catch (error) {
-      console.error(`[IAP-SERVICE] Error processing purchase:`, error);
-      await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-      throw error;
-    }
-  }
-
-  // Debug logs that can be retrieved by UI
-  private productFetchLogs: string[] = [];
-
-  private addProductLog(message: string) {
-    const timestamp = new Date().toLocaleTimeString();
-    this.productFetchLogs.push(`[${timestamp}] ${message}`);
-    console.log('[IAP-SERVICE]', message);
+  setDebugCallback(cb: (info: any) => void) {
+    this.debugCallback = cb;
   }
 
   getProductFetchLogs(): string[] {
@@ -526,298 +150,451 @@ class IAPService {
     this.productFetchLogs = [];
   }
 
-  async getProducts(): Promise<any[]> {
-    // Clear previous logs
-    this.productFetchLogs = [];
-    
-    if (!this.isAvailable()) {
-      this.addProductLog('❌ IAP not available');
-      return [];
-    }
+  // ── Initialization ─────────────────────────────────────────────────────────
 
-    if (!this.isConnected) {
-      this.addProductLog('Not connected, initializing first...');
-      const initResult = await this.initialize();
-      this.addProductLog(`Initialize result: ${initResult}`);
+  async initialize(): Promise<boolean> {
+    if (!this.isAvailable()) {
+      console.log('[IAP] Not available - skipping init');
+      return false;
     }
 
     try {
-      const productIds = Platform.OS === 'ios' ? IOS_PRODUCT_IDS : ANDROID_PRODUCT_IDS;
-      this.addProductLog('========== PRODUCT FETCH DEBUG ==========');
-      this.addProductLog(`Platform: ${Platform.OS}`);
-      this.addProductLog(`isConnected: ${this.isConnected}`);
-      this.addProductLog(`Product IDs: ${productIds.join(', ')}`);
-      this.addProductLog(`RNIap loaded: ${!!RNIap}`);
+      console.log('[IAP] Initializing... platform:', Platform.OS);
 
-      // Log ALL available RNIap methods for debugging
-      if (RNIap) {
-        const allKeys = Object.keys(RNIap);
-        this.addProductLog(`RNIap has ${allKeys.length} exports`);
-        // Log each export and its type
-        allKeys.forEach(key => {
-          const type = typeof RNIap[key];
-          if (type === 'function') {
-            this.addProductLog(`  ✅ ${key}: function`);
-          }
-        });
-      } else {
-        this.addProductLog('❌ RNIap is null/undefined!');
+      // setup() for StoreKit mode (iOS only, v14+)
+      if (Platform.OS === 'ios' && typeof iapModule.setup === 'function') {
+        try {
+          // Use the enum if present, otherwise fall back to the string literal
+          const StorekitMode = iapModule.StorekitMode;
+          const mode = StorekitMode?.STOREKIT_MODE
+            ?? StorekitMode?.STOREKIT1_MODE
+            ?? 'STOREKIT1_MODE';
+          console.log('[IAP] setup() with storekitMode:', mode);
+          await iapModule.setup({ storekitMode: mode });
+          console.log('[IAP] ✅ StoreKit configured');
+        } catch (e: any) {
+          console.log('[IAP] setup() failed (non-fatal):', e?.message);
+        }
       }
 
-      // Guard: ensure connection before fetching
       if (!this.isConnected) {
-        this.addProductLog('⚠️ Re-initializing connection...');
-        await this.initialize();
-      }
-      
-      // Longer delay to ensure StoreKit is fully ready
-      this.addProductLog('Waiting 1s for StoreKit...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Determine which API to use based on what's available
-      const getSubsFn = RNIap?.getSubscriptions;
-      const getProdFn = RNIap?.getProducts;
-      
-      this.addProductLog(`Using getSubscriptions: ${typeof getSubsFn}`);
-      this.addProductLog(`Using getProducts: ${typeof getProdFn}`);
-
-      // ============ ATTEMPT 1: Standard getSubscriptions with object format ============
-      if (typeof getSubsFn === 'function') {
-        this.addProductLog('ATTEMPT 1: getSubscriptions({ skus })');
-        let products: any[] = [];
-        try {
-          const startTime = Date.now();
-          products = await getSubsFn({ skus: productIds });
-          const elapsed = Date.now() - startTime;
-          this.addProductLog(`Attempt 1: ${products?.length ?? 0} products in ${elapsed}ms`);
-          if (products?.length > 0) {
-            this.addProductLog('✅ SUCCESS with attempt 1');
-            return products;
-          }
-        } catch (err: any) {
-          this.addProductLog(`❌ Attempt 1 failed: ${err?.message || err}`);
-        }
-
-        // ============ ATTEMPT 2: getSubscriptions with array directly ============
-        this.addProductLog('ATTEMPT 2: getSubscriptions([skus])');
-        try {
-          const startTime = Date.now();
-          products = await getSubsFn(productIds);
-          const elapsed = Date.now() - startTime;
-          this.addProductLog(`Attempt 2: ${products?.length ?? 0} products in ${elapsed}ms`);
-          if (products?.length > 0) {
-            this.addProductLog('✅ SUCCESS with attempt 2');
-            return products;
-          }
-        } catch (err: any) {
-          this.addProductLog(`❌ Attempt 2 failed: ${err?.message || err}`);
-        }
-      } else {
-        this.addProductLog('❌ getSubscriptions not available!');
+        console.log('[IAP] Calling initConnection...');
+        const result = await iapModule.initConnection();
+        console.log('[IAP] initConnection result:', result);
+        this.isConnected = true;
       }
 
-      // ============ ATTEMPT 3: getProducts (for non-subscription products) ============
-      if (typeof getProdFn === 'function') {
-        this.addProductLog('ATTEMPT 3: getProducts({ skus })');
-        let products: any[] = [];
-        try {
-          products = await getProdFn({ skus: productIds });
-          this.addProductLog(`Attempt 3: ${products?.length ?? 0} products`);
-          if (products?.length > 0) {
-            this.addProductLog('✅ SUCCESS with attempt 3');
-            return products;
-          }
-        } catch (err: any) {
-          this.addProductLog(`❌ Attempt 3 failed: ${err?.message || err}`);
-        }
+      if (!this.hasListener) {
+        this.setupPurchaseListeners();
+        this.hasListener = true;
       }
 
-      // ============ ALL ATTEMPTS FAILED ============
-      this.addProductLog('========== PRODUCT FETCH FAILED ==========');
-      this.addProductLog('Both getSubscriptions formats returned 0 products.');
-      this.addProductLog('This is likely a configuration issue:');
-      this.addProductLog('  1. Verify product IDs match App Store Connect exactly');
-      this.addProductLog('  2. Ensure products are in "Ready to Submit" state');
-      this.addProductLog('  3. App must be signed with correct provisioning profile');
-      this.addProductLog('  4. For sandbox: use sandbox Apple ID');
-      this.addProductLog(`Requested IDs: ${productIds.join(', ')}`);
-      this.addProductLog('========== END DEBUG ==========');
-
-      return [];
-    } catch (err: any) {
-      this.addProductLog(`❌ CRITICAL ERROR: ${err?.message || err}`);
-      this.addProductLog(`Error code: ${err?.code || 'none'}`);
-      return [];
+      await this.checkForPendingPurchases();
+      return true;
+    } catch (e: any) {
+      console.error('[IAP] initialize failed:', e?.message);
+      return false;
     }
   }
 
-  async purchaseProduct(productId: string): Promise<void> {
+  // ── Product fetching ───────────────────────────────────────────────────────
+  // v14 removed getSubscriptions/getProducts from named exports.
+  // Strategy:
+  //   1. Try iapModule.getSubscriptions if it somehow exists (future-proof)
+  //   2. Call nativeIapModule.getItems() directly (iOS: RNIapIos.getItems,
+  //      Android: RNIapModule.getItemsByType)
+  //   3. Fall back to iapModule.getAvailablePurchases shape-checking
+
+  async getProducts(): Promise<any[]> {
+    this.productFetchLogs = [];
+    this.log('========== PRODUCT FETCH ==========');
+    this.log(`Platform: ${Platform.OS}`);
+
     if (!this.isAvailable()) {
-      throw new Error('IAP not available in this environment');
+      this.log('❌ IAP not available');
+      return [];
     }
 
     if (!this.isConnected) {
-      console.log('[IAP-SERVICE] Not connected, initializing...');
-      await this.initialize();
+      this.log('Not connected - initializing...');
+      const ok = await this.initialize();
+      if (!ok) {
+        this.log('❌ Initialization failed');
+        return [];
+      }
     }
 
-    // Track current purchase session
+    // Brief pause to let StoreKit settle after connection
+    await new Promise(r => setTimeout(r, 500));
+
+    const productIds = Platform.OS === 'ios' ? IOS_PRODUCT_IDS : ANDROID_PRODUCT_IDS;
+    this.log(`Product IDs: ${productIds.join(', ')}`);
+
+    // ── Attempt 1: JS named export (v11/v12 style, present if somehow available)
+    if (typeof iapModule.getSubscriptions === 'function') {
+      this.log('ATTEMPT 1: iapModule.getSubscriptions({ skus })');
+      try {
+        const result = await iapModule.getSubscriptions({ skus: productIds });
+        if (result?.length > 0) {
+          this.log(`✅ Got ${result.length} products via getSubscriptions`);
+          return result;
+        }
+        this.log(`getSubscriptions returned 0 products`);
+      } catch (e: any) {
+        this.log(`❌ getSubscriptions failed: ${e?.message}`);
+      }
+    } else {
+      this.log('getSubscriptions not in JS exports (expected for v14 Nitro)');
+    }
+
+    // ── Attempt 2: Direct native module call (works across all versions)
+    if (nativeIapModule) {
+      this.log(`ATTEMPT 2: Direct native call via ${iapDiagnostics.nativeModuleKey}`);
+      this.log(`Native exports: ${iapDiagnostics.nativeModuleExports.join(', ')}`);
+
+      // iOS: getItems(skus, forSubscriptions)
+      if (Platform.OS === 'ios' && typeof nativeIapModule.getItems === 'function') {
+        this.log('Trying nativeIapModule.getItems(skus, true)...');
+        try {
+          const raw = await nativeIapModule.getItems(productIds, true);
+          this.log(`getItems returned ${raw?.length ?? 0} items`);
+          if (raw?.length > 0) {
+            // v14 may return raw native objects - convert if helper exists
+            const convert = iapModule.convertNitroProductToProduct
+              ?? iapModule.enhanceProductWithType
+              ?? ((x: any) => x);
+            const products = raw.map(convert);
+            this.log(`✅ Got ${products.length} products via native getItems`);
+            return products;
+          }
+        } catch (e: any) {
+          this.log(`❌ native getItems failed: ${e?.message}`);
+        }
+
+        // iOS fallback: getItems with false (non-subscription products)
+        this.log('Trying nativeIapModule.getItems(skus, false)...');
+        try {
+          const raw = await nativeIapModule.getItems(productIds, false);
+          this.log(`getItems(false) returned ${raw?.length ?? 0} items`);
+          if (raw?.length > 0) {
+            const convert = iapModule.convertNitroProductToProduct ?? ((x: any) => x);
+            const products = raw.map(convert);
+            this.log(`✅ Got ${products.length} products (non-sub) via native getItems`);
+            return products;
+          }
+        } catch (e: any) {
+          this.log(`❌ native getItems(false) failed: ${e?.message}`);
+        }
+      }
+
+      // Android: getItemsByType
+      if (Platform.OS === 'android') {
+        for (const type of ['subs', 'inapp']) {
+          if (typeof nativeIapModule.getItemsByType === 'function') {
+            this.log(`Trying nativeIapModule.getItemsByType('${type}', skus)...`);
+            try {
+              const raw = await nativeIapModule.getItemsByType(type, productIds);
+              this.log(`getItemsByType(${type}) returned ${raw?.length ?? 0} items`);
+              if (raw?.length > 0) {
+                this.log(`✅ Got ${raw.length} products via getItemsByType(${type})`);
+                return raw;
+              }
+            } catch (e: any) {
+              this.log(`❌ getItemsByType(${type}) failed: ${e?.message}`);
+            }
+          }
+        }
+      }
+    } else {
+      this.log('No native module available for direct call');
+    }
+
+    // ── Attempt 3: getProducts JS export (some v14 builds keep this)
+    if (typeof iapModule.getProducts === 'function') {
+      this.log('ATTEMPT 3: iapModule.getProducts({ skus })');
+      try {
+        const result = await iapModule.getProducts({ skus: productIds });
+        if (result?.length > 0) {
+          this.log(`✅ Got ${result.length} products via getProducts`);
+          return result;
+        }
+        this.log('getProducts returned 0 products');
+      } catch (e: any) {
+        this.log(`❌ getProducts failed: ${e?.message}`);
+      }
+    }
+
+    // ── All attempts failed ────────────────────────────────────────────────
+    this.log('========== ALL ATTEMPTS FAILED ==========');
+    this.log('Native module present: ' + (!!nativeIapModule));
+    this.log('Native key: ' + (iapDiagnostics.nativeModuleKey ?? 'none'));
+    this.log('Possible causes:');
+    this.log('  1. Product IDs do not match App Store Connect exactly');
+    this.log('  2. Products not in "Ready to Submit" state');
+    this.log('  3. Sandbox Apple ID not signed in on device');
+    this.log('  4. Bundle ID mismatch in provisioning profile');
+    this.log(`  Requested: ${productIds.join(', ')}`);
+    return [];
+  }
+
+  // ── Purchase flow ──────────────────────────────────────────────────────────
+
+  async purchaseProduct(productId: string): Promise<void> {
+    if (!this.isAvailable()) throw new Error('IAP not available');
+
+    if (!this.isConnected) await this.initialize();
+
     this.currentPurchaseStartTime = Date.now();
     this.currentPurchaseProductId = productId;
-
-    console.log(`[IAP-SERVICE] Setting in-flight flag and attempting purchase: ${productId}`);
     await AsyncStorage.setItem(INFLIGHT_KEY, 'true');
 
-    // Create a promise that will be resolved/rejected by the purchase listener
     const purchasePromise = new Promise<void>((resolve, reject) => {
       this.purchasePromiseResolve = resolve;
       this.purchasePromiseReject = reject;
-
-      // Set a timeout
-      setTimeout(() => {
+      setTimeout(async () => {
         if (this.purchasePromiseReject) {
+          await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
           this.purchasePromiseReject(new Error('Purchase timeout'));
           this.purchasePromiseResolve = null;
           this.purchasePromiseReject = null;
         }
-      }, 60000); // 60 second timeout
+      }, 60000);
     });
 
     try {
-      console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: Requesting subscription purchase...');
-      console.log('[IAP-SERVICE] Product ID:', productId);
-      console.log('[IAP-SERVICE] Platform:', Platform.OS);
-      console.log('[IAP-SERVICE] Connection status:', this.isConnected);
-      console.log('[IAP-SERVICE] ⚠️ CRITICAL: About to call RNIap.requestSubscription - IAP modal should appear now');
+      console.log('[IAP] requestSubscription:', productId);
+      // v14 API: pass sku as object property
+      await iapModule.requestSubscription({ sku: productId });
 
-      // Use the v14+ API format - pass sku in an object for both platforms
-      await RNIap.requestSubscription({ sku: productId });
+      this.debugCallback?.({ listenerStatus: 'PURCHASE INITIATED - WAITING... ⏳', productId });
 
-      console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: requestSubscription() called successfully - IAP modal should now be visible to user');
-
-      if (this.debugCallback) {
-        this.debugCallback({
-          listenerStatus: 'PURCHASE INITIATED - WAITING... ⏳',
-          productId: productId
-        });
-      }
-
-      // Wait for the purchase to complete via listener
-      console.log('[IAP-SERVICE] Waiting for purchase completion...');
       await purchasePromise;
-      console.log('[IAP-SERVICE] ⚠️ PRODUCTION LOG: Purchase completed successfully!');
-
-    } catch (error: any) {
-      console.error('[IAP-SERVICE] Purchase failed:', error);
+      console.log('[IAP] ✅ Purchase complete');
+    } catch (e: any) {
+      console.error('[IAP] purchaseProduct error:', e?.message);
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-
-      // Clear session tracking on error
       this.currentPurchaseStartTime = null;
       this.currentPurchaseProductId = null;
-
-      // Clear promise handlers
       this.purchasePromiseResolve = null;
       this.purchasePromiseReject = null;
+      this.debugCallback?.({ listenerStatus: 'PURCHASE FAILED ❌' });
 
-      if (this.debugCallback) {
-        this.debugCallback({
-          listenerStatus: 'PURCHASE FAILED ❌'
-        });
-      }
-
-      // Check if user cancelled
-      if (error?.code === 'E_USER_CANCELLED' || error?.message?.includes('cancel')) {
-        console.log('[IAP-SERVICE] User cancelled purchase');
+      if (e?.code === 'E_USER_CANCELLED' || e?.message?.includes('cancel')) {
         throw new Error('User cancelled purchase');
       }
-
-      throw error;
+      throw e;
     }
   }
 
+  // ── Restore ────────────────────────────────────────────────────────────────
+
   async restorePurchases(): Promise<any[]> {
-    if (!this.isAvailable()) {
-      throw new Error('IAP not available in this environment');
-    }
+    if (!this.isAvailable()) throw new Error('IAP not available');
+    if (!this.isConnected) await this.initialize();
 
-    if (!this.isConnected) {
-      await this.initialize();
-    }
-
+    await AsyncStorage.setItem(INFLIGHT_KEY, 'true');
     try {
-      await AsyncStorage.setItem(INFLIGHT_KEY, 'true');
-      console.log('[IAP-SERVICE] Restoring purchases...');
-
-      const purchases = await RNIap.getAvailablePurchases();
-
-      if (!purchases || purchases.length === 0) {
+      const purchases = await iapModule.getAvailablePurchases();
+      if (!purchases?.length) {
         await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
         throw new Error('No previous purchases found');
       }
-
-      console.log(`[IAP-SERVICE] Found ${purchases.length} purchases to restore`);
-
-      for (const purchase of purchases) {
-        await this.processPurchase(purchase, 'restore');
-      }
-
+      for (const p of purchases) await this.processPurchase(p, 'restore');
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
       return purchases;
-    } catch (error) {
+    } catch (e) {
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
-      throw error;
+      throw e;
     }
   }
 
+  // ── Orphan check ───────────────────────────────────────────────────────────
+
   async checkForOrphanedTransactions(): Promise<void> {
-    if (!this.isAvailable()) {
-      console.log('[IAP-SERVICE] IAP not available, skipping orphaned transaction check');
-      return;
-    }
-
-    if (!this.isConnected) {
-      await this.initialize();
-    }
-
+    if (!this.isAvailable()) return;
+    if (!this.isConnected) await this.initialize();
     await this.checkForPendingPurchases();
   }
 
-  setDebugCallback(callback: (info: any) => void) {
-    this.debugCallback = callback;
-  }
-
-  getLastPurchaseResult() {
-    return this.lastPurchaseResult;
-  }
-
-  getConnectionStatus() {
-    return {
-      isConnected: this.isConnected,
-      hasListener: this.hasListener,
-    };
-  }
+  // ── Cleanup ────────────────────────────────────────────────────────────────
 
   async cleanup() {
-    if (!this.isAvailable()) {
-      return;
-    }
-
-    if (this.purchaseUpdateSubscription) {
-      this.purchaseUpdateSubscription.remove();
-      this.purchaseUpdateSubscription = null;
-    }
-
-    if (this.purchaseErrorSubscription) {
-      this.purchaseErrorSubscription.remove();
-      this.purchaseErrorSubscription = null;
-    }
-
+    if (!this.isAvailable()) return;
+    this.purchaseUpdateSubscription?.remove();
+    this.purchaseUpdateSubscription = null;
+    this.purchaseErrorSubscription?.remove();
+    this.purchaseErrorSubscription = null;
     if (this.isConnected) {
-      await RNIap.endConnection();
+      await iapModule.endConnection();
       this.isConnected = false;
     }
-
     this.hasListener = false;
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  private log(msg: string) {
+    const ts = new Date().toLocaleTimeString();
+    this.productFetchLogs.push(`[${ts}] ${msg}`);
+    console.log('[IAP]', msg);
+  }
+
+  private setupPurchaseListeners() {
+    if (!this.isAvailable()) return;
+
+    this.purchaseUpdateSubscription = iapModule.purchaseUpdatedListener(
+      async (purchase: any) => {
+        console.log('[IAP] 🎉 purchaseUpdated:', purchase?.productId);
+        this.lastPurchaseResult = purchase;
+        this.debugCallback?.({ lastPurchase: purchase, listenerStatus: 'PURCHASE RECEIVED ✅' });
+        await this.handlePurchaseUpdate(purchase);
+      }
+    );
+
+    this.purchaseErrorSubscription = iapModule.purchaseErrorListener(
+      (error: any) => {
+        console.error('[IAP] purchaseError:', error?.message);
+        this.debugCallback?.({ listenerStatus: `PURCHASE ERROR ❌: ${error.message}` });
+        this.currentPurchaseStartTime = null;
+        this.currentPurchaseProductId = null;
+        AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+        if (this.purchasePromiseReject) {
+          this.purchasePromiseReject(new Error(error.message));
+          this.purchasePromiseResolve = null;
+          this.purchasePromiseReject = null;
+        }
+      }
+    );
+
+    console.log('[IAP] Purchase listeners registered');
+  }
+
+  private async handlePurchaseUpdate(purchase: any) {
+    try {
+      await this.processPurchase(purchase, 'listener');
+      if (this.purchasePromiseResolve) {
+        this.purchasePromiseResolve();
+        this.purchasePromiseResolve = null;
+        this.purchasePromiseReject = null;
+      }
+    } catch (e) {
+      console.error('[IAP] handlePurchaseUpdate error:', e);
+      if (this.purchasePromiseReject) {
+        this.purchasePromiseReject(e);
+        this.purchasePromiseResolve = null;
+        this.purchasePromiseReject = null;
+      }
+    }
+  }
+
+  private async checkForPendingPurchases() {
+    try {
+      const purchases = await iapModule.getAvailablePurchases();
+      if (purchases?.length > 0) {
+        console.log(`[IAP] Found ${purchases.length} pending purchase(s)`);
+        for (const p of purchases) {
+          if (!this.processedIds.has(p.transactionId)) {
+            await this.processPurchase(p, 'orphan');
+          }
+        }
+      } else {
+        console.log('[IAP] No pending purchases');
+      }
+    } catch (e) {
+      console.error('[IAP] checkForPendingPurchases error:', e);
+    }
+  }
+
+  private async processPurchase(purchase: any, source: 'listener' | 'restore' | 'orphan') {
+    const txId = purchase.transactionId;
+
+    if (!txId || this.processedIds.has(txId)) {
+      console.log('[IAP] Skipping already-processed tx:', txId);
+      return;
+    }
+    this.processedIds.add(txId);
+
+    try {
+      const productId = purchase.productId.toLowerCase();
+      let planToUse: 'yearly' | 'monthly' | 'weekly' = 'yearly';
+      if (productId.includes('monthly')) planToUse = 'monthly';
+      else if (productId.includes('weekly')) planToUse = 'weekly';
+
+      const inFlight = (await AsyncStorage.getItem(INFLIGHT_KEY)) === 'true';
+      const shouldEntitle =
+        (source === 'listener' && inFlight) ||
+        source === 'restore' ||
+        source === 'orphan';
+
+      console.log(`[IAP] processPurchase: source=${source} inFlight=${inFlight} shouldEntitle=${shouldEntitle}`);
+
+      // Guard: listener purchase that arrived with no active session = orphan replay
+      if (source === 'listener' && !inFlight) {
+        console.warn('[IAP] Listener purchase with no in-flight flag - ignoring');
+        return;
+      }
+
+      if (shouldEntitle) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const userId = user?.id;
+
+        if (!userId) {
+          // Don't finish transaction - let it remain pending so it can be restored
+          throw new Error('User not authenticated - cannot grant entitlement');
+        }
+
+        const credits_max = planToUse === 'yearly' ? 90 : planToUse === 'monthly' ? 75 : 10;
+        const now = new Date().toISOString();
+        const subscriptionId = `${purchase.productId}_${Date.now()}`;
+
+        const { error } = await supabase.from('profiles').update({
+          subscription_plan: planToUse,
+          subscription_id: subscriptionId,
+          is_pro_version: true,
+          product_id: purchase.productId,
+          purchase_time: now,
+          credits_current: credits_max,
+          credits_max,
+          subscription_start_date: now,
+          last_credit_reset: now,
+        }).eq('id', userId);
+
+        if (error) throw error;
+
+        await AsyncStorage.multiSet([
+          ['profile.subscription_plan', planToUse],
+          ['profile.subscription_id', subscriptionId],
+          ['profile.is_pro_version', 'true'],
+        ]);
+
+        console.log('[IAP] ✅ Entitlement granted');
+      }
+
+      // finishTransaction handles acknowledgment on both iOS and Android in v12+
+      // Explicitly include transactionId for v14 Nitro compatibility
+      await iapModule.finishTransaction({ 
+        purchase: { ...purchase, transactionId: txId }, 
+        isConsumable: false 
+      });
+
+      if (shouldEntitle) {
+        await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+        this.currentPurchaseStartTime = null;
+        this.currentPurchaseProductId = null;
+
+        this.debugCallback?.({
+          listenerStatus: 'PURCHASE SUCCESS! ✅',
+          shouldNavigate: true,
+          purchaseComplete: true,
+          purchaseSource: source,
+          isOrphanedPurchase: source === 'orphan',
+        });
+      }
+    } catch (e) {
+      console.error('[IAP] processPurchase error:', e);
+      await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
+      throw e;
+    }
   }
 }
 

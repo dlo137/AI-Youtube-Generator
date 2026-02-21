@@ -1,4 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+// Removed Nitro API imports (not used)
+  // Debug panel state
+  const [showDebug, setShowDebug] = useState(false);
+  // Debug log
+  const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
+  // Product fetch status for debug panel
+  const [productFetchStatus, setProductFetchStatus] = useState({
+    attempted: false,
+    success: false,
+    error: '',
+    foundProducts: [] as string[],
+    missingProducts: [] as string[],
+  });
+  // IAP available for debug
+  const [isIAPAvailable, setIsIAPAvailable] = useState(false);
+  // Restore ref
+  const isRestoringRef = useRef(false);
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Image, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -22,442 +39,59 @@ const PRODUCT_IDS = Platform.OS === 'ios' ? {
 
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const routerRef = useRef(router);
   const [selectedPlan, setSelectedPlan] = useState<'yearly' | 'monthly' | 'weekly'>('yearly');
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const [products, setProducts] = useState<any[]>([]);
-  const [iapReady, setIapReady] = useState(false);
-  const [loadingProducts, setLoadingProducts] = useState(false);
-  const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
-  const hasProcessedOrphansRef = useRef<boolean>(false);
-  const isRestoringRef = useRef<boolean>(false);
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const discountModalAnim = useRef(new Animated.Value(0)).current;
+  const [products, setProducts] = useState<any[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [iapReady, setIapReady] = useState(false);
+  const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
 
-  // Keep router ref updated
+  // Fetch products on mount
   useEffect(() => {
-    routerRef.current = router;
-  }, [router]);
-
-  // Debug state
-  const [debugInfo, setDebugInfo] = useState<any>({
-    listenerStatus: 'Not started',
-    connectionStatus: { isConnected: false, hasListener: false },
-    lastPurchaseResult: null,
-    timestamp: new Date().toISOString()
-  });
-  const [showDebug, setShowDebug] = useState(false); // Production debug panel
-  const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
-  const [productFetchStatus, setProductFetchStatus] = useState<{
-    attempted: boolean;
-    success: boolean;
-    error: string | null;
-    productIds: string[];
-    foundProducts: string[];
-    missingProducts: string[];
-  }>({
-    attempted: false,
-    success: false,
-    error: null,
-    productIds: [],
-    foundProducts: [],
-    missingProducts: []
-  });
-
-  // Check if IAP is available - use state so it can be updated after initialization
-  const [isIAPAvailable, setIsIAPAvailable] = useState(IAPService.isAvailable());
-
-  // Stable callback for IAP events
-  const handleIAPCallback = useCallback((info: any) => {
-    console.log('[SUBSCRIPTION] IAP Debug:', info);
-
-    // Update debug info
-    setDebugInfo((prev: any) => ({
-      ...prev,
-      ...info,
-      connectionStatus: IAPService.getConnectionStatus(),
-      timestamp: new Date().toISOString()
-    }));
-
-    // Handle successful purchase - navigate to generate screen
-    if (info.listenerStatus?.includes('SUCCESS') || info.listenerStatus?.includes('Navigating')) {
-      console.log('[SUBSCRIPTION] Purchase successful!', {
-        purchaseSource: info.purchaseSource,
-        isOrphaned: info.isOrphanedPurchase
-      });
-
-      // CRITICAL: Only auto-navigate for new purchases (listener), not orphaned transactions
-      // This prevents users from being pushed through without actually completing a purchase
-      if (info.isOrphanedPurchase) {
-        console.log('[SUBSCRIPTION] Orphaned purchase recovered - processing silently without alert');
-
-        // Silently process orphaned purchases without showing alerts or auto-navigating
-        // Just like the simulated/dev mode - update happens in background
-        setCurrentPurchaseAttempt(null);
-
-        trackEvent('subscription_completed', {
-          plan: 'recovered',
-          platform: Platform.OS,
-          source: 'orphaned_transaction'
-        });
-
-        return; // Don't show alert or auto-navigate
-      }
-
-      // Only auto-navigate for new purchases from the listener
-      console.log('[SUBSCRIPTION] New purchase completed! Navigating to generate screen...');
-
-      // Track successful subscription
-      trackEvent('subscription_completed', {
-        plan: currentPurchaseAttempt || selectedPlan,
-        platform: Platform.OS,
-        source: info.purchaseSource || 'listener'
-      });
-
-      setCurrentPurchaseAttempt(null);
-
-      // Use router ref to ensure we have the latest router instance
-      const currentRouter = routerRef.current;
-      if (currentRouter && typeof currentRouter.replace === 'function') {
-        console.log('[SUBSCRIPTION] Router available, navigating now...');
-        setTimeout(() => {
-          currentRouter.replace('/(tabs)/generate');
-        }, 500);
-      } else {
-        console.error('[SUBSCRIPTION] Router not available or replace function missing!', currentRouter);
-        // Fallback: try direct navigation
-        try {
-          router.replace('/(tabs)/generate');
-        } catch (err) {
-          console.error('[SUBSCRIPTION] Fallback navigation failed:', err);
+    const fetchProducts = async (updateDebug = true) => {
+      setLoadingProducts(true);
+      setProductFetchStatus(prev => ({ ...prev, attempted: true, error: '', foundProducts: [], missingProducts: [] }));
+      try {
+        const results = await IAPService.getProducts();
+        setProducts(results);
+        setIapReady(true);
+        setIsIAPAvailable(IAPService.isAvailable());
+        if (updateDebug) {
+          const found = results.map(p => p.productId);
+          const expected = Object.values(PRODUCT_IDS);
+          setProductFetchStatus({
+            attempted: true,
+            success: true,
+            error: '',
+            foundProducts: found,
+            missingProducts: expected.filter(id => !found.includes(id)),
+          });
         }
+      } catch (err: any) {
+        setProducts([]);
+        setIapReady(false);
+        setIsIAPAvailable(false);
+        setProductFetchStatus(prev => ({ ...prev, success: false, error: String(err), foundProducts: [], missingProducts: Object.values(PRODUCT_IDS) }));
+      } finally {
+        setLoadingProducts(false);
       }
-    }
-
-    // Update loading state based on listener status
-    if (info.listenerStatus?.includes('CANCELLED') || info.listenerStatus?.includes('FAILED') || info.listenerStatus?.includes('TIMEOUT')) {
-      setCurrentPurchaseAttempt(null);
-    }
-  }, [router]);
-
-  useEffect(() => {
-    trackScreenView('Subscription Screen');
-
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
-
-    initializeIAP();
-
-    // Fallback: Set IAP ready after 5 seconds if still not ready
-    const timeout = setTimeout(() => {
-      setIapReady(true);
-      console.log('[SUBSCRIPTION] IAP initialization timeout - unblocking button');
-    }, 5000);
-
-    return () => clearTimeout(timeout);
+    };
+    fetchProducts();
+    // Debug log helper
+    const addDebugLog = (msg: string) => setProductDebugLogs(logs => [...logs, `[${new Date().toLocaleTimeString()}] ${msg}`]);
   }, []);
 
-  // Re-register callback whenever it changes
-  useEffect(() => {
-    if (iapReady) {
-      console.log('[SUBSCRIPTION] Re-registering IAP callback');
-      IAPService.setDebugCallback(handleIAPCallback);
-    }
-  }, [handleIAPCallback, iapReady]);
-
-  const initializeIAP = async () => {
-    try {
-      // Let IAPService.initialize() handle availability check internally
-      const initialized = await IAPService.initialize();
-      
-      // Update availability state after initialization completes
-      const available = IAPService.isAvailable();
-      setIsIAPAvailable(available);
-      
-      // Ready if initialized successfully OR if IAP is unavailable (e.g., Expo Go)
-      setIapReady(initialized || !available);
-
-      if (initialized) {
-        // Set up debug callback using the stable callback
-        IAPService.setDebugCallback(handleIAPCallback);
-
-        // Check for orphaned transactions on startup
-        if (!hasProcessedOrphansRef.current) {
-          hasProcessedOrphansRef.current = true;
-          await IAPService.checkForOrphanedTransactions();
-        }
-
-        // Fetch products
-        await fetchProducts();
-      }
-    } catch (error) {
-      console.error('[SUBSCRIPTION] Error initializing IAP:', error);
-      // Set ready to true even on error to prevent button from being stuck
-      setIapReady(true);
-      Alert.alert('Error', 'Failed to initialize purchases. Please restart the app.');
-    }
-  };
-
-  const addDebugLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString();
-    setProductDebugLogs(prev => [...prev.slice(-19), `[${timestamp}] ${message}`]);
-  };
-
-  const fetchProducts = async (showErrors = false) => {
-    const expectedProductIds = Object.values(PRODUCT_IDS);
-    addDebugLog(`Platform: ${Platform.OS}`);
-    addDebugLog(`Expected IDs: ${expectedProductIds.join(', ')}`);
-    
-    // Use IAPService.isAvailable() directly instead of state (state may be stale)
-    const iapCurrentlyAvailable = IAPService.isAvailable();
-    
-    if (!iapCurrentlyAvailable) {
-      // Get diagnostic info to help debug
-      const diagnostics = IAPService.getDiagnostics();
-      addDebugLog('❌ IAP module not available');
-      addDebugLog(`  require succeeded: ${diagnostics.requireSucceeded}`);
-      addDebugLog(`  require error: ${diagnostics.requireError || 'none'}`);
-      addDebugLog(`  hasInitConnection: ${diagnostics.hasInitConnection}`);
-      addDebugLog(`  hasGetSubscriptions: ${diagnostics.hasGetSubscriptions}`);
-      addDebugLog(`  exports: ${diagnostics.moduleExports.slice(0, 10).join(', ')}`);
-      addDebugLog(`  native modules: ${diagnostics.nativeModulesFound.join(', ') || 'none'}`);
-      
-      const errorDetail = diagnostics.requireError 
-        ? `Error: ${diagnostics.requireError}`
-        : diagnostics.requireSucceeded 
-          ? `Module loaded but functions missing (initConnection: ${diagnostics.hasInitConnection}, getSubscriptions: ${diagnostics.hasGetSubscriptions})`
-          : 'Module failed to load';
-      
-      setProductFetchStatus({
-        attempted: true,
-        success: false,
-        error: `IAP module not available - ${errorDetail}`,
-        productIds: expectedProductIds,
-        foundProducts: [],
-        missingProducts: expectedProductIds
-      });
-      if (showErrors) {
-        Alert.alert('IAP Unavailable', 'In-app purchases are not available on this platform.');
-      }
-      return [];
-    }
-
-    addDebugLog('✅ IAP module available');
-    console.log('[SUBSCRIPTION] Fetching products...');
-    try {
-      setLoadingProducts(true);
-      addDebugLog('Calling IAPService.getProducts()...');
-      
-      // Clear previous logs
-      IAPService.clearProductFetchLogs();
-      
-      const results = await IAPService.getProducts();
-      
-      // Get the detailed logs from IAPService and add them to UI
-      const serviceLogs = IAPService.getProductFetchLogs();
-      serviceLogs.forEach(log => addDebugLog(log));
-      
-      const foundIds = results?.map((p: any) => p.productId) || [];
-      const missingIds = expectedProductIds.filter(id => !foundIds.includes(id));
-      
-      addDebugLog(`Received ${results?.length || 0} products`);
-      
-      if (results?.length) {
-        setProducts(results);
-        results.forEach((p: any) => {
-          addDebugLog(`✅ Found: ${p.productId} - ${p.localizedPrice || p.price}`);
-        });
-        missingIds.forEach(id => {
-          addDebugLog(`❌ Missing: ${id}`);
-        });
-        
-        setProductFetchStatus({
-          attempted: true,
-          success: true,
-          error: null,
-          productIds: expectedProductIds,
-          foundProducts: foundIds,
-          missingProducts: missingIds
-        });
-        
-        console.log('[SUBSCRIPTION] Products loaded:', results.map((p: any) => `${p.productId}: ${p.price}`).join(', '));
-        return results;
-      } else {
-        setProducts([]);
-        addDebugLog('❌ No products returned from App Store');
-        addDebugLog('Possible causes:');
-        addDebugLog('  1. Products not in "Ready to Submit" status');
-        addDebugLog('  2. Agreements/banking not complete');
-        addDebugLog('  3. Bundle ID mismatch');
-        addDebugLog('  4. Product IDs incorrect');
-        
-        setProductFetchStatus({
-          attempted: true,
-          success: false,
-          error: 'No products returned from App Store Connect',
-          productIds: expectedProductIds,
-          foundProducts: [],
-          missingProducts: expectedProductIds
-        });
-        
-        console.log('[SUBSCRIPTION] No products available');
-        if (showErrors) {
-          Alert.alert('Products Unavailable', 'Could not load subscription products. Please check your internet connection and try again.');
-        }
-        return [];
-      }
-    } catch (err) {
-      setProducts([]);
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      addDebugLog(`❌ Error: ${errorMsg}`);
-      
-      setProductFetchStatus({
-        attempted: true,
-        success: false,
-        error: errorMsg,
-        productIds: expectedProductIds,
-        foundProducts: [],
-        missingProducts: expectedProductIds
-      });
-      
-      console.error('[SUBSCRIPTION] Error fetching products:', err);
-      if (showErrors) {
-        Alert.alert('Error', 'Failed to load products: ' + errorMsg);
-      }
-      return [];
-    } finally {
-      setLoadingProducts(false);
-    }
-  };
-
   const handleContinue = async () => {
-    console.log('[SUBSCRIPTION] ⚠️ PRODUCTION LOG: User tapped Get Started button');
-    console.log('[SUBSCRIPTION] IAP Available:', isIAPAvailable);
-    console.log('[SUBSCRIPTION] IAP Ready:', iapReady);
-    console.log('[SUBSCRIPTION] Current purchase attempt:', currentPurchaseAttempt);
-
-    if (!isIAPAvailable) {
-      console.log('[SUBSCRIPTION] ⚠️ IAP not available - this should only happen in Expo Go or if react-native-iap failed to load');
-      // For development/testing: Automatically simulate purchase in Expo Go
-      if (__DEV__) {
-        try {
-          setCurrentPurchaseAttempt(selectedPlan);
-          
-          // Get current user
-          const { data: { user }, error: userError } = await supabase.auth.getUser();
-          if (userError || !user) {
-            throw new Error('User not authenticated');
-          }
-
-          // Determine credits based on plan
-          let credits_max = 0;
-          switch (selectedPlan) {
-            case 'yearly': credits_max = 90; break;
-            case 'monthly': credits_max = 75; break;
-            case 'weekly': credits_max = 10; break;
-          }
-
-          // Update subscription in Supabase with is_pro_version = true
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({
-              subscription_plan: selectedPlan,
-              is_pro_version: true,
-              subscription_id: `dev_${selectedPlan}_${Date.now()}`,
-              purchase_time: new Date().toISOString(),
-              credits_current: credits_max,
-              credits_max: credits_max,
-              last_credit_reset: new Date().toISOString()
-            })
-            .eq('id', user.id);
-
-          if (updateError) throw updateError;
-
-          // Track test subscription
-          trackEvent('subscription_completed', {
-            plan: selectedPlan,
-            platform: Platform.OS,
-            test_mode: true,
-          });
-
-          console.log('[SUBSCRIPTION] ✅ Expo Go: Simulated purchase successful');
-          setCurrentPurchaseAttempt(null);
-          router.replace('/(tabs)/generate');
-        } catch (error) {
-          console.error('Expo Go simulation error:', error);
-          setCurrentPurchaseAttempt(null);
-          Alert.alert('Error', 'Failed to simulate subscription.');
-        }
-      } else {
-        Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
-      }
-      return;
-    }
-
-    const list = products.length ? products : await fetchProducts(true);
     const planId = PRODUCT_IDS[selectedPlan];
-    const product = list.find(p => p.productId === planId);
-
+    const product = products.find(p => p.productId === planId);
     if (!product) {
-      Alert.alert(
-        'Plan not available',
-        'We couldn\'t find that plan. Please check your internet connection and try again.'
-      );
+      Alert.alert('Plan not available', 'We couldn\'t find that plan. Please check your internet connection and try again.');
       return;
     }
-
-    // Set the current purchase attempt BEFORE starting the purchase
     setCurrentPurchaseAttempt(selectedPlan);
-    console.log('[SUBSCRIPTION] ⚠️ PRODUCTION LOG: Starting purchase flow for:', product.productId);
-    console.log('[SUBSCRIPTION] Selected plan:', selectedPlan);
-    await handlePurchase(product.productId);
-  };
-
-  const handlePurchase = async (productId: string) => {
-    if (!isIAPAvailable) {
-      console.error('[SUBSCRIPTION] ⚠️ ERROR: handlePurchase called but IAP not available!');
-      Alert.alert('Purchases unavailable', 'In-app purchases are not available on this device.');
-      setCurrentPurchaseAttempt(null);
-      return;
-    }
-
-    try {
-      console.log('[SUBSCRIPTION] ⚠️ PRODUCTION LOG: Calling IAPService.purchaseProduct');
-      console.log('[SUBSCRIPTION] Product ID:', productId);
-      console.log('[SUBSCRIPTION] Expecting IAP modal to appear...');
-      await IAPService.purchaseProduct(productId);
-    } catch (e: any) {
-      setCurrentPurchaseAttempt(null); // Clear on error
-      const msg = String(e?.message || e);
-
-      if (/already.*(owned|subscribed)/i.test(msg)) {
-        Alert.alert(
-          'Already subscribed',
-          'You already have an active subscription. Manage your subscriptions from the App Store.',
-          [
-            { text: 'OK' },
-          ]
-        );
-        return;
-      }
-
-      if (/item.*unavailable|product.*not.*available/i.test(msg)) {
-        Alert.alert('Not available', 'This plan isn\'t available for purchase right now.');
-        return;
-      }
-
-      // Handle user cancellation
-      if (/user.*(cancel|abort)/i.test(msg) || /cancel/i.test(msg)) {
-        console.log('[SUBSCRIPTION] Purchase was cancelled by user');
-        return;
-      }
-
-      console.error('[SUBSCRIPTION] Purchase error:', msg);
-      Alert.alert('Purchase error', msg);
-    }
+    await IAPService.purchaseProduct(product.productId);
   };
 
   const handleRestore = async () => {
@@ -465,7 +99,8 @@ export default function SubscriptionScreen() {
     if (isRestoringRef.current) return;
     isRestoringRef.current = true;
 
-    if (!isIAPAvailable) {
+    // Use direct service check to avoid stale state
+    if (!IAPService.isAvailable()) {
       Alert.alert('Restore Failed', 'In-app purchases are not available on this device.');
       isRestoringRef.current = false;
       return;
@@ -560,7 +195,8 @@ export default function SubscriptionScreen() {
   };
 
   const handleDiscountPurchase = async () => {
-    if (!isIAPAvailable) {
+    // Use direct service check to avoid stale state
+    if (!IAPService.isAvailable()) {
       // For development/testing: Automatically simulate purchase in Expo Go
       if (__DEV__) {
         try {
@@ -942,8 +578,34 @@ export default function SubscriptionScreen() {
             <TouchableOpacity
               style={styles.debugButton}
               onPress={async () => {
-                addDebugLog('Manual refresh triggered');
-                await fetchProducts(false);
+                // Manual refresh for debug panel
+                setProductDebugLogs(logs => [...logs, `[${new Date().toLocaleTimeString()}] Manual refresh triggered`]);
+                await (async () => {
+                  setLoadingProducts(true);
+                  setProductFetchStatus(prev => ({ ...prev, attempted: true, error: '', foundProducts: [], missingProducts: [] }));
+                  try {
+                    const results = await IAPService.getProducts();
+                    setProducts(results);
+                    setIapReady(true);
+                    setIsIAPAvailable(IAPService.isAvailable());
+                    const found = results.map(p => p.productId);
+                    const expected = Object.values(PRODUCT_IDS);
+                    setProductFetchStatus({
+                      attempted: true,
+                      success: true,
+                      error: '',
+                      foundProducts: found,
+                      missingProducts: expected.filter(id => !found.includes(id)),
+                    });
+                  } catch (err: any) {
+                    setProducts([]);
+                    setIapReady(false);
+                    setIsIAPAvailable(false);
+                    setProductFetchStatus(prev => ({ ...prev, success: false, error: String(err), foundProducts: [], missingProducts: Object.values(PRODUCT_IDS) }));
+                  } finally {
+                    setLoadingProducts(false);
+                  }
+                })();
               }}
             >
               <Text style={styles.debugButtonText}>🔄 Retry Fetch Products</Text>
@@ -1426,6 +1088,6 @@ const styles = StyleSheet.create({
   discountSkipButtonText: {
     fontSize: 14,
     color: MUTED,
-    opacity: 0.7,
+    opacity: 0.7
   },
 });
