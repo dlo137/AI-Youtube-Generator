@@ -30,20 +30,7 @@ export default function SubscriptionScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [iapReady, setIapReady] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
-  // Debug panel state
-  const [showDebug, setShowDebug] = useState(false);
-  // Debug log
-  const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
-  // Product fetch status for debug panel
-  const [productFetchStatus, setProductFetchStatus] = useState({
-    attempted: false,
-    success: false,
-    error: '',
-    foundProducts: [] as string[],
-    missingProducts: [] as string[],
-  });
-  // IAP available for debug
-  const [isIAPAvailable, setIsIAPAvailable] = useState(false);
+  // ...existing code...
   // Restore ref
   const isRestoringRef = useRef(false);
 
@@ -165,6 +152,8 @@ export default function SubscriptionScreen() {
     setCurrentPurchaseAttempt(selectedPlan);
     try {
       await IAPService.purchaseProduct(product.id);
+      setCurrentPurchaseAttempt(null);
+      router.replace('/(tabs)/generate');
     } catch (error: any) {
       setCurrentPurchaseAttempt(null);
       const msg = String(error?.message || error);
@@ -294,6 +283,8 @@ export default function SubscriptionScreen() {
       setCurrentPurchaseAttempt('weekly');
       console.log('[SUBSCRIPTION] Attempting to purchase discounted weekly:', PRODUCT_IDS.discountedWeekly);
       await IAPService.purchaseProduct(PRODUCT_IDS.discountedWeekly);
+      setCurrentPurchaseAttempt(null);
+      router.replace('/(tabs)/generate');
     } catch (error: any) {
       setCurrentPurchaseAttempt(null);
       console.error('[SUBSCRIPTION] Discount purchase error:', error);
@@ -538,128 +529,7 @@ export default function SubscriptionScreen() {
         </Animated.View>
       )}
 
-      {/* Debug Panel */}
-      {showDebug && (
-        <View style={styles.debugPanel}>
-          <View style={styles.debugHeader}>
-            <Text style={styles.debugTitle}>🔧 IAP Product Debug</Text>
-            <TouchableOpacity onPress={() => setShowDebug(false)} style={styles.debugCloseButton}>
-              <Text style={styles.debugCloseText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.debugContent} showsVerticalScrollIndicator={true}>
-            <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Product Fetch Status</Text>
-              <Text style={styles.debugText}>
-                IAP Available: {isIAPAvailable ? '✅' : '❌'}
-              </Text>
-              <Text style={styles.debugText}>
-                IAP Ready: {iapReady ? '✅' : '❌'}
-              </Text>
-              <Text style={styles.debugText}>
-                Fetch Attempted: {productFetchStatus.attempted ? '✅' : '❌'}
-              </Text>
-              <Text style={styles.debugText}>
-                Fetch Success: {productFetchStatus.success ? '✅' : '❌'}
-              </Text>
-              {productFetchStatus.error && (
-                <Text style={[styles.debugText, { color: '#ef4444' }]}>
-                  Error: {productFetchStatus.error}
-                </Text>
-              )}
-            </View>
-
-            <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Expected Product IDs</Text>
-              {Object.entries(PRODUCT_IDS).map(([key, value]) => (
-                <Text key={key} style={styles.debugText}>
-                  {key}: {value}
-                </Text>
-              ))}
-            </View>
-
-            <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Found Products ({productFetchStatus.foundProducts.length})</Text>
-              {productFetchStatus.foundProducts.length > 0 ? (
-                productFetchStatus.foundProducts.map(id => (
-                  <Text key={id} style={[styles.debugText, { color: '#22c55e' }]}>✅ {id}</Text>
-                ))
-              ) : (
-                <Text style={styles.debugText}>None found</Text>
-              )}
-            </View>
-
-            <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Missing Products ({productFetchStatus.missingProducts.length})</Text>
-              {productFetchStatus.missingProducts.length > 0 ? (
-                productFetchStatus.missingProducts.map(id => (
-                  <Text key={id} style={[styles.debugText, { color: '#ef4444' }]}>❌ {id}</Text>
-                ))
-              ) : (
-                <Text style={[styles.debugText, { color: '#22c55e' }]}>All products found!</Text>
-              )}
-            </View>
-
-            <View style={styles.debugSection}>
-              <Text style={styles.debugSectionTitle}>Debug Log</Text>
-              {productDebugLogs.length > 0 ? (
-                productDebugLogs.map((log, i) => (
-                  <Text key={i} style={[styles.debugText, styles.debugCode]}>{log}</Text>
-                ))
-              ) : (
-                <Text style={styles.debugText}>No logs yet</Text>
-              )}
-            </View>
-
-            <TouchableOpacity
-              style={styles.debugButton}
-              onPress={async () => {
-                // Manual refresh for debug panel
-                setProductDebugLogs(logs => [...logs, `[${new Date().toLocaleTimeString()}] Manual refresh triggered`]);
-                await (async () => {
-                  setLoadingProducts(true);
-                  setProductFetchStatus(prev => ({ ...prev, attempted: true, error: '', foundProducts: [], missingProducts: [] }));
-                  try {
-                    const results = await IAPService.getProducts();
-                    setProducts(results);
-                    setIapReady(true);
-                    setIsIAPAvailable(IAPService.isAvailable());
-                    const found = results.map(p => p.id);
-                    const expected = Object.values(PRODUCT_IDS);
-                    setProductFetchStatus({
-                      attempted: true,
-                      success: true,
-                      error: '',
-                      foundProducts: found,
-                      missingProducts: expected.filter(id => !found.includes(id)),
-                    });
-                  } catch (err: any) {
-                    setProducts([]);
-                    setIapReady(false);
-                    setIsIAPAvailable(false);
-                    setProductFetchStatus(prev => ({ ...prev, success: false, error: String(err), foundProducts: [], missingProducts: Object.values(PRODUCT_IDS) }));
-                  } finally {
-                    setLoadingProducts(false);
-                  }
-                })();
-              }}
-            >
-              <Text style={styles.debugButtonText}>🔄 Retry Fetch Products</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      )}
-
-      {/* Show Debug Button when panel is hidden */}
-      {!showDebug && (
-        <TouchableOpacity
-          style={styles.showDebugButton}
-          onPress={() => setShowDebug(true)}
-        >
-          <Text style={styles.showDebugText}>🔧</Text>
-        </TouchableOpacity>
-      )}
+      {/* ...existing code... */}
     </LinearGradient>
   );
 }
