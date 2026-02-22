@@ -383,11 +383,12 @@ class IAPService {
 
   private async handlePurchaseUpdate(purchase: any) {
     try {
-      const entitled = await this.processPurchase(purchase, 'listener');
-      // Only resolve the purchase promise if entitlement was actually granted.
-      // If processPurchase returned false (inFlight=false early return), we must
-      // NOT resolve — the promise should wait for the real purchase transaction.
-      if (entitled && this.purchasePromiseResolve) {
+      await this.processPurchase(purchase, 'listener');
+      // Always resolve — processPurchase may skip entitlement for a re-delivered
+      // pending transaction (inFlight=false or processedIds hit), but that's fine
+      // because handleContinue/handlePurchase calls validate-receipt directly after
+      // purchaseProduct() returns, guaranteeing the profile is written regardless.
+      if (this.purchasePromiseResolve) {
         this.purchasePromiseResolve();
         this.purchasePromiseResolve = null;
         this.purchasePromiseReject = null;
@@ -459,7 +460,13 @@ class IAPService {
       this.plog(`  inFlightRaw="${inFlightRaw}" inFlight=${inFlight} shouldEntitle=${shouldEntitle} plan=${planToUse}`);
 
       if (source === 'listener' && !inFlight) {
-        this.plog('⚠️ inFlight=false — ignoring listener event (no purchase in progress). txId NOT added to processedIds.');
+        this.plog('⚠️ inFlight=false — no active purchase. Finishing transaction to clear StoreKit queue.');
+        try {
+          await iapModule.finishTransaction({ purchase, isConsumable: false });
+          this.plog('✅ finishTransaction (cleanup, no entitlement)');
+        } catch (cleanupErr: any) {
+          this.plog(`⚠️ finishTransaction cleanup failed: ${cleanupErr?.message}`);
+        }
         return false;
       }
 
@@ -477,10 +484,15 @@ class IAPService {
           throw new Error('User not authenticated — cannot grant entitlement');
         }
 
-        this.plog(`→ Calling validate-receipt Edge Function (productId=${purchase.productId} txId=${txId})...`);
+        // For listener source, prefer currentPurchaseProductId (what the user just bought)
+        // over purchase.productId (which may be a re-delivered old transaction's SKU).
+        const effectiveProductId = (source === 'listener' && this.currentPurchaseProductId)
+          ? this.currentPurchaseProductId
+          : purchase.productId;
+        this.plog(`→ Calling validate-receipt Edge Function (productId=${effectiveProductId} txId=${txId})...`);
         const { data: fnData, error: fnError } = await supabase.functions.invoke('validate-receipt', {
           body: {
-            productId: purchase.productId,
+            productId: effectiveProductId,
             transactionId: txId,
             source,
           },

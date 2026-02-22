@@ -6,7 +6,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import IAPService from '../services/IAPService';
 import { supabase } from '../lib/supabase';
 import { trackScreenView, trackEvent } from '../lib/posthog';
-import { useCredits } from '../src/contexts/CreditsContext';
 
 // Platform-specific product IDs
 const PRODUCT_IDS = Platform.OS === 'ios' ? {
@@ -23,7 +22,6 @@ const PRODUCT_IDS = Platform.OS === 'ios' ? {
 
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const { refreshCredits } = useCredits();
   const [selectedPlan, setSelectedPlan] = useState<'yearly' | 'monthly' | 'weekly'>('yearly');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [showDiscountModal, setShowDiscountModal] = useState(false);
@@ -32,7 +30,7 @@ export default function SubscriptionScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [iapReady, setIapReady] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
-  const [showDebug, setShowDebug] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
   const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
   const [purchaseLogs, setPurchaseLogs] = useState<string[]>([]);
   const [listenerStatus, setListenerStatus] = useState<string>('Not triggered yet');
@@ -192,9 +190,6 @@ export default function SubscriptionScreen() {
         console.error('[SUBSCRIPTION] validate-receipt direct call failed:', fnError);
       }
 
-      // Refresh the credit counter so the generate screen reflects the new plan immediately.
-      await refreshCredits();
-
       setCurrentPurchaseAttempt(null);
       router.replace('/(tabs)/generate');
     } catch (error: any) {
@@ -336,7 +331,6 @@ export default function SubscriptionScreen() {
       if (fnError) {
         console.error('[SUBSCRIPTION] validate-receipt direct call (discount) failed:', fnError);
       }
-      await refreshCredits();
 
       setCurrentPurchaseAttempt(null);
       router.replace('/(tabs)/generate');
@@ -689,11 +683,6 @@ export default function SubscriptionScreen() {
         </View>
       )}
 
-      {!showDebug && (
-        <TouchableOpacity style={styles.showDebugButton} onPress={() => setShowDebug(true)}>
-          <Text style={styles.showDebugText}>🔧</Text>
-        </TouchableOpacity>
-      )}
     </LinearGradient>
   );
 }
