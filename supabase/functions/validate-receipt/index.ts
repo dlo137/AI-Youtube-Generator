@@ -13,21 +13,24 @@ serve(async (req) => {
   }
 
   try {
-    // Create a Supabase client with the Auth context of the logged in user
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-    // Get the session or user object
+    // User-scoped client — only used to verify the caller's JWT identity
+    const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: { Authorization: req.headers.get('Authorization')! },
+      },
+    })
+
+    // Admin client — uses service role key to bypass RLS for the profile update
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Verify the caller is authenticated
     const {
       data: { user },
-    } = await supabaseClient.auth.getUser()
+    } = await supabaseUserClient.auth.getUser()
 
     if (!user) {
       return new Response(
@@ -60,28 +63,31 @@ serve(async (req) => {
       credits_max = 75
     } else if (productId.includes('weekly')) {
       plan = 'weekly'
-      credits_max = 30
+      credits_max = 10
     }
 
-    // Update user profile with subscription info
-    const { error: updateError } = await supabaseClient
+    const now = new Date().toISOString()
+
+    // Upsert user profile with subscription info using admin client (bypasses RLS)
+    const { error: upsertError } = await supabaseAdmin
       .from('profiles')
-      .update({
+      .upsert({
+        id: user.id,
         subscription_plan: plan,
         subscription_id: transactionId,
         is_pro_version: true,
         product_id: productId,
-        purchase_time: new Date().toISOString(),
+        purchase_time: now,
         credits_current: credits_max,
         credits_max: credits_max,
-        last_credit_reset: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', user.id)
+        subscription_start_date: now,
+        last_credit_reset: now,
+        updated_at: now,
+      }, { onConflict: 'id' })
 
-    if (updateError) {
-      console.error('Error updating profile:', updateError)
-      throw updateError
+    if (upsertError) {
+      console.error('Error upserting profile:', upsertError)
+      throw upsertError
     }
 
     console.log('Receipt validated successfully for user:', user.id)

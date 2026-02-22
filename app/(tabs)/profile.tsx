@@ -17,6 +17,7 @@ import { getSubscriptionInfo as getSupabaseSubscriptionInfo, changePlan, cancelS
 import * as StoreReview from 'expo-store-review';
 import IAPService from '../../services/IAPService';
 import { trackEvent } from '../../lib/posthog';
+import { useCredits } from '../../src/contexts/CreditsContext';
 
 export default function ProfileScreen() {
   const storeUrl = Platform.OS === 'android'
@@ -63,13 +64,19 @@ export default function ProfileScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
 
-  const PRODUCT_IDS = {
+  // Platform-specific product IDs — must match subscriptionScreen.tsx
+  const PRODUCT_IDS = Platform.OS === 'ios' ? {
     yearly: 'thumbnail.yearly',
     monthly: 'thumbnail.monthly',
     weekly: 'thumbnail.weekly',
+  } : {
+    yearly: 'ai.thumbnail.pro:yearly',
+    monthly: 'ai.thumbnail.pro:monthly',
+    weekly: 'ai.thumbnail.pro:weekly',
   };
 
   const isIAPAvailable = IAPService.isAvailable();
+  const { refreshCredits } = useCredits();
 
   const settings = [
     { id: 'about', title: 'About', subtitle: 'App information' },
@@ -575,6 +582,7 @@ export default function ProfileScreen() {
 
                                 setIsBillingModalVisible(false);
                                 await loadUserData();
+                                await refreshCredits();
                                 Alert.alert('Success (Simulated)', 'Your plan has been upgraded (development mode).');
                               } catch (error) {
                                 console.error('Test upgrade error:', error);
@@ -592,7 +600,7 @@ export default function ProfileScreen() {
 
                   const list = products.length ? products : await fetchProducts(true);
                   const productId = PRODUCT_IDS[planId as keyof typeof PRODUCT_IDS];
-                  const product = list.find(p => p.productId === productId);
+                  const product = list.find(p => p.id === productId);
 
                   if (!product) {
                     Alert.alert('Plan not available', 'We couldn\'t find that plan. Please try again.');
@@ -600,7 +608,7 @@ export default function ProfileScreen() {
                   }
 
                   setCurrentPurchaseAttempt(planId as 'monthly' | 'yearly' | 'weekly');
-                  await handlePurchase(product.productId);
+                  await handlePurchase(product.id);
                 }
               }
             ]
@@ -675,6 +683,7 @@ export default function ProfileScreen() {
 
                       setIsBillingModalVisible(false);
                       await loadUserData();
+                      await refreshCredits();
                       Alert.alert('Success (Simulated)', 'Your subscription has been activated (development mode).');
                     } catch (error) {
                       console.error('Test purchase error:', error);
@@ -696,7 +705,7 @@ export default function ProfileScreen() {
 
         const list = products.length ? products : await fetchProducts(true);
         const productId = PRODUCT_IDS[planId as keyof typeof PRODUCT_IDS];
-        const product = list.find(p => p.productId === productId);
+        const product = list.find(p => p.id === productId);
 
         if (!product) {
           Alert.alert(
@@ -708,7 +717,7 @@ export default function ProfileScreen() {
 
         // Set the current purchase attempt BEFORE starting the purchase
         setCurrentPurchaseAttempt(planId as 'monthly' | 'yearly' | 'weekly');
-        await handlePurchase(product.productId);
+        await handlePurchase(product.id);
       }
     } catch (error) {
       setCurrentPurchaseAttempt(null);
@@ -731,6 +740,7 @@ export default function ProfileScreen() {
       setIsBillingModalVisible(false);
       setCurrentPurchaseAttempt(null);
       await loadUserData();
+      await refreshCredits();
 
       Alert.alert(
         'Success!',

@@ -30,8 +30,10 @@ export default function SubscriptionScreen() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [iapReady, setIapReady] = useState(false);
   const [currentPurchaseAttempt, setCurrentPurchaseAttempt] = useState<'monthly' | 'yearly' | 'weekly' | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
+  const [showDebug, setShowDebug] = useState(true);
   const [productDebugLogs, setProductDebugLogs] = useState<string[]>([]);
+  const [purchaseLogs, setPurchaseLogs] = useState<string[]>([]);
+  const [listenerStatus, setListenerStatus] = useState<string>('Not triggered yet');
   const [productFetchStatus, setProductFetchStatus] = useState({
     attempted: false,
     success: false,
@@ -49,6 +51,22 @@ export default function SubscriptionScreen() {
       duration: 400,
       useNativeDriver: true,
     }).start();
+  }, []);
+
+  // Hook up IAP debug callback to capture purchase flow events
+  useEffect(() => {
+    IAPService.clearPurchaseLogs();
+    IAPService.setDebugCallback((info: any) => {
+      if (info.allPurchaseLogs) {
+        setPurchaseLogs([...info.allPurchaseLogs]);
+      }
+      if (info.listenerStatus) {
+        setListenerStatus(info.listenerStatus);
+      }
+    });
+    return () => {
+      IAPService.setDebugCallback(() => {});
+    };
   }, []);
 
   // Fetch products on mount
@@ -537,6 +555,116 @@ export default function SubscriptionScreen() {
         </Animated.View>
       )}
 
+      {/* Debug Panel */}
+      {showDebug && (
+        <View style={styles.debugPanel}>
+          <View style={styles.debugHeader}>
+            <Text style={styles.debugTitle}>🔧 IAP Debug</Text>
+            <TouchableOpacity onPress={() => setShowDebug(false)} style={styles.debugCloseButton}>
+              <Text style={styles.debugCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.debugContent} showsVerticalScrollIndicator={true}>
+
+            {/* Purchase Flow Logs — most important section */}
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>📋 Purchase Flow Log</Text>
+              <Text style={[styles.debugText, { color: '#a78bfa', marginBottom: 4 }]}>
+                Listener: {listenerStatus}
+              </Text>
+              <TouchableOpacity
+                onPress={() => { IAPService.clearPurchaseLogs(); setPurchaseLogs([]); setListenerStatus('Cleared'); }}
+                style={{ marginBottom: 6 }}
+              >
+                <Text style={[styles.debugText, { color: '#f59e0b' }]}>🗑 Clear logs</Text>
+              </TouchableOpacity>
+              {purchaseLogs.length > 0 ? (
+                purchaseLogs.map((log, i) => (
+                  <Text key={i} style={[styles.debugText, styles.debugCode,
+                    log.includes('❌') ? { color: '#ef4444' } :
+                    log.includes('✅') || log.includes('🎉') ? { color: '#22c55e' } :
+                    log.includes('⚠️') ? { color: '#f59e0b' } : {}
+                  ]}>{log}</Text>
+                ))
+              ) : (
+                <Text style={[styles.debugText, { color: '#6b7280' }]}>No purchase events yet — tap Get Started to see logs</Text>
+              )}
+            </View>
+
+            {/* Product / IAP status */}
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Product Fetch Status</Text>
+              <Text style={styles.debugText}>IAP Available: {isIAPAvailable ? '✅' : '❌'}</Text>
+              <Text style={styles.debugText}>IAP Ready: {iapReady ? '✅' : '❌'}</Text>
+              <Text style={styles.debugText}>Fetch Attempted: {productFetchStatus.attempted ? '✅' : '❌'}</Text>
+              <Text style={styles.debugText}>Fetch Success: {productFetchStatus.success ? '✅' : '❌'}</Text>
+              {productFetchStatus.error ? (
+                <Text style={[styles.debugText, { color: '#ef4444' }]}>Error: {productFetchStatus.error}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Found Products ({productFetchStatus.foundProducts.length})</Text>
+              {productFetchStatus.foundProducts.length > 0 ? (
+                productFetchStatus.foundProducts.map(id => (
+                  <Text key={id} style={[styles.debugText, { color: '#22c55e' }]}>✅ {id}</Text>
+                ))
+              ) : (
+                <Text style={styles.debugText}>None found</Text>
+              )}
+            </View>
+
+            <View style={styles.debugSection}>
+              <Text style={styles.debugSectionTitle}>Missing Products ({productFetchStatus.missingProducts.length})</Text>
+              {productFetchStatus.missingProducts.length > 0 ? (
+                productFetchStatus.missingProducts.map(id => (
+                  <Text key={id} style={[styles.debugText, { color: '#ef4444' }]}>❌ {id}</Text>
+                ))
+              ) : (
+                <Text style={[styles.debugText, { color: '#22c55e' }]}>All products found!</Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.debugButton}
+              onPress={async () => {
+                setLoadingProducts(true);
+                setProductFetchStatus(prev => ({ ...prev, attempted: true, error: '', foundProducts: [], missingProducts: [] }));
+                try {
+                  const results = await IAPService.getProducts();
+                  setProducts(results);
+                  setIapReady(true);
+                  setIsIAPAvailable(IAPService.isAvailable());
+                  const found = results.map(p => p.id);
+                  const expected = Object.values(PRODUCT_IDS);
+                  setProductFetchStatus({
+                    attempted: true,
+                    success: true,
+                    error: '',
+                    foundProducts: found,
+                    missingProducts: expected.filter(id => !found.includes(id)),
+                  });
+                } catch (err: any) {
+                  setProducts([]);
+                  setIapReady(false);
+                  setIsIAPAvailable(false);
+                  setProductFetchStatus(prev => ({ ...prev, success: false, error: String(err), foundProducts: [], missingProducts: Object.values(PRODUCT_IDS) }));
+                } finally {
+                  setLoadingProducts(false);
+                }
+              }}
+            >
+              <Text style={styles.debugButtonText}>🔄 Retry Fetch Products</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {!showDebug && (
+        <TouchableOpacity style={styles.showDebugButton} onPress={() => setShowDebug(true)}>
+          <Text style={styles.showDebugText}>🔧</Text>
+        </TouchableOpacity>
+      )}
     </LinearGradient>
   );
 }

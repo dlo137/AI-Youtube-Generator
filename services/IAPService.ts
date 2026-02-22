@@ -84,8 +84,25 @@ class IAPService {
   private purchaseUpdateSubscription: any = null;
   private purchaseErrorSubscription: any = null;
   private productFetchLogs: string[] = [];
+  private purchaseLogs: string[] = [];
 
   private constructor() {}
+
+  getPurchaseLogs(): string[] {
+    return [...this.purchaseLogs];
+  }
+
+  clearPurchaseLogs() {
+    this.purchaseLogs = [];
+  }
+
+  private plog(msg: string) {
+    const ts = new Date().toLocaleTimeString();
+    const entry = `[${ts}] ${msg}`;
+    this.purchaseLogs.push(entry);
+    console.log('[IAP-PURCHASE]', msg);
+    this.debugCallback?.({ purchaseLog: entry, allPurchaseLogs: [...this.purchaseLogs] });
+  }
 
   static getInstance(): IAPService {
     if (!IAPService.instance) IAPService.instance = new IAPService();
@@ -340,7 +357,7 @@ class IAPService {
 
     this.purchaseUpdateSubscription = iapModule.purchaseUpdatedListener(
       async (purchase: any) => {
-        console.log('[IAP] 🎉 purchaseUpdated:', purchase?.productId);
+        this.plog(`🎉 purchaseUpdatedListener fired — productId=${purchase?.productId} id=${purchase?.id} transactionId=${purchase?.transactionId}`);
         this.lastPurchaseResult = purchase;
         this.debugCallback?.({ lastPurchase: purchase, listenerStatus: 'PURCHASE RECEIVED ✅' });
         await this.handlePurchaseUpdate(purchase);
@@ -349,7 +366,7 @@ class IAPService {
 
     this.purchaseErrorSubscription = iapModule.purchaseErrorListener(
       (error: any) => {
-        console.error('[IAP] purchaseError:', error?.message);
+        this.plog(`❌ purchaseErrorListener: ${error?.message} (code=${error?.code})`);
         this.debugCallback?.({ listenerStatus: `PURCHASE ERROR ❌: ${error.message}` });
         this.currentPurchaseProductId = null;
         AsyncStorage.setItem(INFLIGHT_KEY, 'false');
@@ -405,11 +422,23 @@ class IAPService {
     // v14: primary key is purchase.id (transactionId on iOS, orderId on Android)
     const txId = purchase.id ?? purchase.transactionId;
 
-    if (!txId || this.processedIds.has(txId)) {
-      console.log('[IAP] Skipping already-processed tx:', txId);
+    this.plog(`processPurchase called — source=${source} txId=${txId} productId=${purchase?.productId}`);
+    this.plog(`  purchase keys: ${Object.keys(purchase || {}).join(', ')}`);
+
+    if (!txId) {
+      this.plog('❌ txId is null/undefined — cannot process (purchase object has no id or transactionId)');
       return;
     }
-    this.processedIds.add(txId);
+
+    if (this.processedIds.has(txId)) {
+      this.plog(`⚠️ txId already in processedIds — skipping (was processed earlier in this session)`);
+      return;
+    }
+
+    // NOTE: do NOT add txId to processedIds yet — we must check inFlight first.
+    // If the listener fires during initialization (inFlight=false) we return early
+    // WITHOUT marking the txId processed, so StoreKit can re-deliver the same
+    // transaction once the user actually starts a purchase (inFlight=true).
 
     try {
       const productId = (purchase.productId ?? '').toLowerCase();
@@ -417,57 +446,63 @@ class IAPService {
       if (productId.includes('monthly')) planToUse = 'monthly';
       else if (productId.includes('weekly')) planToUse = 'weekly';
 
-      const inFlight = (await AsyncStorage.getItem(INFLIGHT_KEY)) === 'true';
+      const inFlightRaw = await AsyncStorage.getItem(INFLIGHT_KEY);
+      const inFlight = inFlightRaw === 'true';
       const shouldEntitle =
         (source === 'listener' && inFlight) ||
         source === 'restore' ||
         source === 'orphan';
 
-      console.log(`[IAP] processPurchase: source=${source} inFlight=${inFlight} shouldEntitle=${shouldEntitle}`);
+      this.plog(`  inFlightRaw="${inFlightRaw}" inFlight=${inFlight} shouldEntitle=${shouldEntitle} plan=${planToUse}`);
 
       if (source === 'listener' && !inFlight) {
-        console.warn('[IAP] Listener purchase with no in-flight flag — ignoring');
+        this.plog('⚠️ inFlight=false — ignoring listener event (no purchase in progress). txId NOT added to processedIds.');
         return;
       }
 
+      // Commit: mark as processed now that we've confirmed we'll handle it
+      this.processedIds.add(txId);
+      this.plog(`  txId added to processedIds. Set size=${this.processedIds.size}`);
+
       if (shouldEntitle) {
-        const { data: { user } } = await supabase.auth.getUser();
+        this.plog('→ Fetching user from Supabase auth...');
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
         const userId = user?.id;
+        this.plog(`  user=${userId ?? 'null'} userError=${userError?.message ?? 'none'}`);
 
         if (!userId) {
           throw new Error('User not authenticated — cannot grant entitlement');
         }
 
-        const credits_max = planToUse === 'yearly' ? 90 : planToUse === 'monthly' ? 75 : 10;
-        const now = new Date().toISOString();
+        this.plog(`→ Calling validate-receipt Edge Function (productId=${purchase.productId} txId=${txId})...`);
+        const { data: fnData, error: fnError } = await supabase.functions.invoke('validate-receipt', {
+          body: {
+            productId: purchase.productId,
+            transactionId: txId,
+            source,
+          },
+        });
+
+        if (fnError) {
+          this.plog(`❌ validate-receipt error: ${JSON.stringify(fnError)}`);
+          throw fnError;
+        }
+
+        this.plog(`✅ validate-receipt success: ${JSON.stringify(fnData)}`);
+
         const subscriptionId = `${purchase.productId}_${Date.now()}`;
-
-        const { error } = await supabase.from('profiles').update({
-          subscription_plan: planToUse,
-          subscription_id: subscriptionId,
-          is_pro_version: true,
-          product_id: purchase.productId,
-          purchase_time: now,
-          credits_current: credits_max,
-          credits_max,
-          subscription_start_date: now,
-          last_credit_reset: now,
-        }).eq('id', userId);
-
-        if (error) throw error;
-
         await AsyncStorage.multiSet([
           ['profile.subscription_plan', planToUse],
           ['profile.subscription_id', subscriptionId],
           ['profile.is_pro_version', 'true'],
         ]);
 
-        console.log('[IAP] ✅ Entitlement granted');
+        this.plog('✅ AsyncStorage local cache updated');
       }
 
-      // v14 finishTransaction: uses purchase.id on iOS, purchase.purchaseToken on Android.
-      // Pass the purchase object as-is — the library extracts the right field per platform.
+      this.plog('→ Calling finishTransaction...');
       await iapModule.finishTransaction({ purchase, isConsumable: false });
+      this.plog('✅ finishTransaction complete');
 
       if (shouldEntitle) {
         await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
@@ -480,9 +515,10 @@ class IAPService {
           purchaseSource: source,
           isOrphanedPurchase: source === 'orphan',
         });
+        this.plog('🎉 Entitlement granted and INFLIGHT cleared');
       }
-    } catch (e) {
-      console.error('[IAP] processPurchase error:', e);
+    } catch (e: any) {
+      this.plog(`❌ processPurchase threw: ${e?.message ?? String(e)}`);
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');
       throw e;
     }
