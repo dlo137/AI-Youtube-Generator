@@ -736,7 +736,18 @@ export default function ProfileScreen() {
       console.log('[PROFILE] Attempting to purchase:', productId);
       await IAPService.purchaseProduct(productId);
 
-      // On success, close modal and reload data
+      // Guarantee the Supabase profile is up-to-date even if processPurchase's
+      // internal call to validate-receipt was skipped or failed for any reason.
+      const lastPurchase = IAPService.getLastPurchaseResult();
+      const txId = lastPurchase?.id ?? lastPurchase?.transactionId ?? `${productId}_${Date.now()}`;
+      const { error: fnError } = await supabase.functions.invoke('validate-receipt', {
+        body: { productId, transactionId: txId, source: 'direct' },
+      });
+      if (fnError) {
+        console.error('[PROFILE] validate-receipt direct call failed:', fnError);
+      }
+
+      // Reload profile data and refresh credits so the screen reflects the new plan immediately.
       setIsBillingModalVisible(false);
       setCurrentPurchaseAttempt(null);
       await loadUserData();

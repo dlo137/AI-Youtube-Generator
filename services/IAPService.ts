@@ -383,8 +383,11 @@ class IAPService {
 
   private async handlePurchaseUpdate(purchase: any) {
     try {
-      await this.processPurchase(purchase, 'listener');
-      if (this.purchasePromiseResolve) {
+      const entitled = await this.processPurchase(purchase, 'listener');
+      // Only resolve the purchase promise if entitlement was actually granted.
+      // If processPurchase returned false (inFlight=false early return), we must
+      // NOT resolve — the promise should wait for the real purchase transaction.
+      if (entitled && this.purchasePromiseResolve) {
         this.purchasePromiseResolve();
         this.purchasePromiseResolve = null;
         this.purchasePromiseReject = null;
@@ -418,7 +421,7 @@ class IAPService {
     }
   }
 
-  private async processPurchase(purchase: any, source: 'listener' | 'restore' | 'orphan') {
+  private async processPurchase(purchase: any, source: 'listener' | 'restore' | 'orphan'): Promise<boolean> {
     // v14: primary key is purchase.id (transactionId on iOS, orderId on Android)
     const txId = purchase.id ?? purchase.transactionId;
 
@@ -427,12 +430,12 @@ class IAPService {
 
     if (!txId) {
       this.plog('❌ txId is null/undefined — cannot process (purchase object has no id or transactionId)');
-      return;
+      return false;
     }
 
     if (this.processedIds.has(txId)) {
       this.plog(`⚠️ txId already in processedIds — skipping (was processed earlier in this session)`);
-      return;
+      return false;
     }
 
     // NOTE: do NOT add txId to processedIds yet — we must check inFlight first.
@@ -457,7 +460,7 @@ class IAPService {
 
       if (source === 'listener' && !inFlight) {
         this.plog('⚠️ inFlight=false — ignoring listener event (no purchase in progress). txId NOT added to processedIds.');
-        return;
+        return false;
       }
 
       // Commit: mark as processed now that we've confirmed we'll handle it
@@ -517,6 +520,8 @@ class IAPService {
         });
         this.plog('🎉 Entitlement granted and INFLIGHT cleared');
       }
+
+      return shouldEntitle;
     } catch (e: any) {
       this.plog(`❌ processPurchase threw: ${e?.message ?? String(e)}`);
       await AsyncStorage.setItem(INFLIGHT_KEY, 'false');

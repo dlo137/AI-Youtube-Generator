@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import IAPService from '../services/IAPService';
 import { supabase } from '../lib/supabase';
 import { trackScreenView, trackEvent } from '../lib/posthog';
+import { useCredits } from '../src/contexts/CreditsContext';
 
 // Platform-specific product IDs
 const PRODUCT_IDS = Platform.OS === 'ios' ? {
@@ -22,6 +23,7 @@ const PRODUCT_IDS = Platform.OS === 'ios' ? {
 
 export default function SubscriptionScreen() {
   const router = useRouter();
+  const { refreshCredits } = useCredits();
   const [selectedPlan, setSelectedPlan] = useState<'yearly' | 'monthly' | 'weekly'>('yearly');
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [showDiscountModal, setShowDiscountModal] = useState(false);
@@ -178,6 +180,21 @@ export default function SubscriptionScreen() {
     setCurrentPurchaseAttempt(selectedPlan);
     try {
       await IAPService.purchaseProduct(product.id);
+
+      // Guarantee the Supabase profile is up-to-date even if processPurchase's
+      // internal call to validate-receipt was skipped or failed for any reason.
+      const lastPurchase = IAPService.getLastPurchaseResult();
+      const txId = lastPurchase?.id ?? lastPurchase?.transactionId ?? `${product.id}_${Date.now()}`;
+      const { error: fnError } = await supabase.functions.invoke('validate-receipt', {
+        body: { productId: product.id, transactionId: txId, source: 'direct' },
+      });
+      if (fnError) {
+        console.error('[SUBSCRIPTION] validate-receipt direct call failed:', fnError);
+      }
+
+      // Refresh the credit counter so the generate screen reflects the new plan immediately.
+      await refreshCredits();
+
       setCurrentPurchaseAttempt(null);
       router.replace('/(tabs)/generate');
     } catch (error: any) {
@@ -309,6 +326,18 @@ export default function SubscriptionScreen() {
       setCurrentPurchaseAttempt('weekly');
       console.log('[SUBSCRIPTION] Attempting to purchase discounted weekly:', PRODUCT_IDS.discountedWeekly);
       await IAPService.purchaseProduct(PRODUCT_IDS.discountedWeekly);
+
+      // Guarantee profile update and credit refresh after discount purchase.
+      const lastPurchase = IAPService.getLastPurchaseResult();
+      const txId = lastPurchase?.id ?? lastPurchase?.transactionId ?? `${PRODUCT_IDS.discountedWeekly}_${Date.now()}`;
+      const { error: fnError } = await supabase.functions.invoke('validate-receipt', {
+        body: { productId: PRODUCT_IDS.discountedWeekly, transactionId: txId, source: 'direct' },
+      });
+      if (fnError) {
+        console.error('[SUBSCRIPTION] validate-receipt direct call (discount) failed:', fnError);
+      }
+      await refreshCredits();
+
       setCurrentPurchaseAttempt(null);
       router.replace('/(tabs)/generate');
     } catch (error: any) {
