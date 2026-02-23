@@ -29,7 +29,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-// Helper function to check and clear bad tokens
+// Helper function to check and clear bad tokens.
 export const checkAuthErrors = async () => {
   try {
     const { data: { session }, error } = await supabase.auth.getSession();
