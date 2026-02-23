@@ -10,9 +10,10 @@ export default function LoadingAccountScreen() {
   const progressAnim = useRef(new Animated.Value(0)).current;
   const destinationRef = useRef<string | null>(null);
 
-  // Determine destination in parallel while the progress bar animates:
-  //   New users  (account created < 2 min ago) → subscriptionScreen
-  //   Returning users (existing account)        → generate
+  // Redirect logic (DB-driven, no time heuristics):
+  //   entitlement = 'pro' | 'grandfather' → go to app
+  //   entitlement = 'free' + has_seen_paywall = false → show subscription screen once
+  //   entitlement = 'free' + has_seen_paywall = true  → go to app (free tier limits enforced in-app)
   useEffect(() => {
     const checkUser = async () => {
       try {
@@ -21,9 +22,22 @@ export default function LoadingAccountScreen() {
           destinationRef.current = 'subscriptionScreen';
           return;
         }
-        const createdAt = new Date(user.created_at).getTime();
-        const isNewUser = (Date.now() - createdAt) < 2 * 60 * 1000;
-        destinationRef.current = isNewUser ? 'subscriptionScreen' : '/(tabs)/generate';
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('has_seen_paywall, entitlement')
+          .eq('id', user.id)
+          .single();
+
+        const entitlement = profile?.entitlement ?? 'free';
+        const hasSeenPaywall = profile?.has_seen_paywall ?? false;
+
+        if (entitlement === 'pro' || entitlement === 'grandfather') {
+          destinationRef.current = '/(tabs)/generate';
+        } else if (!hasSeenPaywall) {
+          destinationRef.current = 'subscriptionScreen';
+        } else {
+          destinationRef.current = '/(tabs)/generate';
+        }
       } catch {
         destinationRef.current = 'subscriptionScreen';
       }

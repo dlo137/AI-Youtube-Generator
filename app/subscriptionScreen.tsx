@@ -48,13 +48,26 @@ export default function SubscriptionScreen() {
   const [androidOfferTokens, setAndroidOfferTokens] = useState<Record<string, string>>({});
   const isRestoringRef = useRef(false);
 
-  // Fade in on mount
+  // Fade in on mount + mark paywall as seen so returning users skip it next time
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 400,
       useNativeDriver: true,
     }).start();
+
+    const markPaywallSeen = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from('profiles')
+            .update({ has_seen_paywall: true })
+            .eq('id', user.id);
+        }
+      } catch {}
+    };
+    markPaywallSeen();
   }, []);
 
   // Hook up IAP debug callback to capture purchase flow events
@@ -156,6 +169,7 @@ export default function SubscriptionScreen() {
         .update({
           subscription_plan: planKey,
           is_pro_version: true,
+          entitlement: 'pro',
           subscription_id: `dev_${planKey}_${Date.now()}`,
           purchase_time: new Date().toISOString(),
           credits_current: credits_max,

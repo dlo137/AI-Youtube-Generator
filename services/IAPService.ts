@@ -507,11 +507,18 @@ class IAPService {
 
         this.plog(`✅ validate-receipt success: ${JSON.stringify(fnData)}`);
 
+        // Update entitlement field so loadingaccount routing stays correct
+        await supabase
+          .from('profiles')
+          .update({ entitlement: 'pro' })
+          .eq('id', userId);
+
         const subscriptionId = `${purchase.productId}_${Date.now()}`;
         await AsyncStorage.multiSet([
           ['profile.subscription_plan', planToUse],
           ['profile.subscription_id', subscriptionId],
           ['profile.is_pro_version', 'true'],
+          ['profile.entitlement', 'pro'],
         ]);
 
         this.plog('✅ AsyncStorage local cache updated');
