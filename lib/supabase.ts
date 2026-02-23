@@ -14,9 +14,10 @@ console.log('[Supabase] URL loaded:', SUPABASE_URL ? SUPABASE_URL.substring(0, 3
 console.log('[Supabase] Key loaded:', SUPABASE_ANON_KEY ? 'Yes (length: ' + SUPABASE_ANON_KEY.length + ')' : 'EMPTY');
 
 // This is the URL Supabase should bounce back to after OAuth/magic link.
-// Always use custom scheme - works in development and production
-const scheme = Constants.expoConfig?.scheme || 'thumbnailgen';
-export const redirectTo = `${scheme}://auth/callback`;
+// Linking.createURL automatically uses the right scheme per environment:
+//   Expo Go  → exp+thumbnailgen://auth/callback  (Expo Go can intercept this)
+//   EAS build → thumbnailgen://auth/callback
+export const redirectTo = Linking.createURL('auth/callback');
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {

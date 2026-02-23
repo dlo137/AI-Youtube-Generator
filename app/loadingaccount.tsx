@@ -2,11 +2,34 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
+import { supabase } from '../lib/supabase';
 
 export default function LoadingAccountScreen() {
   const router = useRouter();
   const [percent, setPercent] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const destinationRef = useRef<string | null>(null);
+
+  // Determine destination in parallel while the progress bar animates:
+  //   New users  (account created < 2 min ago) → subscriptionScreen
+  //   Returning users (existing account)        → generate
+  useEffect(() => {
+    const checkUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          destinationRef.current = 'subscriptionScreen';
+          return;
+        }
+        const createdAt = new Date(user.created_at).getTime();
+        const isNewUser = (Date.now() - createdAt) < 2 * 60 * 1000;
+        destinationRef.current = isNewUser ? 'subscriptionScreen' : '/(tabs)/generate';
+      } catch {
+        destinationRef.current = 'subscriptionScreen';
+      }
+    };
+    checkUser();
+  }, []);
 
   useEffect(() => {
     // Animate progress bar
@@ -21,9 +44,13 @@ export default function LoadingAccountScreen() {
       setPercent((prev) => {
         if (prev >= 100) {
           clearInterval(interval);
-          // Navigate to subscription screen after completion
           setTimeout(() => {
-            router.push('subscriptionScreen' as any);
+            const dest = destinationRef.current ?? 'subscriptionScreen';
+            if (dest === '/(tabs)/generate') {
+              router.replace('/(tabs)/generate');
+            } else {
+              router.push('subscriptionScreen' as any);
+            }
           }, 500);
           return 100;
         }

@@ -59,11 +59,10 @@ const IOS_PRODUCT_IDS = [
   'discounted.weekly',
 ];
 
+// Google Play: fetch by the subscription product ID only (no base-plan suffix).
+// The base plans (monthly/weekly/yearly) come back inside subscriptionOfferDetails.
 const ANDROID_PRODUCT_IDS = [
-  'ai.thumbnail.pro:yearly',
-  'ai.thumbnail.pro:monthly',
-  'ai.thumbnail.pro:weekly',
-  'discounted.weekly',
+  'ai.thumbnail.pro',
 ];
 
 const INFLIGHT_KEY = 'iapPurchaseInFlight';
@@ -236,7 +235,8 @@ class IAPService {
 
   // ── Purchase flow ──────────────────────────────────────────────────────────
 
-  async purchaseProduct(productId: string): Promise<void> {
+  // offerToken is required on Android (from subscriptionOfferDetails in the fetched product)
+  async purchaseProduct(productId: string, offerToken?: string): Promise<void> {
     if (!this.isAvailable()) throw new Error('IAP not available');
     if (!this.isConnected) await this.initialize();
 
@@ -257,11 +257,8 @@ class IAPService {
     });
 
     try {
-      console.log('[IAP] requestPurchase:', productId);
+      console.log('[IAP] requestPurchase:', productId, offerToken ? `offerToken: ${offerToken.substring(0, 20)}...` : '');
 
-      // v14 Nitro API: request must be wrapped in platform-specific keys.
-      // type: 'subs' is required for subscriptions — without it the purchase
-      // flow behaves incorrectly on both StoreKit 1 and StoreKit 2.
       if (Platform.OS === 'ios') {
         await iapModule.requestPurchase({
           type: 'subs',
@@ -270,12 +267,17 @@ class IAPService {
           },
         });
       } else {
+        // Android requires subscriptionOffers with the offerToken from fetchProducts
+        const subscriptionOffers = offerToken
+          ? [{ sku: productId, offerToken }]
+          : [];
+        this.plog(`Android purchase — skus: [${productId}] offers: ${subscriptionOffers.length}`);
         await iapModule.requestPurchase({
           type: 'subs',
           request: {
             google: {
               skus: [productId],
-              subscriptionOffers: [],
+              subscriptionOffers,
             },
           },
         });

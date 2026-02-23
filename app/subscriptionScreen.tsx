@@ -14,10 +14,12 @@ const PRODUCT_IDS = Platform.OS === 'ios' ? {
   weekly: 'thumbnail.weekly',
   discountedWeekly: 'discounted.weekly',
 } : {
-  yearly: 'ai.thumbnail.pro:yearly',
-  monthly: 'ai.thumbnail.pro:monthly',
-  weekly: 'ai.thumbnail.pro:weekly',
-  discountedWeekly: 'discounted.weekly',
+  // Android: all plans live under one subscription product; base plans are
+  // distinguished by their offerToken (parsed from subscriptionOfferDetails).
+  yearly: 'ai.thumbnail.pro',
+  monthly: 'ai.thumbnail.pro',
+  weekly: 'ai.thumbnail.pro',
+  discountedWeekly: 'ai.thumbnail.pro',
 };
 
 export default function SubscriptionScreen() {
@@ -42,6 +44,8 @@ export default function SubscriptionScreen() {
     missingProducts: [] as string[],
   });
   const [isIAPAvailable, setIsIAPAvailable] = useState(false);
+  // Android: offerTokens keyed by base plan ID (monthly / weekly / yearly)
+  const [androidOfferTokens, setAndroidOfferTokens] = useState<Record<string, string>>({});
   const isRestoringRef = useRef(false);
 
   // Fade in on mount
@@ -96,14 +100,32 @@ export default function SubscriptionScreen() {
         setProducts(results);
         setIapReady(true);
         setIsIAPAvailable(true);
-        const found = results.map(p => p.id);
-        const expected = Object.values(PRODUCT_IDS);
+
+        // Android: extract per-plan offer tokens from subscriptionOfferDetails
+        if (Platform.OS === 'android' && results.length > 0) {
+          const tokens: Record<string, string> = {};
+          for (const product of results) {
+            const offers: any[] = product.subscriptionOfferDetails ?? [];
+            for (const offer of offers) {
+              if (offer.basePlanId && offer.offerToken) {
+                tokens[offer.basePlanId] = offer.offerToken;
+              }
+            }
+          }
+          console.log('[SUB] Android offer tokens found:', Object.keys(tokens));
+          setAndroidOfferTokens(tokens);
+        }
+
+        const found = results.map((p: any) => p.id ?? p.productId);
+        const expectedSet = Platform.OS === 'android'
+          ? ['ai.thumbnail.pro']
+          : [...new Set(Object.values(PRODUCT_IDS))];
         setProductFetchStatus({
           attempted: true,
           success: true,
           error: '',
           foundProducts: found,
-          missingProducts: expected.filter(id => !found.includes(id)),
+          missingProducts: expectedSet.filter((id: string) => !found.includes(id)),
         });
       } catch (err: any) {
         setProducts([]);
@@ -170,14 +192,20 @@ export default function SubscriptionScreen() {
     }
 
     const planId = PRODUCT_IDS[selectedPlan];
-    const product = products.find(p => p.id === planId);
+    // Android: look up by base product ID; iOS: look up by individual product ID
+    const product = products.find((p: any) => (p.id ?? p.productId) === planId);
     if (!product) {
       Alert.alert('Plan not available', 'We couldn\'t find that plan. Please check your internet connection and try again.');
       return;
     }
+    // Android: pass the offer token for the selected base plan
+    const offerToken = Platform.OS === 'android' ? androidOfferTokens[selectedPlan] : undefined;
+    if (Platform.OS === 'android' && !offerToken) {
+      console.warn('[SUB] No offer token for plan:', selectedPlan, 'available tokens:', androidOfferTokens);
+    }
     setCurrentPurchaseAttempt(selectedPlan);
     try {
-      await IAPService.purchaseProduct(product.id);
+      await IAPService.purchaseProduct(product.id ?? product.productId, offerToken);
 
       // Guarantee the Supabase profile is up-to-date even if processPurchase's
       // internal call to validate-receipt was skipped or failed for any reason.
@@ -319,8 +347,10 @@ export default function SubscriptionScreen() {
 
     try {
       setCurrentPurchaseAttempt('weekly');
-      console.log('[SUBSCRIPTION] Attempting to purchase discounted weekly:', PRODUCT_IDS.discountedWeekly);
-      await IAPService.purchaseProduct(PRODUCT_IDS.discountedWeekly);
+      const discountProductId = PRODUCT_IDS.discountedWeekly;
+      const discountOfferToken = Platform.OS === 'android' ? androidOfferTokens['weekly'] : undefined;
+      console.log('[SUBSCRIPTION] Attempting to purchase discounted weekly:', discountProductId);
+      await IAPService.purchaseProduct(discountProductId, discountOfferToken);
 
       // Guarantee profile update and credit refresh after discount purchase.
       const lastPurchase = IAPService.getLastPurchaseResult();
@@ -578,6 +608,14 @@ export default function SubscriptionScreen() {
         </Animated.View>
       )}
 
+      {/* Debug Toggle Button */}
+      <TouchableOpacity
+        style={styles.showDebugButton}
+        onPress={() => setShowDebug(prev => !prev)}
+      >
+        <Text style={styles.showDebugText}>🔧</Text>
+      </TouchableOpacity>
+
       {/* Debug Panel */}
       {showDebug && (
         <View style={styles.debugPanel}>
@@ -617,6 +655,7 @@ export default function SubscriptionScreen() {
             {/* Product / IAP status */}
             <View style={styles.debugSection}>
               <Text style={styles.debugSectionTitle}>Product Fetch Status</Text>
+              <Text style={styles.debugText}>Platform: {Platform.OS}</Text>
               <Text style={styles.debugText}>IAP Available: {isIAPAvailable ? '✅' : '❌'}</Text>
               <Text style={styles.debugText}>IAP Ready: {iapReady ? '✅' : '❌'}</Text>
               <Text style={styles.debugText}>Fetch Attempted: {productFetchStatus.attempted ? '✅' : '❌'}</Text>
@@ -625,6 +664,21 @@ export default function SubscriptionScreen() {
                 <Text style={[styles.debugText, { color: '#ef4444' }]}>Error: {productFetchStatus.error}</Text>
               ) : null}
             </View>
+
+            {Platform.OS === 'android' && (
+              <View style={styles.debugSection}>
+                <Text style={styles.debugSectionTitle}>Android Offer Tokens</Text>
+                {Object.keys(androidOfferTokens).length > 0 ? (
+                  Object.entries(androidOfferTokens).map(([plan, token]) => (
+                    <Text key={plan} style={[styles.debugText, { color: '#22c55e' }]}>
+                      ✅ {plan}: {String(token).substring(0, 30)}...
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={[styles.debugText, { color: '#ef4444' }]}>❌ No offer tokens parsed yet</Text>
+                )}
+              </View>
+            )}
 
             <View style={styles.debugSection}>
               <Text style={styles.debugSectionTitle}>Found Products ({productFetchStatus.foundProducts.length})</Text>
@@ -658,14 +712,24 @@ export default function SubscriptionScreen() {
                   setProducts(results);
                   setIapReady(true);
                   setIsIAPAvailable(IAPService.isAvailable());
-                  const found = results.map(p => p.id);
-                  const expected = Object.values(PRODUCT_IDS);
+                  if (Platform.OS === 'android' && results.length > 0) {
+                    const tokens: Record<string, string> = {};
+                    for (const product of results) {
+                      const offers: any[] = product.subscriptionOfferDetails ?? [];
+                      for (const offer of offers) {
+                        if (offer.basePlanId && offer.offerToken) tokens[offer.basePlanId] = offer.offerToken;
+                      }
+                    }
+                    setAndroidOfferTokens(tokens);
+                  }
+                  const found = results.map((p: any) => p.id ?? p.productId);
+                  const expectedSet = Platform.OS === 'android' ? ['ai.thumbnail.pro'] : [...new Set(Object.values(PRODUCT_IDS))];
                   setProductFetchStatus({
                     attempted: true,
                     success: true,
                     error: '',
                     foundProducts: found,
-                    missingProducts: expected.filter(id => !found.includes(id)),
+                    missingProducts: expectedSet.filter((id: string) => !found.includes(id)),
                   });
                 } catch (err: any) {
                   setProducts([]);

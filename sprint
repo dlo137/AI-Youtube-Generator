@@ -1,0 +1,5 @@
+1. Android Bug: Log In Redirects to loading screen then subscription screen. Desired Output: Log in takes users to generate.tsx file with their correct account data based off log in data.
+
+2. Andorid Purchases Not Found: Add back Debug Panel on subscriptions screen. Scan & Fix Potential reasons. Desired Output: User successfully purchases, supabase profile is updated, redirected to generate.tsx file.
+
+
