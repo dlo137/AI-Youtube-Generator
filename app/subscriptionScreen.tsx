@@ -158,6 +158,10 @@ export default function SubscriptionScreen() {
   const simulatePurchase = async (plan: 'yearly' | 'monthly' | 'weekly' | 'discountedWeekly') => {
     const planKey = plan === 'discountedWeekly' ? 'discounted_weekly' : plan;
     const credits_max = plan === 'yearly' ? 90 : plan === 'monthly' ? 75 : 10;
+    const isTrial = plan === 'weekly' || plan === 'monthly' || plan === 'yearly' || plan === 'discountedWeekly';
+    const trialEndDate = isTrial
+      ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
 
     setCurrentPurchaseAttempt(plan === 'discountedWeekly' ? 'weekly' : plan);
     try {
@@ -170,6 +174,8 @@ export default function SubscriptionScreen() {
           subscription_plan: planKey,
           is_pro_version: true,
           entitlement: 'pro',
+          is_trial_version: isTrial,
+          trial_end_date: trialEndDate,
           subscription_id: `dev_${planKey}_${Date.now()}`,
           purchase_time: new Date().toISOString(),
           credits_current: credits_max,
@@ -475,7 +481,7 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Weekly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('weekly', '$2.99/week')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('weekly', '$4.99/week')}</Text>
               <Text style={styles.planSubtext}>10 images per week</Text>
             </View>
           </TouchableOpacity>
@@ -488,6 +494,11 @@ export default function SubscriptionScreen() {
             ]}
             onPress={() => setSelectedPlan('monthly')}
           >
+            {selectedPlan !== 'yearly' && (
+              <View style={styles.tryFreeBadge}>
+                <Text style={styles.tryFreeBadgeText}>3 DAY FREE TRIAL</Text>
+              </View>
+            )}
             <View style={styles.planRadio}>
               {selectedPlan === 'monthly' && <View style={styles.planRadioSelected} />}
             </View>
@@ -495,7 +506,7 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Monthly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('monthly', '$5.99/month')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('monthly', '$8.99/month')}</Text>
               <Text style={styles.planSubtext}>75 images per month</Text>
             </View>
           </TouchableOpacity>
@@ -509,6 +520,11 @@ export default function SubscriptionScreen() {
             ]}
             onPress={() => setSelectedPlan('yearly')}
           >
+            {selectedPlan === 'yearly' && (
+              <View style={styles.tryFreeBadge}>
+                <Text style={styles.tryFreeBadgeText}>3 DAY FREE TRIAL</Text>
+              </View>
+            )}
             <View style={styles.planRadio}>
               {selectedPlan === 'yearly' && <View style={styles.planRadioSelected} />}
             </View>
@@ -889,6 +905,26 @@ const styles = StyleSheet.create({
   },
   popularPlan: {
     // Additional styling for popular plan
+  },
+  tryFreeBadge: {
+    position: 'absolute',
+    top: -12,
+    left: 16,
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    shadowColor: '#22c55e',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  tryFreeBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: 0.8,
   },
   planRadio: {
     width: 24,

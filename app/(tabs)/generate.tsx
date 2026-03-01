@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platfo
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Svg, { Path, Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { PinchGestureHandler, PanGestureHandler, RotationGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../../lib/supabase';
@@ -12,6 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import GeneratedThumbnail from '../../src/components/GeneratedThumbnail';
 import { saveThumbnail, addThumbnailToHistory, getSavedThumbnails, SavedThumbnail } from '../../src/utils/thumbnailStorage';
 import { getCredits, deductCredit } from '../../src/utils/subscriptionStorage';
+import { hasActiveSubscription } from '../../src/features/subscription/api';
 import { useCredits } from '../../src/contexts/CreditsContext';
 import Constants from 'expo-constants';
 
@@ -90,6 +91,7 @@ const RETRY_DELAY_MS = 3000;
 const GENERATION_ERROR_MESSAGE = "Looks like we hit a temporary issue generating your image.\nPlease try again in a moment, we're on it.";
 
 export default function GenerateScreen() {
+  const router = useRouter();
   const { credits, refreshCredits } = useCredits();
   const [topic, setTopic] = useState('');
   const [duration, setDuration] = useState(''); // kept for existing logic
@@ -886,6 +888,20 @@ export default function GenerateScreen() {
 
     if (!topicToUse.trim()) {
       Alert.alert('Error', 'Please enter a description for your thumbnail');
+      return;
+    }
+
+    // Block generation if the free trial has expired
+    const subscriptionActive = await hasActiveSubscription();
+    if (!subscriptionActive) {
+      Alert.alert(
+        'Trial Ended',
+        'Your free trial has ended. Subscribe to keep creating thumbnails.',
+        [
+          { text: 'Subscribe', onPress: () => router.push('subscriptionScreen' as any) },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
       return;
     }
 

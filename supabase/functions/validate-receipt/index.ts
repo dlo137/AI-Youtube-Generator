@@ -68,6 +68,14 @@ serve(async (req) => {
 
     const now = new Date().toISOString()
 
+    // A restore/orphan source means the subscription auto-renewed (paid subscriber)
+    // so clear the trial. A new purchase gets a 3-day trial.
+    const isRestore = source === 'restore' || source === 'orphan'
+    const isTrial = !isRestore
+    const trialEndDate = isTrial
+      ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+      : null
+
     // Upsert user profile with subscription info using admin client (bypasses RLS)
     const { error: upsertError } = await supabaseAdmin
       .from('profiles')
@@ -76,6 +84,9 @@ serve(async (req) => {
         subscription_plan: plan,
         subscription_id: transactionId,
         is_pro_version: true,
+        entitlement: 'pro',
+        is_trial_version: isTrial,
+        trial_end_date: trialEndDate,
         product_id: productId,
         purchase_time: now,
         credits_current: credits_max,

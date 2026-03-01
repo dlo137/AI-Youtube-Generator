@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import IAPService from '../services/IAPService';
 
 export default function LoadingAccountScreen() {
   const router = useRouter();
@@ -24,14 +25,34 @@ export default function LoadingAccountScreen() {
         }
         const { data: profile } = await supabase
           .from('profiles')
-          .select('has_seen_paywall, entitlement')
+          .select('has_seen_paywall, entitlement, is_trial_version, trial_end_date, is_pro_version')
           .eq('id', user.id)
           .single();
 
         const entitlement = profile?.entitlement ?? 'free';
         const hasSeenPaywall = profile?.has_seen_paywall ?? false;
 
-        if (entitlement === 'pro' || entitlement === 'grandfather') {
+        // If trial has expired, silently check if the subscription auto-renewed
+        const trialExpired =
+          profile?.is_trial_version &&
+          profile?.trial_end_date &&
+          new Date(profile.trial_end_date) < new Date();
+
+        if (trialExpired) {
+          // Try a silent restore — if Apple/Google already billed them, this
+          // will find the active purchase, call validate-receipt with
+          // source='restore', and flip is_trial_version to false in the profile.
+          let restored = false;
+          try {
+            if (IAPService.isAvailable()) {
+              const results = await IAPService.restorePurchases();
+              restored = results.length > 0;
+            }
+          } catch {
+            // No active subscription found — fall through to paywall
+          }
+          destinationRef.current = restored ? '/(tabs)/generate' : 'subscriptionScreen';
+        } else if (entitlement === 'pro' || entitlement === 'grandfather') {
           destinationRef.current = '/(tabs)/generate';
         } else if (!hasSeenPaywall) {
           destinationRef.current = 'subscriptionScreen';
