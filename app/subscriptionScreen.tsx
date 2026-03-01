@@ -638,16 +638,11 @@ export default function SubscriptionScreen() {
         </Animated.View>
       )}
 
-      {/* Debug Toggle Button */}
-      <TouchableOpacity
-        style={styles.showDebugButton}
-        onPress={() => setShowDebug(prev => !prev)}
-      >
-        <Text style={styles.showDebugText}>🔧</Text>
-      </TouchableOpacity>
+      {/* Debug Toggle Button - hidden */}
+      {null}
 
       {/* Debug Panel */}
-      {showDebug && (
+      {false && showDebug && (
         <View style={styles.debugPanel}>
           <View style={styles.debugHeader}>
             <Text style={styles.debugTitle}>🔧 IAP Debug</Text>
