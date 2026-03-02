@@ -95,18 +95,18 @@ export default function ProfileScreen() {
     {
       id: 'weekly',
       name: 'Weekly',
-      price: '$2.99/week',
-      billingPrice: '$2.99',
+      price: '$4.99/week',
+      billingPrice: '$4.99',
       imageLimit: '10 images per week',
-      description: 'Billed weekly at $2.99.\nCancel anytime'
+      description: 'Billed weekly at $4.99.\nCancel anytime'
     },
     {
       id: 'monthly',
       name: 'Monthly',
-      price: '$5.99/month',
-      billingPrice: '$5.99',
+      price: '$8.99/month',
+      billingPrice: '$8.99',
       imageLimit: '75 images per month',
-      description: 'Billed monthly at $5.99.\nCancel anytime'
+      description: 'Billed monthly at $8.99.\nCancel anytime'
     },
     {
       id: 'yearly',
