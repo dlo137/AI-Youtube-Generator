@@ -5,6 +5,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 // Choose a 16:9 size YouTube accepts. 1280x720 is standard.
 const WIDTH = 1280;
@@ -290,6 +296,10 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`Gemini image API error ${response.status}:`, errorText);
+    if (response.status === 403 || response.status === 429) {
+      throw new Error(`BILLING_ERROR: Gemini API returned ${response.status} - ${errorText}`);
+    }
     throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
@@ -361,6 +371,10 @@ IMPORTANT: This is an IMAGE EDIT task. Do NOT create a new image from scratch. M
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`Gemini edit API error ${response.status}:`, errorText);
+    if (response.status === 403 || response.status === 429) {
+      throw new Error(`BILLING_ERROR: Gemini API returned ${response.status} - ${errorText}`);
+    }
     throw new Error(`Gemini Edit API error: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
@@ -421,14 +435,22 @@ async function createMaskedImage(baseImageUrl: string, maskSvgPath: string): Pro
 }
 
 serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
     const authHeader = req.headers.get("Authorization") ?? "";
     const contentType = req.headers.get("Content-Type") ?? "";
     console.log('Request content-type:', contentType);
     
+    // User-scoped client for auth checks
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
+
+    // Service-role client for storage — bypasses RLS so uploads work without a logged-in user
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Auth disabled for testing - re-enable in production
     // const { data: { user } } = await supabase.auth.getUser();
@@ -440,9 +462,9 @@ serve(async (req: Request) => {
     console.log('Raw request body:', rawBody.substring(0, 500));
     
     if (!rawBody || rawBody.length < 10) {
-      return new Response(JSON.stringify({ error: "Empty or invalid request body" }), { 
+      return new Response(JSON.stringify({ error: "Empty or invalid request body" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
@@ -451,18 +473,18 @@ serve(async (req: Request) => {
       body = JSON.parse(rawBody);
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      return new Response(JSON.stringify({ error: "Invalid JSON in request body", raw: rawBody.substring(0, 100) }), { 
+      return new Response(JSON.stringify({ error: "Invalid JSON in request body", raw: rawBody.substring(0, 100) }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
     const { prompt, subjectImageUrl, referenceImageUrls, baseImageUrl, adjustmentMode, allowTextFallback, eraseMask } = body;
     
     if (!prompt || typeof prompt !== "string") {
-      return new Response(JSON.stringify({ error: "Missing prompt", receivedBody: body }), { 
+      return new Response(JSON.stringify({ error: "Missing prompt", receivedBody: body }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
@@ -520,10 +542,10 @@ serve(async (req: Request) => {
 
       // Store single edited image
       const filename = `${userId}/${crypto.randomUUID()}.png`;
-      const upload = await supabase.storage.from("thumbnails").upload(filename, editedBytes, { contentType: "image/png", upsert: true });
+      const upload = await supabaseAdmin.storage.from("thumbnails").upload(filename, editedBytes, { contentType: "image/png", upsert: true });
       if (upload.error) throw upload.error;
 
-      const signed = await supabase.storage.from("thumbnails").createSignedUrl(filename, SEVEN_DAYS);
+      const signed = await supabaseAdmin.storage.from("thumbnails").createSignedUrl(filename, SEVEN_DAYS);
       if (signed.error) throw signed.error;
 
       // Return single edited image (adjustment mode only returns 1 image)
@@ -540,7 +562,7 @@ serve(async (req: Request) => {
           file: filename,
           prompt: prompt
         }
-      }), { headers: { "Content-Type": "application/json" } });
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // GENERATION MODE: Create new images
@@ -578,9 +600,9 @@ serve(async (req: Request) => {
     const filename3 = `${userId}/${crypto.randomUUID()}.png`;
 
     const [upload1, upload2, upload3] = await Promise.all([
-      supabase.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
-      supabase.storage.from("thumbnails").upload(filename2, bytes2, { contentType: "image/png", upsert: true }),
-      supabase.storage.from("thumbnails").upload(filename3, bytes3, { contentType: "image/png", upsert: true })
+      supabaseAdmin.storage.from("thumbnails").upload(filename1, bytes1, { contentType: "image/png", upsert: true }),
+      supabaseAdmin.storage.from("thumbnails").upload(filename2, bytes2, { contentType: "image/png", upsert: true }),
+      supabaseAdmin.storage.from("thumbnails").upload(filename3, bytes3, { contentType: "image/png", upsert: true })
     ]);
 
     if (upload1.error) throw upload1.error;
@@ -589,9 +611,9 @@ serve(async (req: Request) => {
 
     // Generate long-lived signed URLs (7 days) for 3 images
     const [signed1, signed2, signed3] = await Promise.all([
-      supabase.storage.from("thumbnails").createSignedUrl(filename1, SEVEN_DAYS),
-      supabase.storage.from("thumbnails").createSignedUrl(filename2, SEVEN_DAYS),
-      supabase.storage.from("thumbnails").createSignedUrl(filename3, SEVEN_DAYS)
+      supabaseAdmin.storage.from("thumbnails").createSignedUrl(filename1, SEVEN_DAYS),
+      supabaseAdmin.storage.from("thumbnails").createSignedUrl(filename2, SEVEN_DAYS),
+      supabaseAdmin.storage.from("thumbnails").createSignedUrl(filename3, SEVEN_DAYS)
     ]);
 
     if (signed1.error) throw signed1.error;
@@ -625,10 +647,20 @@ serve(async (req: Request) => {
         file: filename3,
         prompt: finalPrompt
       }
-    }), { headers: { "Content-Type": "application/json" } });
+    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-  } catch (e) {
-    console.error(e);
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+  } catch (e: any) {
+    const message = e?.message || String(e);
+    console.error("generate-thumbnail error:", message);
+    const isBilling = message.includes("BILLING_ERROR") || message.includes("Cloud Billing") || message.includes("PERMISSION_DENIED");
+    return new Response(JSON.stringify({
+      error: isBilling
+        ? "Image generation is temporarily unavailable due to a billing issue. Please try again later."
+        : message,
+      detail: message
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

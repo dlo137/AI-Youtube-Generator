@@ -494,11 +494,6 @@ export default function SubscriptionScreen() {
             ]}
             onPress={() => setSelectedPlan('monthly')}
           >
-            {selectedPlan !== 'yearly' && (
-              <View style={styles.tryFreeBadge}>
-                <Text style={styles.tryFreeBadgeText}>3 DAY FREE TRIAL</Text>
-              </View>
-            )}
             <View style={styles.planRadio}>
               {selectedPlan === 'monthly' && <View style={styles.planRadioSelected} />}
             </View>

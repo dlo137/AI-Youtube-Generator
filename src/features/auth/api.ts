@@ -5,14 +5,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as WebBrowser from 'expo-web-browser';
 
-// Initialize credits for a new user or update if not set
+// Initialize credits for a new user or update if not set.
+// Also stores normalized_email and device_id so trial eligibility checks
+// can work cross-profile from the moment the account is created.
 async function initializeUserCredits(userId: string) {
   try {
     console.log('[Auth] Checking profile for user:', userId);
-    
+
+    // Get the authenticated user's email for normalized_email storage
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const normalizedEmail = authUser?.email
+      ? authUser.email.trim().toLowerCase()
+      : null;
+
     const { data: existingProfile, error: fetchError } = await supabase
       .from('profiles')
-      .select('credits_current, credits_max')
+      .select('credits_current, credits_max, normalized_email')
       .eq('id', userId)
       .maybeSingle();
 
@@ -22,10 +30,10 @@ async function initializeUserCredits(userId: string) {
 
     console.log('[Auth] Existing profile:', existingProfile);
 
-    // Profile doesn't exist - we need to create it
+    // Profile doesn't exist - create it with normalized_email
     if (!existingProfile) {
       console.log('[Auth] Profile does not exist, creating with upsert for user:', userId);
-      
+
       const { error: upsertError } = await supabase
         .from('profiles')
         .upsert({
@@ -34,7 +42,8 @@ async function initializeUserCredits(userId: string) {
           credits_max: 5,
           last_credit_reset: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        }, { 
+          ...(normalizedEmail ? { normalized_email: normalizedEmail } : {}),
+        }, {
           onConflict: 'id'
         });
 
@@ -46,13 +55,16 @@ async function initializeUserCredits(userId: string) {
     } else if (existingProfile.credits_current === null && existingProfile.credits_max === null) {
       // Profile exists but credits are null - update them
       console.log('[Auth] Profile exists but credits are null, updating...');
-      
+
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
           credits_current: 5,
           credits_max: 5,
           last_credit_reset: new Date().toISOString(),
+          ...(normalizedEmail && !existingProfile.normalized_email
+            ? { normalized_email: normalizedEmail }
+            : {}),
         })
         .eq('id', userId);
 
@@ -63,6 +75,14 @@ async function initializeUserCredits(userId: string) {
       }
     } else {
       console.log('[Auth] Credits already set:', existingProfile.credits_current, '/', existingProfile.credits_max);
+
+      // Backfill normalized_email if it's missing on an existing profile
+      if (normalizedEmail && !existingProfile.normalized_email) {
+        await supabase
+          .from('profiles')
+          .update({ normalized_email: normalizedEmail })
+          .eq('id', userId);
+      }
     }
   } catch (error) {
     console.error('[Auth] Error initializing credits:', error);

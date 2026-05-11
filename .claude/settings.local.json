@@ -52,7 +52,9 @@
       "Bash(git config:*)",
       "Bash(npx expo config:*)",
       "Bash(npm view:*)",
-      "Bash(npm dedupe:*)"
+      "Bash(npm dedupe:*)",
+      "mcp__plugin_supabase_supabase__list_projects",
+      "mcp__plugin_supabase_supabase__get_logs"
     ],
     "deny": [],
     "ask": []
