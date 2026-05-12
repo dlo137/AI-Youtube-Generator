@@ -34,6 +34,7 @@ type GenerateBody = {
   adjustmentMode?: boolean;
   allowTextFallback?: boolean;
   eraseMask?: string;
+  aspectRatio?: string;
 };
 
 function b64ToUint8(base64: string) {
@@ -202,7 +203,7 @@ Focus on style matching and natural subject integration.` }];
 }
 
 // Gemini 2.5 Flash Preview Image Generation (Nano Banana)
-async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean) {
+async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, referenceImageUrls?: string[], baseImageUrl?: string, isBlankFrame?: boolean, aspectRatio?: string) {
   // Detect if the prompt suggests text should be included
   const lowerPrompt = prompt.toLowerCase();
   
@@ -285,9 +286,8 @@ async function callGeminiImagePreview(prompt: string, subjectImageUrl?: string, 
         }],
         generationConfig: {
           responseModalities: ["IMAGE", "TEXT"],
-          // Request 16:9 aspect ratio for YouTube thumbnails
           imageConfig: {
-            aspectRatio: "16:9"
+            aspectRatio: aspectRatio || "16:9"
           }
         }
       }),
@@ -479,7 +479,7 @@ serve(async (req: Request) => {
       });
     }
 
-    const { prompt, subjectImageUrl, referenceImageUrls, baseImageUrl, adjustmentMode, allowTextFallback, eraseMask } = body;
+    const { prompt, subjectImageUrl, referenceImageUrls, baseImageUrl, adjustmentMode, allowTextFallback, eraseMask, aspectRatio } = body;
     
     if (!prompt || typeof prompt !== "string") {
       return new Response(JSON.stringify({ error: "Missing prompt", receivedBody: body }), {
@@ -585,9 +585,9 @@ serve(async (req: Request) => {
     let bytes1: Uint8Array, bytes2: Uint8Array, bytes3: Uint8Array;
     try {
       [bytes1, bytes2, bytes3] = await Promise.all([
-        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
-        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame),
-        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame)
+        callGeminiImagePreview(variation1Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, aspectRatio),
+        callGeminiImagePreview(variation2Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, aspectRatio),
+        callGeminiImagePreview(variation3Prompt, subjectImageUrl, referenceImageUrls, effectiveBaseImage, isUsingBlankFrame, aspectRatio)
       ]);
     } catch (error: any) {
       console.error('Gemini generation failed:', error);

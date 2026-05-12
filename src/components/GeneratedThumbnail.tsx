@@ -24,6 +24,7 @@ interface GeneratedThumbnailProps {
   prompt: string;
   onEdit: () => void;
   style: any;
+  ratio?: string;
   textOverlay?: {
     text: string;
     x: number;
@@ -33,7 +34,7 @@ interface GeneratedThumbnailProps {
   };
 }
 
-export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, textOverlay }: GeneratedThumbnailProps) {
+export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, ratio, textOverlay }: GeneratedThumbnailProps) {
   const downloadThumbnail = async () => {
     if (!imageUrl) {
       Alert.alert('Error', 'No thumbnail to download');
@@ -146,7 +147,7 @@ export default function GeneratedThumbnail({ imageUrl, prompt, onEdit, style, te
               const editsToSave = textOverlay ? {
                 textOverlay: textOverlay
               } : null;
-              await saveThumbnail(prompt, imageUrl, editsToSave);
+              await saveThumbnail(prompt, imageUrl, editsToSave, ratio);
               Alert.alert('Saved!', 'Thumbnail saved to your history');
             } catch (error: any) {
               console.error('Save error:', error);

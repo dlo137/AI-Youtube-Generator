@@ -8,6 +8,7 @@ interface ThumbnailCardProps {
   status: 'completed' | 'processing' | 'failed';
   imageUrl?: string;
   isFavorited?: boolean;
+  ratio?: string;
   edits?: {
     textOverlay?: {
       text: string;
@@ -36,12 +37,24 @@ export default function ThumbnailCard({
   status,
   imageUrl,
   isFavorited = false,
+  ratio,
   edits,
   onDownload,
   onShare,
   onDelete,
   onFavorite
 }: ThumbnailCardProps) {
+  const getRatioValue = (r?: string) => {
+    if (!r) return 16 / 9;
+    const parts = r.split(':');
+    if (parts.length === 2) {
+      const w = parseFloat(parts[0]);
+      const h = parseFloat(parts[1]);
+      if (w > 0 && h > 0) return w / h;
+    }
+    return 16 / 9;
+  };
+  const aspectRatio = getRatioValue(ratio);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -92,7 +105,7 @@ export default function ThumbnailCard({
         </View>
       </View>
 
-      <View style={styles.thumbnailPlaceholder}>
+      <View style={[styles.thumbnailPlaceholder, { aspectRatio }]}>
         {imageUrl ? (
           <View style={{ position: 'relative', width: '100%', height: '100%' }}>
             <Image

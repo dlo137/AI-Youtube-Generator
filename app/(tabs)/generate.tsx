@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image, Modal, PanResponder, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image, Modal, PanResponder, TouchableWithoutFeedback, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -94,6 +94,12 @@ export default function GenerateScreen() {
   const router = useRouter();
   const { credits, refreshCredits } = useCredits();
   const [topic, setTopic] = useState('');
+  const [selectedRatio, setSelectedRatio] = useState<'16:9' | '9:16' | 'Custom'>('16:9');
+  const [customWidth, setCustomWidth] = useState('4');
+  const [customHeight, setCustomHeight] = useState('3');
+  const [appliedCustomRatio, setAppliedCustomRatio] = useState('4:3');
+  const [isCustomRatioSheetVisible, setIsCustomRatioSheetVisible] = useState(false);
+  const [generatingRatio, setGeneratingRatio] = useState('16:9');
   const [duration, setDuration] = useState(''); // kept for existing logic
   const [style, setStyle] = useState('educational'); // kept for existing logic
   const [isLoading, setIsLoading] = useState(false);
@@ -113,6 +119,7 @@ export default function GenerateScreen() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [modalPrompt, setModalPrompt] = useState('');
   const [modalImageUrl, setModalImageUrl] = useState('');
+  const [modalRatio, setModalRatio] = useState('16:9');
   const [originalModalImageUrl, setOriginalModalImageUrl] = useState(''); // Track original remote URL for syncing
   const [selectedTool, setSelectedTool] = useState<'save' | 'erase' | 'text' | null>(null);
   const [eraseMask, setEraseMask] = useState<string>('');
@@ -141,7 +148,9 @@ export default function GenerateScreen() {
   const [isSubjectModalVisible, setIsSubjectModalVisible] = useState(false);
   const [isReferenceModalVisible, setIsReferenceModalVisible] = useState(false);
   const [subjectImage, setSubjectImage] = useState<string | null>(null);
+  const [subjectImageRatio, setSubjectImageRatio] = useState(1);
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [referenceImageRatios, setReferenceImageRatios] = useState<number[]>([]);
   const [subjectImageUrl, setSubjectImageUrl] = useState<string | null>(null);
   const [referenceImageUrls, setReferenceImageUrls] = useState<string[]>([]);
   const [thumbnailEdits, setThumbnailEdits] = useState<{
@@ -171,6 +180,7 @@ export default function GenerateScreen() {
     url2?: string;
     url3?: string;
     timestamp: number;
+    ratio?: string;
     textOverlays?: {
       url1?: {
         text: string;
@@ -383,6 +393,8 @@ export default function GenerateScreen() {
     const currentGeneration = allGenerations.find(gen =>
       gen.url1 === imageUrl || gen.url2 === imageUrl || gen.url3 === imageUrl
     );
+
+    setModalRatio(currentGeneration?.ratio || '16:9');
 
     let textOverlayFromGeneration = null;
     if (currentGeneration) {
@@ -883,6 +895,38 @@ export default function GenerateScreen() {
     { id: 'colorful', label: 'Colorful' },
   ];
 
+  const getActiveRatioString = () =>
+    selectedRatio === 'Custom' ? appliedCustomRatio : selectedRatio;
+
+  const getRatioValue = (ratio: string) => {
+    const parts = ratio.split(':');
+    if (parts.length === 2) {
+      const w = parseFloat(parts[0]);
+      const h = parseFloat(parts[1]);
+      if (w > 0 && h > 0) return w / h;
+    }
+    return 16 / 9;
+  };
+
+  const { width: _screenW, height: _screenH } = Dimensions.get('window');
+  const _modalRv = getRatioValue(modalRatio);
+  const _availW = _screenW - 40;
+  const _availH = _screenH * 0.48;
+  const modalImgW = Math.min(_availW, _availH * _modalRv);
+  const modalImgH = modalImgW / _modalRv;
+
+  const toGeminiAspectRatio = (ratio: string) => {
+    const r = getRatioValue(ratio);
+    const supported = [
+      { r: '1:1', v: 1 },
+      { r: '3:4', v: 3 / 4 },
+      { r: '4:3', v: 4 / 3 },
+      { r: '9:16', v: 9 / 16 },
+      { r: '16:9', v: 16 / 9 },
+    ];
+    return supported.reduce((a, b) => Math.abs(b.v - r) < Math.abs(a.v - r) ? b : a).r;
+  };
+
   const handleGenerate = async (overrideTopic?: string, overrideTitle?: string) => {
     const topicToUse = overrideTopic || topic;
 
@@ -934,6 +978,9 @@ export default function GenerateScreen() {
 
     setLastPrompt(topicToUse.trim()); // Store original prompt for display
 
+    const activeRatio = getActiveRatioString();
+    setGeneratingRatio(activeRatio);
+
     // Dismiss keyboard when generating
     Keyboard.dismiss();
     setIsLoading(true);
@@ -957,8 +1004,9 @@ export default function GenerateScreen() {
             body: JSON.stringify({
               prompt: promptToUse,
               style: style,
-              subjectImageUrl: activeSubjectImageUrl, // Only include if actively selected
-              referenceImageUrls: activeReferenceImageUrls, // Only include if actively selected
+              subjectImageUrl: activeSubjectImageUrl,
+              referenceImageUrls: activeReferenceImageUrls,
+              aspectRatio: toGeminiAspectRatio(activeRatio),
             }),
             headers: {
               'Content-Type': 'application/json',
@@ -1006,18 +1054,15 @@ export default function GenerateScreen() {
 
         if (url1) {
           setGeneratedImageUrl(url1);
-          // Automatically add to history (not favorited)
-          await addThumbnailToHistory(promptToUse, url1);
+          await addThumbnailToHistory(promptToUse, url1, null, activeRatio);
         }
         if (url2) {
           setGeneratedImageUrl2(url2);
-          // Automatically add to history (not favorited)
-          await addThumbnailToHistory(promptToUse, url2);
+          await addThumbnailToHistory(promptToUse, url2, null, activeRatio);
         }
         if (url3) {
           setGeneratedImageUrl3(url3);
-          // Automatically add to history (not favorited)
-          await addThumbnailToHistory(promptToUse, url3);
+          await addThumbnailToHistory(promptToUse, url3, null, activeRatio);
         }
 
         // Add to all generations list with placeholder title
@@ -1025,11 +1070,12 @@ export default function GenerateScreen() {
         const newGeneration = {
           id: generationId,
           prompt: promptToUse,
-          title: overrideTitle as string | undefined, // Use provided title or will be set by AI
+          title: overrideTitle as string | undefined,
           url1: url1 || '',
           url2: url2,
           url3: url3,
           timestamp: Date.now(),
+          ratio: activeRatio,
         };
         setAllGenerations(prev => [newGeneration, ...prev]);
 
@@ -1065,8 +1111,10 @@ export default function GenerateScreen() {
         if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {
           setSubjectImage(null);
           setSubjectImageUrl(null);
+          setSubjectImageRatio(1);
           setReferenceImages([]);
           setReferenceImageUrls([]);
+          setReferenceImageRatios([]);
         }
       } else if (data?.imageUrl) {
         // Fallback for backwards compatibility
@@ -1077,8 +1125,10 @@ export default function GenerateScreen() {
         if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {
           setSubjectImage(null);
           setSubjectImageUrl(null);
+          setSubjectImageRatio(1);
           setReferenceImages([]);
           setReferenceImageUrls([]);
+          setReferenceImageRatios([]);
         }
       } else {
         Alert.alert('Error', 'No image was generated. Please try again.');
@@ -1107,7 +1157,7 @@ export default function GenerateScreen() {
 
                 {/* First loading skeleton */}
                 <View style={styles.loadingThumbnailContainer}>
-                  <View style={styles.loadingSkeletonWrapper}>
+                  <View style={[styles.loadingSkeletonWrapper, { aspectRatio: getRatioValue(generatingRatio) }]}>
                     <View style={styles.loadingBorderAnimated}>
                       <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
                         <Defs>
@@ -1144,7 +1194,7 @@ export default function GenerateScreen() {
                         />
                       </Svg>
                     </View>
-                    <View style={styles.loadingSkeleton}>
+                    <View style={[styles.loadingSkeleton, { aspectRatio: getRatioValue(generatingRatio) }]}>
                       <Animated.View style={[styles.loadingShimmer, { opacity: shimmer1Anim }]} />
                     </View>
                   </View>
@@ -1152,7 +1202,7 @@ export default function GenerateScreen() {
 
                 {/* Second loading skeleton */}
                 <View style={styles.loadingThumbnailContainer}>
-                  <View style={styles.loadingSkeletonWrapper}>
+                  <View style={[styles.loadingSkeletonWrapper, { aspectRatio: getRatioValue(generatingRatio) }]}>
                     <View style={styles.loadingBorderAnimated}>
                       <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
                         <Defs>
@@ -1189,7 +1239,7 @@ export default function GenerateScreen() {
                         />
                       </Svg>
                     </View>
-                    <View style={styles.loadingSkeleton}>
+                    <View style={[styles.loadingSkeleton, { aspectRatio: getRatioValue(generatingRatio) }]}>
                       <Animated.View style={[styles.loadingShimmer, { opacity: shimmer2Anim }]} />
                     </View>
                   </View>
@@ -1197,7 +1247,7 @@ export default function GenerateScreen() {
 
                 {/* Third loading skeleton */}
                 <View style={styles.loadingThumbnailContainer}>
-                  <View style={styles.loadingSkeletonWrapper}>
+                  <View style={[styles.loadingSkeletonWrapper, { aspectRatio: getRatioValue(generatingRatio) }]}>
                     <View style={styles.loadingBorderAnimated}>
                       <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
                         <Defs>
@@ -1234,7 +1284,7 @@ export default function GenerateScreen() {
                         />
                       </Svg>
                     </View>
-                    <View style={styles.loadingSkeleton}>
+                    <View style={[styles.loadingSkeleton, { aspectRatio: getRatioValue(generatingRatio) }]}>
                       <Animated.View style={[styles.loadingShimmer, { opacity: shimmer3Anim }]} />
                     </View>
                   </View>
@@ -1247,7 +1297,10 @@ export default function GenerateScreen() {
             )}
 
             {/* All generations including current one */}
-            {allGenerations.map((generation, index) => (
+            {allGenerations.map((generation, index) => {
+              const genRatio = getRatioValue(generation.ratio || '16:9');
+              const genStyle = { ...styles, generatedImage: { ...styles.generatedImage, aspectRatio: genRatio } };
+              return (
               <View key={generation.id} style={styles.generationSection}>
                 {/* Title for each generation - use AI title if available, fallback to getShortTitle */}
                 <Text style={styles.imageTitle}>{generation.title || getShortTitle(generation.prompt)}</Text>
@@ -1259,7 +1312,8 @@ export default function GenerateScreen() {
                     imageUrl={generation.url1}
                     prompt={generation.prompt}
                     onEdit={() => openModal(generation.url1)}
-                    style={styles}
+                    style={genStyle}
+                    ratio={generation.ratio}
                     textOverlay={generation.textOverlays?.url1}
                   />
                 )}
@@ -1273,7 +1327,8 @@ export default function GenerateScreen() {
                     onEdit={() => {
                       if (generation.url2) openModal(generation.url2);
                     }}
-                    style={styles}
+                    style={genStyle}
+                    ratio={generation.ratio}
                     textOverlay={generation.textOverlays?.url2}
                   />
                 )}
@@ -1287,7 +1342,8 @@ export default function GenerateScreen() {
                     onEdit={() => {
                       if (generation.url3) openModal(generation.url3);
                     }}
-                    style={styles}
+                    style={genStyle}
+                    ratio={generation.ratio}
                     textOverlay={generation.textOverlays?.url3}
                   />
                 )}
@@ -1297,7 +1353,8 @@ export default function GenerateScreen() {
                   <View style={styles.generationSeparator} />
                 )}
               </View>
-            ))}
+              );
+            })}
           </View>
         ) : (
           <View style={styles.hero}>
@@ -1374,29 +1431,26 @@ export default function GenerateScreen() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Suggestion Buttons */}
-        <View style={styles.suggestionContainer}>
-          <TouchableOpacity
-            style={styles.suggestionButton}
-            onPress={() => handleGenerate('Tech Review', 'Tech Review')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.suggestionText} numberOfLines={1}>Tech Review</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.suggestionButton}
-            onPress={() => handleGenerate('Podcast', 'Podcast')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.suggestionText} numberOfLines={1}>Podcast</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.suggestionButton}
-            onPress={() => handleGenerate('Gamer vs Gamer', 'Gamer vs Gamer')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.suggestionText} numberOfLines={1}>Gamer vs Gamer</Text>
-          </TouchableOpacity>
+        {/* Ratio Selector */}
+        <View style={styles.ratioToggleContainer}>
+          {(['16:9', '9:16', 'Custom'] as const).map((ratio) => (
+            <TouchableOpacity
+              key={ratio}
+              style={[styles.ratioSegment, selectedRatio === ratio && styles.ratioSegmentActive]}
+              onPress={() => {
+                if (ratio === 'Custom') {
+                  setIsCustomRatioSheetVisible(true);
+                } else {
+                  setSelectedRatio(ratio);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.ratioSegmentText, selectedRatio === ratio && styles.ratioSegmentTextActive]}>
+                {ratio === 'Custom' && selectedRatio === 'Custom' ? appliedCustomRatio : ratio}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
         {/* Prompt Bar */}
@@ -1442,6 +1496,89 @@ export default function GenerateScreen() {
         </View>
       </View>
 
+      {/* Custom Ratio Sheet */}
+      <Modal
+        visible={isCustomRatioSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsCustomRatioSheetVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+        <TouchableWithoutFeedback onPress={() => setIsCustomRatioSheetVisible(false)}>
+          <View style={styles.ratioSheetBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.ratioSheet}>
+          <View style={styles.ratioSheetHandle} />
+          <Text style={styles.ratioSheetTitle}>Custom Ratio</Text>
+
+          {/* Preset options */}
+          <View style={styles.ratioPresetRow}>
+            {(['1:1', '4:3', '3:4', '21:9'] as const).map((preset) => (
+              <TouchableOpacity
+                key={preset}
+                style={[styles.ratioPreset, customWidth + ':' + customHeight === preset && styles.ratioPresetActive]}
+                onPress={() => {
+                  const [w, h] = preset.split(':');
+                  setCustomWidth(w);
+                  setCustomHeight(h);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.ratioPresetText, customWidth + ':' + customHeight === preset && styles.ratioPresetTextActive]}>
+                  {preset}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Manual inputs */}
+          <View style={styles.ratioInputRow}>
+            <View style={styles.ratioInputWrap}>
+              <Text style={styles.ratioInputLabel}>Width</Text>
+              <TextInput
+                style={styles.ratioInput}
+                value={customWidth}
+                onChangeText={(v) => setCustomWidth(v.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+                maxLength={4}
+                placeholderTextColor="#7b818a"
+              />
+            </View>
+            <Text style={styles.ratioInputDivider}>:</Text>
+            <View style={styles.ratioInputWrap}>
+              <Text style={styles.ratioInputLabel}>Height</Text>
+              <TextInput
+                style={styles.ratioInput}
+                value={customHeight}
+                onChangeText={(v) => setCustomHeight(v.replace(/[^0-9]/g, ''))}
+                keyboardType="number-pad"
+                maxLength={4}
+                placeholderTextColor="#7b818a"
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.ratioApplyBtn}
+            onPress={() => {
+              const w = parseInt(customWidth) || 1;
+              const h = parseInt(customHeight) || 1;
+              const ratioStr = `${w}:${h}`;
+              setAppliedCustomRatio(ratioStr);
+              setSelectedRatio('Custom');
+              setIsCustomRatioSheetVisible(false);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.ratioApplyText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* Modal --- Editing Thumbnail Area */}
       <Modal
         visible={isModalVisible}
@@ -1484,8 +1621,8 @@ export default function GenerateScreen() {
 
           {/* Generated Image in the middle */}
           <View style={styles.centeredImageContainer}>
-            <View style={styles.imageAndToolsGroup}>
-              <View style={styles.imageWithDrawing}>
+            <View style={[styles.imageAndToolsGroup, { width: modalImgW }]}>
+              <View style={[styles.imageWithDrawing, { width: modalImgW, height: modalImgH }]}>
               <PinchGestureHandler
                 onGestureEvent={onPinchGestureEvent}
                 onHandlerStateChange={onPinchHandlerStateChange}
@@ -1499,6 +1636,7 @@ export default function GenerateScreen() {
                   <Animated.View
                     style={[
                       styles.modalImageContainer,
+                      { width: modalImgW, height: modalImgH },
                       {
                         transform: [
                           { scale: scaleValue.current },
@@ -1514,7 +1652,7 @@ export default function GenerateScreen() {
                   >
                     <Image
                       source={{ uri: modalImageUrl }}
-                      style={styles.modalImage as any}
+                      style={[styles.modalImage, { width: modalImgW, height: modalImgH }] as any}
                       resizeMode="cover"
                     />
 
@@ -2057,7 +2195,7 @@ export default function GenerateScreen() {
                           // Save to history with text overlay
                           await addThumbnailToHistory(currentGeneration.prompt, urlToSave, {
                             textOverlay: textOverlay
-                          });
+                          }, modalRatio);
                         }
 
                         // Deduct 1 credit for text overlay application (count as image generation)
@@ -2226,7 +2364,7 @@ export default function GenerateScreen() {
                           // This ensures cross-device sync works correctly
                           const urlToSave = originalModalImageUrl || modalImageUrl;
                           console.log('[SAVE] Saving thumbnail with URL:', urlToSave.substring(0, 60));
-                          await saveThumbnail(currentGeneration.prompt, urlToSave, editsToSave);
+                          await saveThumbnail(currentGeneration.prompt, urlToSave, editsToSave, modalRatio);
                           Alert.alert('Saved!', 'Thumbnail saved to your history');
                         } else {
                           Alert.alert('Error', 'Could not find thumbnail to save');
@@ -2351,12 +2489,16 @@ export default function GenerateScreen() {
 
             {subjectImage ? (
               <View style={styles.imagePreviewContainer}>
-                <Image source={{ uri: subjectImage as string }} style={styles.imagePreview as any} />
+                <Image
+                  source={{ uri: subjectImage as string }}
+                  style={[styles.imagePreview, { height: undefined, aspectRatio: subjectImageRatio }] as any}
+                />
                 <TouchableOpacity
                   style={styles.removeImageButton}
                   onPress={() => {
                     setSubjectImage(null);
-                    setSubjectImageUrl(null); // Clear URL when image is removed
+                    setSubjectImageRatio(1);
+                    setSubjectImageUrl(null);
                   }}
                 >
                   <Text style={styles.removeImageText}>✕</Text>
@@ -2375,13 +2517,15 @@ export default function GenerateScreen() {
 
                     const result = await ImagePicker.launchImageLibraryAsync({
                       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                      allowsEditing: true,
-                      aspect: [1, 1],
+                      allowsEditing: false,
                       quality: 0.8,
                     });
 
                     if (!result.canceled && result.assets[0]) {
-                      setSubjectImage(result.assets[0].uri);
+                      const asset = result.assets[0];
+                      setSubjectImage(asset.uri);
+                      const ratio = asset.width && asset.height ? asset.width / asset.height : 1;
+                      setSubjectImageRatio(ratio);
                     }
                   } catch (error) {
                     Alert.alert('Error', 'Failed to select image');
@@ -2447,20 +2591,24 @@ export default function GenerateScreen() {
 
             {/* Reference Images Grid */}
             <View style={styles.referenceImagesContainer}>
-              {referenceImages.map((imageUri, index) => (
-                <View key={index} style={styles.referenceImageItem}>
+              {referenceImages.map((imageUri, index) => {
+                const refRatio = referenceImageRatios[index] ?? (4 / 3);
+                return (
+                <View key={index} style={[styles.referenceImageItem, { width: 80 * refRatio, height: 80 }]}>
                   <Image source={{ uri: imageUri }} style={styles.referenceImagePreview as any} />
                   <TouchableOpacity
                     style={styles.removeReferenceButton}
                     onPress={() => {
                       setReferenceImages(prev => prev.filter((_, i) => i !== index));
-                      setReferenceImageUrls(prev => prev.filter((_, i) => i !== index)); // Clear corresponding URL
+                      setReferenceImageUrls(prev => prev.filter((_, i) => i !== index));
+                      setReferenceImageRatios(prev => prev.filter((_, i) => i !== index));
                     }}
                   >
                     <Text style={styles.removeImageText}>✕</Text>
                   </TouchableOpacity>
                 </View>
-              ))}
+                );
+              })}
 
               {/* Add more images button */}
               {referenceImages.length < 3 && (
@@ -2476,13 +2624,15 @@ export default function GenerateScreen() {
 
                       const result = await ImagePicker.launchImageLibraryAsync({
                         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                        allowsEditing: true,
-                        aspect: [4, 3],
+                        allowsEditing: false,
                         quality: 0.8,
                       });
 
                       if (!result.canceled && result.assets[0]) {
-                        setReferenceImages(prev => [...prev, result.assets[0].uri]);
+                        const asset = result.assets[0];
+                        setReferenceImages(prev => [...prev, asset.uri]);
+                        const ratio = asset.width && asset.height ? asset.width / asset.height : 4 / 3;
+                        setReferenceImageRatios(prev => [...prev, ratio]);
                       }
                     } catch (error) {
                       Alert.alert('Error', 'Failed to select image');
@@ -2749,6 +2899,130 @@ const styles = StyleSheet.create({
   sendBtnDisabled: {
     opacity: 0.5,
   },
+  ratioToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: CARD,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginHorizontal: 18,
+    marginBottom: 8,
+    padding: 3,
+  },
+  ratioSegment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderRadius: 7,
+  },
+  ratioSegmentActive: {
+    backgroundColor: 'rgba(0, 122, 255, 0.15)',
+  },
+  ratioSegmentText: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  ratioSegmentTextActive: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  ratioSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  ratioSheet: {
+    backgroundColor: '#1a2030',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 24,
+    paddingBottom: Platform.select({ ios: 16, android: 24 }),
+    paddingTop: 12,
+  },
+  ratioSheetHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: BORDER,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  ratioSheetTitle: {
+    color: TEXT,
+    fontSize: 17,
+    fontWeight: '600',
+    marginBottom: 20,
+  },
+  ratioPresetRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 24,
+  },
+  ratioPreset: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  ratioPresetActive: {
+    backgroundColor: 'rgba(0, 122, 255, 0.15)',
+    borderColor: '#007AFF',
+  },
+  ratioPresetText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  ratioPresetTextActive: {
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  ratioInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    marginBottom: 28,
+  },
+  ratioInputWrap: {
+    flex: 1,
+  },
+  ratioInputLabel: {
+    color: MUTED,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  ratioInput: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: TEXT,
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  ratioInputDivider: {
+    color: MUTED,
+    fontSize: 22,
+    fontWeight: '300',
+    paddingBottom: 10,
+  },
+  ratioApplyBtn: {
+    backgroundColor: '#007AFF',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  ratioApplyText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   sendArrow: {
     color: TEXT,
     fontSize: 16,
@@ -2991,14 +3265,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   modalImage: {
-    width: '100%',
-    aspectRatio: 16/9, // YouTube thumbnail ratio
     borderRadius: 12,
     backgroundColor: CARD,
   },
   modalImageContainer: {
-    width: '100%',
-    aspectRatio: 16/9, // YouTube thumbnail ratio
   },
   modalPromptContainer: {
     paddingHorizontal: 18,
@@ -3071,8 +3341,6 @@ const styles = StyleSheet.create({
   },
   imageWithDrawing: {
     position: 'relative',
-    width: '100%',
-    aspectRatio: 16/9,
   },
   drawingOverlay: {
     position: 'absolute',

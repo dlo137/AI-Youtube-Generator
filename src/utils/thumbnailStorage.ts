@@ -25,6 +25,7 @@ export interface SavedThumbnail {
   status: 'completed' | 'processing' | 'failed';
   timestamp: number;
   isFavorited: boolean;
+  ratio?: string;
   edits?: {
     textOverlay?: {
       text: string;
@@ -163,7 +164,8 @@ export const saveThumbnail = async (
       scale: number;
       rotation: number;
     };
-  } | null
+  } | null,
+  ratio?: string
 ): Promise<SavedThumbnail> => {
   try {
     console.log('[saveThumbnail] Starting save for URL:', imageUrl?.substring(0, 60));
@@ -217,6 +219,7 @@ export const saveThumbnail = async (
       status: 'completed',
       timestamp: Date.now(),
       isFavorited: true,
+      ratio,
       edits: edits,
     };
 
@@ -242,7 +245,8 @@ export const addThumbnailToHistory = async (
       scale: number;
       rotation: number;
     };
-  } | null
+  } | null,
+  ratio?: string
 ): Promise<SavedThumbnail> => {
   try {
     const storageKey = await getStorageKey();
@@ -273,11 +277,12 @@ export const addThumbnailToHistory = async (
       id: thumbnailId,
       title: generateTitle(prompt),
       prompt,
-      imageUrl: localImageUrl, // Store local file path
+      imageUrl: localImageUrl,
       date: new Date().toISOString().split('T')[0],
       status: 'completed',
       timestamp: Date.now(),
-      isFavorited: false, // Not favorited by default for history
+      isFavorited: false,
+      ratio,
       edits: edits,
     };
 

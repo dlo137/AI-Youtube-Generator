@@ -203,6 +203,7 @@ export default function HistoryScreen() {
                 status={thumbnail.status}
                 imageUrl={thumbnail.imageUrl}
                 isFavorited={thumbnail.isFavorited}
+                ratio={thumbnail.ratio}
                 edits={thumbnail.edits}
                 onDownload={() => handleDownload(thumbnail.id)}
                 onShare={() => handleShare(thumbnail.id)}
