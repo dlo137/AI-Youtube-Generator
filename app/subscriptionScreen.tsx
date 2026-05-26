@@ -517,7 +517,7 @@ export default function SubscriptionScreen() {
           >
             {selectedPlan === 'yearly' && (
               <View style={styles.tryFreeBadge}>
-                <Text style={styles.tryFreeBadgeText}>3 DAY FREE TRIAL</Text>
+                <Text style={styles.tryFreeBadgeText}>BEST VALUE</Text>
               </View>
             )}
             <View style={styles.planRadio}>
