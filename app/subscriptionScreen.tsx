@@ -362,7 +362,7 @@ export default function SubscriptionScreen() {
 
     trackEvent('discount_purchase_initiated', {
       productId: PRODUCT_IDS.discountedWeekly,
-      price: '$1.99',
+      price: '$2.99',
     });
 
     try {
@@ -594,8 +594,8 @@ export default function SubscriptionScreen() {
               </Text>
               
               <View style={styles.discountPriceContainer}>
-                <Text style={styles.discountOriginalPrice}>$2.99</Text>
-                <Text style={styles.discountPrice}>$1.99</Text>
+                <Text style={styles.discountOriginalPrice}>$4.99</Text>
+                <Text style={styles.discountPrice}>$2.99</Text>
                 <Text style={styles.discountPriceLabel}>/week</Text>
               </View>
 
