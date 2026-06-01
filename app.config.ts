@@ -10,7 +10,14 @@ export default {
     plugins: [
       "react-native-iap",
       "./plugins/withIapFlavor",
-      "expo-router"
+      "expo-router",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow AI Thumbnails to use the microphone for voice input.",
+          "speechRecognitionPermission": "Allow AI Thumbnails to recognize your speech for voice input."
+        }
+      ]
     ],
     updates: {
       fallbackToCacheTimeout: 0,

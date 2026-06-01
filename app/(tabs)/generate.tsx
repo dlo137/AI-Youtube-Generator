@@ -1,4 +1,13 @@
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Platform, Alert, KeyboardAvoidingView, Keyboard, Animated, Image, Modal, PanResponder, TouchableWithoutFeedback, Dimensions } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+
+let SpeechModule: any = null;
+let useSpeechEvent: ((event: string, handler: any) => void) = () => {};
+try {
+  const mod = require('expo-speech-recognition');
+  SpeechModule = mod.ExpoSpeechRecognitionModule;
+  useSpeechEvent = mod.useSpeechRecognitionEvent;
+} catch {}
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -111,6 +120,7 @@ export default function GenerateScreen() {
   const [topic, setTopic] = useState('');
   const [batchCount, setBatchCount] = useState<1 | 2 | 3>(3);
   const [isBatchSheetVisible, setIsBatchSheetVisible] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [selectedRatio, setSelectedRatio] = useState<'16:9' | '9:16' | 'Custom'>('16:9');
   const [customWidth, setCustomWidth] = useState('4');
   const [customHeight, setCustomHeight] = useState('3');
@@ -351,6 +361,33 @@ export default function GenerateScreen() {
     };
   }, [isModalVisible]);
 
+  useSpeechEvent('result', (event: any) => {
+    const transcript = event.results[0]?.transcript;
+    if (transcript) setTopic(transcript);
+  });
+
+  useSpeechEvent('end', () => setIsListening(false));
+
+  useSpeechEvent('error', () => setIsListening(false));
+
+  const startListening = async () => {
+    if (!SpeechModule) {
+      Alert.alert('Not Available', 'Voice input requires a production build and is not supported in Expo Go.');
+      return;
+    }
+    const { granted } = await SpeechModule.requestPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Permission Required', 'Please grant microphone access for voice input.');
+      return;
+    }
+    setIsListening(true);
+    SpeechModule.start({ lang: 'en-US', interimResults: true });
+  };
+
+  const stopListening = () => {
+    SpeechModule?.stop();
+    setIsListening(false);
+  };
 
   const downloadThumbnail = async () => {
     if (!generatedImageUrl) {
@@ -1519,6 +1556,13 @@ export default function GenerateScreen() {
                 <Text style={[styles.toolbarBtnText, referenceImages.length > 0 && styles.toolbarBtnTextActive, { fontSize: 16 }]}>
                   {referenceImages.length > 0 ? `+ ${referenceImages.length}` : '+'}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.toolbarBtn, isListening && styles.toolbarBtnListening]}
+                onPress={isListening ? stopListening : startListening}
+                activeOpacity={0.7}
+              >
+                <Feather name="mic" size={13} color={isListening ? '#ef4444' : MUTED} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.toolbarBtn}
@@ -3021,6 +3065,10 @@ const styles = StyleSheet.create({
   toolbarBtnActive: {
     borderColor: '#fbbf24',
     backgroundColor: 'rgba(251, 191, 36, 0.1)',
+  },
+  toolbarBtnListening: {
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
   },
   toolbarBtnText: {
     color: MUTED,
