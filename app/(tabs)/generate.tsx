@@ -15,6 +15,21 @@ import { getCredits, deductCredit } from '../../src/utils/subscriptionStorage';
 import { hasActiveSubscription } from '../../src/features/subscription/api';
 import { useCredits } from '../../src/contexts/CreditsContext';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as StoreReview from 'expo-store-review';
+
+const GENERATION_COUNT_KEY = 'generation_count';
+
+const maybeRequestReview = async () => {
+  try {
+    const raw = await AsyncStorage.getItem(GENERATION_COUNT_KEY);
+    const count = (raw ? parseInt(raw, 10) : 0) + 1;
+    await AsyncStorage.setItem(GENERATION_COUNT_KEY, String(count));
+    if (count === 2 && await StoreReview.hasAction()) {
+      await StoreReview.requestReview();
+    }
+  } catch {}
+};
 
 // Create Animated SVG components
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -94,6 +109,8 @@ export default function GenerateScreen() {
   const router = useRouter();
   const { credits, refreshCredits } = useCredits();
   const [topic, setTopic] = useState('');
+  const [batchCount, setBatchCount] = useState<1 | 2 | 3>(3);
+  const [isBatchSheetVisible, setIsBatchSheetVisible] = useState(false);
   const [selectedRatio, setSelectedRatio] = useState<'16:9' | '9:16' | 'Custom'>('16:9');
   const [customWidth, setCustomWidth] = useState('4');
   const [customHeight, setCustomHeight] = useState('3');
@@ -949,12 +966,12 @@ export default function GenerateScreen() {
       return;
     }
 
-    // Check credits before generating - requires 3 credits for 3 image variations
+    // Check credits before generating - requires 1 credit per image
     const credits = await getCredits();
-    if (credits.current < 3) {
+    if (credits.current < batchCount) {
       Alert.alert(
         'Not Enough Credits',
-        `You need at least 3 credits to generate thumbnails. You currently have ${credits.current} credit${credits.current === 1 ? '' : 's'}.`,
+        `You need at least ${batchCount} credit${batchCount === 1 ? '' : 's'} to generate ${batchCount} thumbnail${batchCount === 1 ? '' : 's'}. You currently have ${credits.current} credit${credits.current === 1 ? '' : 's'}.`,
         [{ text: 'OK' }]
       );
       return;
@@ -1007,6 +1024,7 @@ export default function GenerateScreen() {
               subjectImageUrl: activeSubjectImageUrl,
               referenceImageUrls: activeReferenceImageUrls,
               aspectRatio: toGeminiAspectRatio(activeRatio),
+              batchCount,
             }),
             headers: {
               'Content-Type': 'application/json',
@@ -1047,10 +1065,10 @@ export default function GenerateScreen() {
       }
 
       if (data?.variation1?.imageUrl || data?.variation2?.imageUrl || data?.variation3?.imageUrl) {
-        // Success! Display variations
+        // Success! Display variations up to batchCount
         const url1 = data.variation1?.imageUrl;
-        const url2 = data.variation2?.imageUrl;
-        const url3 = data.variation3?.imageUrl;
+        const url2 = batchCount >= 2 ? data.variation2?.imageUrl : undefined;
+        const url3 = batchCount >= 3 ? data.variation3?.imageUrl : undefined;
 
         if (url1) {
           setGeneratedImageUrl(url1);
@@ -1087,10 +1105,10 @@ export default function GenerateScreen() {
                 body: JSON.stringify({ prompt: promptToUse }),
                 headers: { 'Content-Type': 'application/json' },
               });
-              
+
               if (titleData?.title) {
                 // Update the generation with the AI title
-                setAllGenerations(prev => prev.map(gen => 
+                setAllGenerations(prev => prev.map(gen =>
                   gen.id === generationId ? { ...gen, title: titleData.title } : gen
                 ));
               }
@@ -1101,11 +1119,13 @@ export default function GenerateScreen() {
           })();
         }
 
-        // Deduct 3 credits for successful generation (1 credit per image, 3 images generated)
-        await deductCredit(3);
+        // Deduct 1 credit per image generated
+        await deductCredit(batchCount);
 
         // Refresh credits display immediately
         await refreshCredits();
+
+        maybeRequestReview();
 
         // Clear subject and reference images after successful generation
         if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {
@@ -1201,7 +1221,7 @@ export default function GenerateScreen() {
                 </View>
 
                 {/* Second loading skeleton */}
-                <View style={styles.loadingThumbnailContainer}>
+                {batchCount >= 2 && <View style={styles.loadingThumbnailContainer}>
                   <View style={[styles.loadingSkeletonWrapper, { aspectRatio: getRatioValue(generatingRatio) }]}>
                     <View style={styles.loadingBorderAnimated}>
                       <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
@@ -1243,10 +1263,10 @@ export default function GenerateScreen() {
                       <Animated.View style={[styles.loadingShimmer, { opacity: shimmer2Anim }]} />
                     </View>
                   </View>
-                </View>
+                </View>}
 
                 {/* Third loading skeleton */}
-                <View style={styles.loadingThumbnailContainer}>
+                {batchCount >= 3 && <View style={styles.loadingThumbnailContainer}>
                   <View style={[styles.loadingSkeletonWrapper, { aspectRatio: getRatioValue(generatingRatio) }]}>
                     <View style={styles.loadingBorderAnimated}>
                       <Svg width="100%" height="100%" viewBox="0 0 350 200" preserveAspectRatio="none">
@@ -1288,7 +1308,7 @@ export default function GenerateScreen() {
                       <Animated.View style={[styles.loadingShimmer, { opacity: shimmer3Anim }]} />
                     </View>
                   </View>
-                </View>
+                </View>}
 
                 {allGenerations.length > 0 && (
                   <View style={styles.generationSeparator} />
@@ -1384,8 +1404,8 @@ export default function GenerateScreen() {
           </View>
         )}
 
-        {/* Bottom padding for fixed action cards and prompt bar */}
-        <View style={{ height: 225 }} />
+        {/* Bottom padding for prompt bar */}
+        <View style={{ height: 240 }} />
       </ScrollView>
 
       {/* Fixed Bottom Container with Action Cards and Prompt Bar */}
@@ -1396,19 +1416,15 @@ export default function GenerateScreen() {
           paddingBottom: keyboardHeight > 0 ? 16 : Platform.select({ ios: 34, android: 16 }),
         }
       ]}>
-        {/* Action Cards (h-scroll) - fixed at bottom */}
+        {/* Action Cards (h-scroll) */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.actionRow}
           style={styles.actionScrollView}
         >
-
           <TouchableOpacity
-            style={[
-              styles.actionCard,
-              subjectImage && styles.actionCardWithReference
-            ]}
+            style={[styles.actionCard, subjectImage && styles.actionCardWithReference]}
             activeOpacity={0.85}
             onPress={() => setIsSubjectModalVisible(true)}
           >
@@ -1418,10 +1434,7 @@ export default function GenerateScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.actionCard,
-              referenceImages.length > 0 && styles.actionCardWithReference
-            ]}
+            style={[styles.actionCard, referenceImages.length > 0 && styles.actionCardWithReference]}
             activeOpacity={0.85}
             onPress={() => setIsReferenceModalVisible(true)}
           >
@@ -1431,57 +1444,106 @@ export default function GenerateScreen() {
           </TouchableOpacity>
         </ScrollView>
 
-        {/* Ratio Selector */}
-        <View style={styles.ratioToggleContainer}>
-          {(['16:9', '9:16', 'Custom'] as const).map((ratio) => (
-            <TouchableOpacity
-              key={ratio}
-              style={[styles.ratioSegment, selectedRatio === ratio && styles.ratioSegmentActive]}
-              onPress={() => {
-                if (ratio === 'Custom') {
-                  setIsCustomRatioSheetVisible(true);
-                } else {
-                  setSelectedRatio(ratio);
-                }
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.ratioSegmentText, selectedRatio === ratio && styles.ratioSegmentTextActive]}>
-                {ratio === 'Custom' && selectedRatio === 'Custom' ? appliedCustomRatio : ratio}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Prompt Suggestions */}
+        <View style={styles.suggestionsRow}>
+            {[
+              { label: 'Tech', prompt: 'YouTube tech review thumbnail — bold white title text on a dark background, dramatic close-up of a sleek gadget with electric blue accent lighting, high contrast, cinematic, ultra clean layout, professional studio quality' },
+              { label: 'Podcast', prompt: 'YouTube podcast thumbnail — two hosts with big expressive reactions, warm studio lighting, bold episode title text centered at the top, clean modern design with a dark gradient background, professional, high energy, faces clearly visible' },
+              { label: 'Gamer vs Gamer', prompt: 'YouTube gaming thumbnail — two intense gamers split down the middle with a glowing VS in the center, each side has a different bold color scheme (blue vs red), dramatic lighting on their faces, competitive energy, explosive background effects, cinematic quality' },
+            ].map((s) => (
+              <TouchableOpacity
+                key={s.label}
+                style={styles.suggestionChip}
+                onPress={() => setTopic(s.prompt)}
+              >
+                <Text style={styles.suggestionChipText}>{s.label}</Text>
+              </TouchableOpacity>
+            ))}
         </View>
 
         {/* Prompt Bar */}
         <View style={styles.inputBar}>
-          <TextInput
-            style={styles.textInput}
-            placeholder="Describe your thumbnail idea"
-            placeholderTextColor="#7b818a"
-            value={topic}
-            onChangeText={setTopic}
-            multiline
-            blurOnSubmit={true}
-            returnKeyType="send"
-            onKeyPress={({ nativeEvent }) => {
-              if (nativeEvent.key === 'Enter') {
+          {/* Left: text input + toolbar */}
+          <View style={styles.inputLeft}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Describe your thumbnail idea"
+              placeholderTextColor="rgba(138, 144, 153, 0.5)"
+              value={topic}
+              onChangeText={setTopic}
+              multiline
+              blurOnSubmit={true}
+              returnKeyType="send"
+              onKeyPress={({ nativeEvent }) => {
+                if (nativeEvent.key === 'Enter') {
+                  if (topic.trim() && !isLoading) {
+                    handleGenerate();
+                  }
+                }
+              }}
+              onSubmitEditing={() => {
                 if (topic.trim() && !isLoading) {
                   handleGenerate();
                 }
-              }
-            }}
-            onSubmitEditing={() => {
-              if (topic.trim() && !isLoading) {
-                handleGenerate();
-              }
-            }}
-          />
+              }}
+            />
+            <View style={styles.toolbarRow}>
+              <TouchableOpacity
+                style={[styles.toolbarBtn, referenceImages.length > 0 && styles.toolbarBtnActive]}
+                activeOpacity={0.7}
+                onPress={async () => {
+                  try {
+                    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                    if (status !== 'granted') {
+                      Alert.alert('Permission Required', 'Please grant photo library access to upload images');
+                      return;
+                    }
+                    const result = await ImagePicker.launchImageLibraryAsync({
+                      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                      allowsEditing: false,
+                      quality: 0.8,
+                    });
+                    if (!result.canceled && result.assets[0]) {
+                      const asset = result.assets[0];
+                      const ratio = asset.width && asset.height ? asset.width / asset.height : 4 / 3;
+                      setReferenceImages(prev => [...prev, asset.uri]);
+                      setReferenceImageRatios(prev => [...prev, ratio]);
+                      const url = await uploadImageToStorage(asset.uri, `reference_${Date.now()}`);
+                      if (url) setReferenceImageUrls(prev => [...prev, url]);
+                    }
+                  } catch {
+                    Alert.alert('Error', 'Failed to select image');
+                  }
+                }}
+              >
+                <Text style={[styles.toolbarBtnText, referenceImages.length > 0 && styles.toolbarBtnTextActive, { fontSize: 16 }]}>
+                  {referenceImages.length > 0 ? `+ ${referenceImages.length}` : '+'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.toolbarBtn}
+                onPress={() => setIsCustomRatioSheetVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.toolbarBtnText}>
+                  {selectedRatio === 'Custom' ? appliedCustomRatio : selectedRatio}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.toolbarBtn}
+                onPress={() => setIsBatchSheetVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.toolbarBtnText}>×{batchCount}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          {/* Right: Generate button */}
           <TouchableOpacity
-            style={[styles.sendBtn, (!topic || isLoading) && styles.sendBtnDisabled]}
+            style={[styles.generateBtn, (!topic || isLoading) && styles.generateBtnDisabled]}
             onPress={() => handleGenerate()}
             disabled={!topic || isLoading}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             {isLoading ? (
               <View style={styles.loadingDots}>
@@ -1490,7 +1552,7 @@ export default function GenerateScreen() {
                 <Animated.View style={[styles.dot, { transform: [{ translateY: dot3Anim }] }]} />
               </View>
             ) : (
-              <Text style={styles.sendArrow}>↑</Text>
+              <Text style={styles.generateBtnText}>Generate</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -1516,7 +1578,7 @@ export default function GenerateScreen() {
 
           {/* Preset options */}
           <View style={styles.ratioPresetRow}>
-            {(['1:1', '4:3', '3:4', '21:9'] as const).map((preset) => (
+            {(['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'] as const).map((preset) => (
               <TouchableOpacity
                 key={preset}
                 style={[styles.ratioPreset, customWidth + ':' + customHeight === preset && styles.ratioPresetActive]}
@@ -1577,6 +1639,39 @@ export default function GenerateScreen() {
           </TouchableOpacity>
         </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Batch Size Sheet */}
+      <Modal
+        visible={isBatchSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsBatchSheetVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setIsBatchSheetVisible(false)}>
+          <View style={styles.ratioSheetBackdrop} />
+        </TouchableWithoutFeedback>
+        <View style={styles.ratioSheet}>
+          <View style={styles.ratioSheetHandle} />
+          <Text style={styles.ratioSheetTitle}>Batch Size</Text>
+          <View style={styles.ratioPresetRow}>
+            {([1, 2, 3] as const).map((n) => (
+              <TouchableOpacity
+                key={n}
+                style={[styles.ratioPreset, batchCount === n && styles.ratioPresetActive]}
+                onPress={() => { setBatchCount(n); setIsBatchSheetVisible(false); }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.ratioPresetText, batchCount === n && styles.ratioPresetTextActive]}>
+                  ×{n}
+                </Text>
+                <Text style={[styles.batchCreditLabel, batchCount === n && styles.ratioPresetTextActive]}>
+                  {n} credit{n > 1 ? 's' : ''}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       </Modal>
 
       {/* Modal --- Editing Thumbnail Area */}
@@ -2862,30 +2957,95 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 6,
   },
-  inputBar: {
+  suggestionsRow: {
     flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 18,
+    marginBottom: 8,
+  },
+  suggestionChip: {
+    flex: 1,
     alignItems: 'center',
     backgroundColor: CARD,
     borderColor: BORDER,
     borderWidth: 1,
-    borderRadius: 28,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginHorizontal: 18,
+    borderRadius: 16,
+    paddingVertical: 7,
   },
-  paperclip: {
-    fontSize: 16,
-    marginRight: 8,
-    color: MUTED,
-    textAlignVertical: 'center',
+  suggestionChipText: {
+    color: TEXT,
+    fontSize: 13,
+  },
+  inputBar: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: '#0d1117',
+    borderColor: 'rgba(35, 41, 50, 0.9)',
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 10,
+    marginHorizontal: 18,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  inputLeft: {
+    flex: 1,
+    gap: 8,
   },
   textInput: {
-    flex: 1,
     color: TEXT,
-    fontSize: 15,
-    textAlign: 'left',
-    textAlignVertical: 'center',
-    paddingLeft: 8,
+    fontSize: 14,
+    fontWeight: '500',
+    paddingHorizontal: 4,
+    maxHeight: 80,
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  toolbarBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    backgroundColor: '#1c222b',
+    borderColor: BORDER,
+  },
+  toolbarBtnActive: {
+    borderColor: '#fbbf24',
+    backgroundColor: 'rgba(251, 191, 36, 0.1)',
+  },
+  toolbarBtnText: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  toolbarBtnTextActive: {
+    color: '#fbbf24',
+  },
+  generateBtn: {
+    backgroundColor: '#1d4ed8',
+    paddingHorizontal: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    minWidth: 85,
+  },
+  generateBtnDisabled: {
+    opacity: 0.5,
+  },
+  generateBtnText: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 14,
   },
   sendBtn: {
     width: 36,
@@ -2898,34 +3058,6 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.5,
-  },
-  ratioToggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: CARD,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: BORDER,
-    marginHorizontal: 18,
-    marginBottom: 8,
-    padding: 3,
-  },
-  ratioSegment: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderRadius: 7,
-  },
-  ratioSegmentActive: {
-    backgroundColor: 'rgba(0, 122, 255, 0.15)',
-  },
-  ratioSegmentText: {
-    color: MUTED,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  ratioSegmentTextActive: {
-    color: '#007AFF',
-    fontWeight: '600',
   },
   ratioSheetBackdrop: {
     flex: 1,
@@ -2979,6 +3111,11 @@ const styles = StyleSheet.create({
   ratioPresetTextActive: {
     color: '#007AFF',
     fontWeight: '600',
+  },
+  batchCreditLabel: {
+    color: MUTED,
+    fontSize: 11,
+    marginTop: 2,
   },
   ratioInputRow: {
     flexDirection: 'row',

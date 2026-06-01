@@ -103,18 +103,18 @@ export default function ProfileScreen() {
     {
       id: 'monthly',
       name: 'Monthly',
-      price: '$8.99/month',
-      billingPrice: '$8.99',
+      price: '$9.99/month',
+      billingPrice: '$9.99',
       imageLimit: '75 images per month',
-      description: 'Billed monthly at $8.99.\nCancel anytime'
+      description: 'Billed monthly at $9.99.\nCancel anytime'
     },
     {
       id: 'yearly',
       name: 'Yearly',
-      price: '$59.99/year',
-      billingPrice: '$59.99',
+      price: '$39.99/year',
+      billingPrice: '$39.99',
       imageLimit: '90 images per month',
-      description: 'Billed yearly at $59.99.\nCancel anytime'
+      description: 'Billed yearly at $39.99.\nCancel anytime'
     }
   ];
 
@@ -129,7 +129,7 @@ export default function ProfileScreen() {
       let planName = currentPlan;
 
       if (supabaseSubInfo.subscription_plan === 'yearly') {
-        price = '$59.99/year';
+        price = '$39.99/year';
         planName = 'Yearly Plan';
       } else if (supabaseSubInfo.subscription_plan === 'monthly') {
         price = '$5.99/month';
@@ -164,7 +164,7 @@ export default function ProfileScreen() {
     let planName = currentPlan;
 
     if (subscriptionInfo.productId === 'thumbnail.yearly') {
-      price = '$59.99/year';
+      price = '$39.99/year';
     } else if (subscriptionInfo.productId === 'thumbnail.monthly') {
       price = '$5.99/month';
     } else if (subscriptionInfo.productId === 'thumbnail.weekly') {
@@ -317,7 +317,7 @@ export default function ProfileScreen() {
 
         if (plan === 'yearly') {
           planName = 'Yearly Plan';
-          price = '$59.99/year';
+          price = '$39.99/year';
         } else if (plan === 'monthly') {
           planName = 'Monthly Plan';
           price = '$5.99/month';
@@ -344,7 +344,7 @@ export default function ProfileScreen() {
 
         if (subInfo.productId === 'thumbnail.yearly') {
           planName = 'Yearly Plan';
-          price = '$59.99/year';
+          price = '$39.99/year';
         } else if (subInfo.productId === 'thumbnail.monthly') {
           planName = 'Monthly Plan';
           price = '$5.99/month';

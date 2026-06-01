@@ -72,7 +72,7 @@ function getPriceForPlan(plan: SubscriptionPlan): number {
   switch (plan) {
     case 'weekly':  return 2.99;
     case 'monthly': return 5.99;
-    case 'yearly':  return 59.99;
+    case 'yearly':  return 39.99;
     default:        return 0;
   }
 }

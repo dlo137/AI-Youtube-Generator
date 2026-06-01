@@ -25,6 +25,11 @@ const PRODUCT_IDS = Platform.OS === 'ios' ? {
 export default function SubscriptionScreen() {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<'yearly' | 'monthly' | 'weekly'>('yearly');
+
+  const handlePlanSelect = (plan: 'yearly' | 'monthly' | 'weekly') => {
+    setSelectedPlan(plan);
+    trackEvent('paywall_plan_selected', { plan, platform: Platform.OS });
+  };
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const discountModalAnim = useRef(new Animated.Value(0)).current;
@@ -458,7 +463,7 @@ export default function SubscriptionScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Turn Ideas Into Clicks.</Text>
+          <Text style={styles.title}>More Views Start Here.</Text>
           <Text style={styles.subtitle}>
             Every click counts. Create and save eye-catching thumbnails that grow your channel, build your audience, and boost your revenue.
           </Text>
@@ -466,46 +471,6 @@ export default function SubscriptionScreen() {
 
         {/* Plans */}
         <View style={styles.plansContainer}>
-          {/* Weekly Plan */}
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'weekly' && styles.selectedPlan,
-            ]}
-            onPress={() => setSelectedPlan('weekly')}
-          >
-            <View style={styles.planRadio}>
-              {selectedPlan === 'weekly' && <View style={styles.planRadioSelected} />}
-            </View>
-            <View style={styles.planContent}>
-              <Text style={styles.planName}>Weekly</Text>
-            </View>
-            <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('weekly', '$4.99/week')}</Text>
-              <Text style={styles.planSubtext}>10 images per week</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Monthly Plan */}
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'monthly' && styles.selectedPlan,
-            ]}
-            onPress={() => setSelectedPlan('monthly')}
-          >
-            <View style={styles.planRadio}>
-              {selectedPlan === 'monthly' && <View style={styles.planRadioSelected} />}
-            </View>
-            <View style={styles.planContent}>
-              <Text style={styles.planName}>Monthly</Text>
-            </View>
-            <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('monthly', '$8.99/month')}</Text>
-              <Text style={styles.planSubtext}>75 images per month</Text>
-            </View>
-          </TouchableOpacity>
-
           {/* Yearly Plan - Most Popular */}
           <TouchableOpacity
             style={[
@@ -513,7 +478,7 @@ export default function SubscriptionScreen() {
               selectedPlan === 'yearly' && styles.selectedPlan,
               styles.popularPlan,
             ]}
-            onPress={() => setSelectedPlan('yearly')}
+            onPress={() => handlePlanSelect('yearly')}
           >
             {selectedPlan === 'yearly' && (
               <View style={styles.tryFreeBadge}>
@@ -527,8 +492,48 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Yearly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('yearly', '$59.99/year')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('yearly', '$0.77/week')}</Text>
               <Text style={styles.planSubtext}>90 images per month</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Monthly Plan */}
+          <TouchableOpacity
+            style={[
+              styles.planCard,
+              selectedPlan === 'monthly' && styles.selectedPlan,
+            ]}
+            onPress={() => handlePlanSelect('monthly')}
+          >
+            <View style={styles.planRadio}>
+              {selectedPlan === 'monthly' && <View style={styles.planRadioSelected} />}
+            </View>
+            <View style={styles.planContent}>
+              <Text style={styles.planName}>Monthly</Text>
+            </View>
+            <View style={styles.planPricing}>
+              <Text style={styles.planPrice}>{formatPrice('monthly', '$2.31/week')}</Text>
+              <Text style={styles.planSubtext}>75 images per month</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Weekly Plan */}
+          <TouchableOpacity
+            style={[
+              styles.planCard,
+              selectedPlan === 'weekly' && styles.selectedPlan,
+            ]}
+            onPress={() => handlePlanSelect('weekly')}
+          >
+            <View style={styles.planRadio}>
+              {selectedPlan === 'weekly' && <View style={styles.planRadioSelected} />}
+            </View>
+            <View style={styles.planContent}>
+              <Text style={styles.planName}>Weekly</Text>
+            </View>
+            <View style={styles.planPricing}>
+              <Text style={styles.planPrice}>{formatPrice('weekly', '$4.99/week')}</Text>
+              <Text style={styles.planSubtext}>10 images per week</Text>
             </View>
           </TouchableOpacity>
         </View>
