@@ -479,7 +479,9 @@ serve(async (req: Request) => {
       });
     }
 
-    const { prompt, subjectImageUrl, referenceImageUrls, baseImageUrl, adjustmentMode, allowTextFallback, eraseMask, aspectRatio } = body;
+    const { prompt, subjectImageUrl, baseImageUrl, adjustmentMode, allowTextFallback, eraseMask, aspectRatio } = body;
+    // Limit to 1 reference image to stay within Edge Function memory limits
+    const referenceImageUrls = body.referenceImageUrls?.slice(0, 1);
     
     if (!prompt || typeof prompt !== "string") {
       return new Response(JSON.stringify({ error: "Missing prompt", receivedBody: body }), {

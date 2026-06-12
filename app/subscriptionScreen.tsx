@@ -512,7 +512,7 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Monthly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('monthly', '$2.31/week')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('monthly', '$2.08/week')}</Text>
               <Text style={styles.planSubtext}>75 images per month</Text>
             </View>
           </TouchableOpacity>
@@ -958,6 +958,12 @@ const styles = StyleSheet.create({
     color: MUTED,
     opacity: 0.7,
     marginTop: 2,
+  },
+  planSubtextSmall: {
+    fontSize: 10,
+    color: MUTED,
+    opacity: 0.5,
+    marginTop: 1,
   },
   continueButton: {
     borderRadius: 30,

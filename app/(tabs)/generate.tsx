@@ -1529,6 +1529,10 @@ export default function GenerateScreen() {
                 style={[styles.toolbarBtn, referenceImages.length > 0 && styles.toolbarBtnActive]}
                 activeOpacity={0.7}
                 onPress={async () => {
+                  if (referenceImages.length >= 3) {
+                    Alert.alert('Limit Reached', 'You can only add up to 3 reference images.');
+                    return;
+                  }
                   try {
                     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
                     if (status !== 'granted') {
@@ -1557,13 +1561,13 @@ export default function GenerateScreen() {
                   {referenceImages.length > 0 ? `+ ${referenceImages.length}` : '+'}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={[styles.toolbarBtn, isListening && styles.toolbarBtnListening]}
                 onPress={isListening ? stopListening : startListening}
                 activeOpacity={0.7}
               >
                 <Feather name="mic" size={13} color={isListening ? '#ef4444' : MUTED} />
-              </TouchableOpacity>
+              </TouchableOpacity> */}
               <TouchableOpacity
                 style={styles.toolbarBtn}
                 onPress={() => setIsCustomRatioSheetVisible(true)}
