@@ -93,28 +93,28 @@ export default function ProfileScreen() {
 
   const subscriptionPlans = [
     {
+      id: 'yearly',
+      name: 'Yearly',
+      price: '$39.99/year',
+      billingPrice: '$39.99',
+      imageLimit: '90 images per month',
+      description: 'Billed yearly at $39.99.\nCancel anytime'
+    },
+    {
+      id: 'monthly',
+      name: 'Monthly',
+      price: '$8.99/month',
+      billingPrice: '$8.99',
+      imageLimit: '75 images per month',
+      description: 'Billed monthly at $8.99.\nCancel anytime'
+    },
+    {
       id: 'weekly',
       name: 'Weekly',
       price: '$4.99/week',
       billingPrice: '$4.99',
       imageLimit: '10 images per week',
       description: 'Billed weekly at $4.99.\nCancel anytime'
-    },
-    {
-      id: 'monthly',
-      name: 'Monthly',
-      price: '$2.08/week',
-      billingPrice: '$8.99',
-      imageLimit: '75 images per month',
-      description: 'Billed monthly at $8.99.\nCancel anytime'
-    },
-    {
-      id: 'yearly',
-      name: 'Yearly',
-      price: '$0.77/week',
-      billingPrice: '$39.99',
-      imageLimit: '90 images per month',
-      description: 'Billed yearly at $39.99.\nCancel anytime'
     }
   ];
 
@@ -1142,6 +1142,11 @@ export default function ProfileScreen() {
                         <Text style={styles.activeText}>CURRENT PLAN</Text>
                       </View>
                     )}
+                    {plan.id === 'yearly' && !isActivePlan && (
+                      <View style={styles.bestValueBadge}>
+                        <Text style={styles.bestValueText}>BEST VALUE</Text>
+                      </View>
+                    )}
                     <View style={[styles.planRadio, isActivePlan && styles.disabledRadio]}>
                       {selectedPlan === plan.id && !isActivePlan && <View style={styles.planRadioSelected} />}
                     </View>
@@ -1176,6 +1181,7 @@ export default function ProfileScreen() {
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
+            <Text style={styles.billingLabel}>Cancel Anytime. No Commitment.</Text>
           </View>
         </LinearGradient>
       </Modal>
@@ -1708,15 +1714,35 @@ const styles = StyleSheet.create({
   disabledText: {
     color: '#5a6069',
   },
+  bestValueBadge: {
+    position: 'absolute',
+    top: -10,
+    alignSelf: 'center',
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 10,
+    shadowColor: '#16a34a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  bestValueText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
   activeBadge: {
     position: 'absolute',
     top: -10,
     alignSelf: 'center',
-    backgroundColor: '#059669',
+    backgroundColor: '#6b7280',
     paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 10,
-    shadowColor: '#059669',
+    shadowColor: '#6b7280',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
@@ -1797,6 +1823,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#ffffff',
     letterSpacing: 0.5,
+  },
+  billingLabel: {
+    textAlign: 'center',
+    marginTop: 8,
+    fontSize: 12,
+    color: '#6b7280',
+    fontStyle: 'italic',
   },
   billingManagementModal: {
     backgroundColor: CARD,

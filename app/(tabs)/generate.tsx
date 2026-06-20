@@ -3046,6 +3046,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   textInput: {
+    flex: 1,
     color: TEXT,
     fontSize: 14,
     fontWeight: '500',

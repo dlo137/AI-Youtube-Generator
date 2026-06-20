@@ -480,11 +480,9 @@ export default function SubscriptionScreen() {
             ]}
             onPress={() => handlePlanSelect('yearly')}
           >
-            {selectedPlan === 'yearly' && (
-              <View style={styles.tryFreeBadge}>
+            <View style={styles.tryFreeBadge}>
                 <Text style={styles.tryFreeBadgeText}>BEST VALUE</Text>
               </View>
-            )}
             <View style={styles.planRadio}>
               {selectedPlan === 'yearly' && <View style={styles.planRadioSelected} />}
             </View>
@@ -492,7 +490,7 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Yearly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('yearly', '$0.77/week')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('yearly', '$39.99/year')}</Text>
               <Text style={styles.planSubtext}>90 images per month</Text>
             </View>
           </TouchableOpacity>
@@ -512,7 +510,7 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Monthly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('monthly', '$2.08/week')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('monthly', '$8.99/month')}</Text>
               <Text style={styles.planSubtext}>75 images per month</Text>
             </View>
           </TouchableOpacity>
