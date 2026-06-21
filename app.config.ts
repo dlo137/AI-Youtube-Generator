@@ -36,7 +36,7 @@ export default {
       EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
     },
     ios: {
-      supportsTablet: true,
+      supportsTablet: false,
       bundleIdentifier: "com.watsonsweb.thumbnail-generator",
       icon: "./assets/icon.png",
       infoPlist: {
