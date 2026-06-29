@@ -54,7 +54,9 @@
       "Bash(npm view:*)",
       "Bash(npm dedupe:*)",
       "mcp__plugin_supabase_supabase__list_projects",
-      "mcp__plugin_supabase_supabase__get_logs"
+      "mcp__plugin_supabase_supabase__get_logs",
+      "mcp__plugin_supabase_supabase__apply_migration",
+      "mcp__plugin_supabase_supabase__execute_sql"
     ],
     "deny": [],
     "ask": []

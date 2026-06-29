@@ -497,6 +497,7 @@ class IAPService {
             productId: effectiveProductId,
             transactionId: txId,
             source,
+            platform: Platform.OS,
           },
         });
 

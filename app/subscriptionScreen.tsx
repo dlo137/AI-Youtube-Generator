@@ -52,6 +52,7 @@ export default function SubscriptionScreen() {
   // Android: offerTokens keyed by base plan ID (monthly / weekly / yearly)
   const [androidOfferTokens, setAndroidOfferTokens] = useState<Record<string, string>>({});
   const isRestoringRef = useRef(false);
+  const [testAlertLoading, setTestAlertLoading] = useState(false);
 
   // Fade in on mount + mark paywall as seen so returning users skip it next time
   useEffect(() => {
@@ -237,7 +238,7 @@ export default function SubscriptionScreen() {
       const lastPurchase = IAPService.getLastPurchaseResult();
       const txId = lastPurchase?.id ?? lastPurchase?.transactionId ?? `${product.id}_${Date.now()}`;
       const { error: fnError } = await supabase.functions.invoke('validate-receipt', {
-        body: { productId: product.id, transactionId: txId, source: 'direct' },
+        body: { productId: product.id, transactionId: txId, source: 'direct', platform: Platform.OS },
       });
       if (fnError) {
         console.error('[SUBSCRIPTION] validate-receipt direct call failed:', fnError);
@@ -381,7 +382,7 @@ export default function SubscriptionScreen() {
       const lastPurchase = IAPService.getLastPurchaseResult();
       const txId = lastPurchase?.id ?? lastPurchase?.transactionId ?? `${PRODUCT_IDS.discountedWeekly}_${Date.now()}`;
       const { error: fnError } = await supabase.functions.invoke('validate-receipt', {
-        body: { productId: PRODUCT_IDS.discountedWeekly, transactionId: txId, source: 'direct' },
+        body: { productId: PRODUCT_IDS.discountedWeekly, transactionId: txId, source: 'direct', platform: Platform.OS },
       });
       if (fnError) {
         console.error('[SUBSCRIPTION] validate-receipt direct call (discount) failed:', fnError);
@@ -423,6 +424,19 @@ export default function SubscriptionScreen() {
           error.message || 'Unable to complete purchase. Please try again.'
         );
       }
+    }
+  };
+
+  const handleTestTelegramAlert = async () => {
+    setTestAlertLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('test-telegram-alert');
+      if (error) throw error;
+      Alert.alert('✅ Sent', 'Test Telegram alert delivered. Check your Telegram.');
+    } catch (err: any) {
+      Alert.alert('❌ Failed', err?.message || 'Could not send test alert. Check Supabase logs.');
+    } finally {
+      setTestAlertLoading(false);
     }
   };
 
@@ -556,6 +570,19 @@ export default function SubscriptionScreen() {
           </LinearGradient>
         </TouchableOpacity>
         <Text style={styles.cancelAnytimeText}>Cancel Anytime. No Commitment.</Text>
+
+        {/* DEV ONLY — removed automatically in production builds */}
+        {__DEV__ && (
+          <TouchableOpacity
+            style={styles.devTestButton}
+            onPress={handleTestTelegramAlert}
+            disabled={testAlertLoading}
+          >
+            <Text style={styles.devTestButtonText}>
+              {testAlertLoading ? 'Sending...' : '🚨 Test Telegram Alert'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Discount Modal */}
@@ -1262,5 +1289,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: MUTED,
     opacity: 0.7
+  },
+  devTestButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#7f1d1d',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    alignItems: 'center',
+  },
+  devTestButtonText: {
+    color: '#fca5a5',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });
