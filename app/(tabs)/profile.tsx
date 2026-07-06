@@ -95,26 +95,18 @@ export default function ProfileScreen() {
     {
       id: 'yearly',
       name: 'Yearly',
-      price: '$39.99/year',
-      billingPrice: '$39.99',
-      imageLimit: '90 images per month',
-      description: 'Billed yearly at $39.99.\nCancel anytime'
-    },
-    {
-      id: 'monthly',
-      name: 'Monthly',
-      price: '$8.99/month',
-      billingPrice: '$8.99',
-      imageLimit: '75 images per month',
-      description: 'Billed monthly at $8.99.\nCancel anytime'
+      price: '$49.99/year',
+      billingPrice: '$49.99',
+      imageLimit: '100 images per month',
+      description: 'Billed yearly at $49.99.\nCancel anytime'
     },
     {
       id: 'weekly',
       name: 'Weekly',
-      price: '$4.99/week',
-      billingPrice: '$4.99',
-      imageLimit: '10 images per week',
-      description: 'Billed weekly at $4.99.\nCancel anytime'
+      price: '$9.99/week',
+      billingPrice: '$9.99',
+      imageLimit: '20 images per week',
+      description: 'Billed weekly at $9.99.\nCancel anytime'
     }
   ];
 
@@ -560,9 +552,9 @@ export default function ProfileScreen() {
 
                                 let credits_max = 0;
                                 switch (planId) {
-                                  case 'yearly': credits_max = 90; break;
-                                  case 'monthly': credits_max = 75; break;
-                                  case 'weekly': credits_max = 10; break;
+                                  case 'yearly': credits_max = 100; break;
+                                  case 'monthly': credits_max = 100; break;
+                                  case 'weekly': credits_max = 20; break;
                                 }
 
                                 const { error: updateError } = await supabase
@@ -660,9 +652,9 @@ export default function ProfileScreen() {
                       // Determine credits based on plan
                       let credits_max = 0;
                       switch (planId) {
-                        case 'yearly': credits_max = 90; break;
-                        case 'monthly': credits_max = 75; break;
-                        case 'weekly': credits_max = 10; break;
+                        case 'yearly': credits_max = 100; break;
+                        case 'monthly': credits_max = 100; break;
+                        case 'weekly': credits_max = 20; break;
                       }
 
                       // Update subscription in Supabase with is_pro_version = true

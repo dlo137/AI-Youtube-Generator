@@ -69,7 +69,8 @@
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\build\" | Where-Object { $_.Name -notmatch \"\\\\.\\(d\\\\.ts|js|map\\)$\" } | Select-Object Name)",
       "PowerShell(node -e \"const m = require\\('./node_modules/expo/bundledNativeModules.json'\\); console.log\\(m['expo-notifications']\\)\")",
       "PowerShell($pkg = Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\package.json\" | ConvertFrom-Json; if \\($pkg.resolutions\\) { $pkg.resolutions | ConvertTo-Json } else { \"no resolutions\" }; if \\($pkg.overrides\\) { $pkg.overrides | ConvertTo-Json } else { \"no overrides\" })",
-      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\build\\\\getPresentedNotificationsAsync.js\"\\).Length)"
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\build\\\\getPresentedNotificationsAsync.js\"\\).Length)",
+      "mcp__plugin_supabase_supabase__deploy_edge_function"
     ],
     "deny": [],
     "ask": []

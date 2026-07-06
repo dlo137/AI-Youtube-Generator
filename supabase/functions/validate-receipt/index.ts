@@ -117,9 +117,9 @@ serve(async (req) => {
     let plan: 'yearly' | 'monthly' | 'weekly' = 'yearly'
     let credits_max = 0
 
-    if (productId.includes('yearly'))       { plan = 'yearly';  credits_max = 90 }
-    else if (productId.includes('monthly')) { plan = 'monthly'; credits_max = 75 }
-    else if (productId.includes('weekly'))  { plan = 'weekly';  credits_max = 10 }
+    if (productId.includes('yearly'))       { plan = 'yearly';  credits_max = 100 }
+    else if (productId.includes('monthly')) { plan = 'monthly'; credits_max = 100 }
+    else if (productId.includes('weekly'))  { plan = 'weekly';  credits_max = 20 }
 
     const now = new Date().toISOString()
     const isRestore = source === 'restore' || source === 'orphan'

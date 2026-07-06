@@ -64,7 +64,6 @@ export default function SubscriptionScreen() {
   // Android: offerTokens keyed by base plan ID (monthly / weekly / yearly)
   const [androidOfferTokens, setAndroidOfferTokens] = useState<Record<string, string>>({});
   const isRestoringRef = useRef(false);
-  const [testAlertLoading, setTestAlertLoading] = useState(false);
 
   // Fade in on mount + mark paywall as seen so returning users skip it next time
   useEffect(() => {
@@ -175,7 +174,7 @@ export default function SubscriptionScreen() {
   // returns true and the normal purchase flow runs instead.
   const simulatePurchase = async (plan: 'yearly' | 'monthly' | 'weekly' | 'discountedWeekly') => {
     const planKey = plan === 'discountedWeekly' ? 'discounted_weekly' : plan;
-    const credits_max = plan === 'yearly' ? 90 : plan === 'monthly' ? 75 : 10;
+    const credits_max = plan === 'yearly' ? 100 : plan === 'monthly' ? 100 : 20;
     const isTrial = plan === 'weekly' || plan === 'monthly' || plan === 'yearly' || plan === 'discountedWeekly';
     const trialEndDate = isTrial
       ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
@@ -439,19 +438,6 @@ export default function SubscriptionScreen() {
     }
   };
 
-  const handleTestTelegramAlert = async () => {
-    setTestAlertLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('test-telegram-alert');
-      if (error) throw error;
-      Alert.alert('✅ Sent', 'Test Telegram alert delivered. Check your Telegram.');
-    } catch (err: any) {
-      Alert.alert('❌ Failed', err?.message || 'Could not send test alert. Check Supabase logs.');
-    } finally {
-      setTestAlertLoading(false);
-    }
-  };
-
   return (
     <LinearGradient
       colors={['#050810', '#0d1120', '#08091a']}
@@ -516,28 +502,8 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Yearly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('yearly', '$39.99/year')}</Text>
-              <Text style={styles.planSubtext}>90 images per month</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Monthly Plan */}
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'monthly' && styles.selectedPlan,
-            ]}
-            onPress={() => handlePlanSelect('monthly')}
-          >
-            <View style={styles.planRadio}>
-              {selectedPlan === 'monthly' && <View style={styles.planRadioSelected} />}
-            </View>
-            <View style={styles.planContent}>
-              <Text style={styles.planName}>Monthly</Text>
-            </View>
-            <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('monthly', '$8.99/month')}</Text>
-              <Text style={styles.planSubtext}>75 images per month</Text>
+              <Text style={styles.planPrice}>{formatPrice('yearly', '$49.99/year')}</Text>
+              <Text style={styles.planSubtext}>100 images per month</Text>
             </View>
           </TouchableOpacity>
 
@@ -556,8 +522,8 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Weekly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('weekly', '$4.99/week')}</Text>
-              <Text style={styles.planSubtext}>10 images per week</Text>
+              <Text style={styles.planPrice}>{formatPrice('weekly', '$9.99/week')}</Text>
+              <Text style={styles.planSubtext}>20 images per week</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -583,18 +549,6 @@ export default function SubscriptionScreen() {
         </TouchableOpacity>
         <Text style={styles.cancelAnytimeText}>Cancel Anytime. No Commitment.</Text>
 
-        {/* DEV ONLY — removed automatically in production builds */}
-        {__DEV__ && (
-          <TouchableOpacity
-            style={styles.devTestButton}
-            onPress={handleTestTelegramAlert}
-            disabled={testAlertLoading}
-          >
-            <Text style={styles.devTestButtonText}>
-              {testAlertLoading ? 'Sending...' : '🚨 Test Telegram Alert'}
-            </Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Discount Modal */}
@@ -1301,21 +1255,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: MUTED,
     opacity: 0.7
-  },
-  devTestButton: {
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: '#7f1d1d',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ef4444',
-    alignItems: 'center',
-  },
-  devTestButtonText: {
-    color: '#fca5a5',
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.3,
   },
 });
