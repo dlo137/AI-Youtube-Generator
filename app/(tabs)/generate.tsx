@@ -24,21 +24,7 @@ import { getCredits, deductCredit } from '../../src/utils/subscriptionStorage';
 import { hasActiveSubscription } from '../../src/features/subscription/api';
 import { useCredits } from '../../src/contexts/CreditsContext';
 import Constants from 'expo-constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as StoreReview from 'expo-store-review';
-
-const GENERATION_COUNT_KEY = 'generation_count';
-
-const maybeRequestReview = async () => {
-  try {
-    const raw = await AsyncStorage.getItem(GENERATION_COUNT_KEY);
-    const count = (raw ? parseInt(raw, 10) : 0) + 1;
-    await AsyncStorage.setItem(GENERATION_COUNT_KEY, String(count));
-    if (count === 2 && await StoreReview.hasAction()) {
-      await StoreReview.requestReview();
-    }
-  } catch {}
-};
+import { useReviewPrompt } from '../../lib/useReviewPrompt';
 
 // Create Animated SVG components
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
@@ -117,6 +103,9 @@ const GENERATION_ERROR_MESSAGE = "Looks like we hit a temporary issue generating
 export default function GenerateScreen() {
   const router = useRouter();
   const { credits, refreshCredits } = useCredits();
+  // Triggers the native iOS review prompt after enough saves + sessions have accumulated.
+  // All gating (min saves, min sessions, 14-day cooldown) is handled inside the hook.
+  const { requestReviewAfterSave } = useReviewPrompt();
   const [topic, setTopic] = useState('');
   const [batchCount, setBatchCount] = useState<1 | 2 | 3>(3);
   const [isBatchSheetVisible, setIsBatchSheetVisible] = useState(false);
@@ -408,6 +397,8 @@ export default function GenerateScreen() {
         const asset = await MediaLibrary.createAssetAsync(generatedImageUrl);
         await MediaLibrary.createAlbumAsync('AI Thumbnails', asset, false);
         Alert.alert('Success', 'Thumbnail saved to your photo library!');
+        // Request review after successful save — hook handles all gating internally
+        requestReviewAfterSave();
         return;
       }
 
@@ -430,6 +421,8 @@ export default function GenerateScreen() {
       await MediaLibrary.createAlbumAsync('AI Thumbnails', asset, false);
 
       Alert.alert('Success', 'Thumbnail saved to your photo library!');
+      // Request review after successful save — hook handles all gating internally
+      requestReviewAfterSave();
 
     } catch (error) {
       console.error('Download error:', error);
@@ -1162,7 +1155,6 @@ export default function GenerateScreen() {
         // Refresh credits display immediately
         await refreshCredits();
 
-        maybeRequestReview();
 
         // Clear subject and reference images after successful generation
         if (activeSubjectImageUrl || activeReferenceImageUrls.length > 0) {

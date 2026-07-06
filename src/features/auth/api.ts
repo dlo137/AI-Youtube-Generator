@@ -8,7 +8,7 @@ import * as WebBrowser from 'expo-web-browser';
 // Initialize credits for a new user or update if not set.
 // Also stores normalized_email and device_id so trial eligibility checks
 // can work cross-profile from the moment the account is created.
-async function initializeUserCredits(userId: string) {
+export async function initializeUserCredits(userId: string) {
   try {
     console.log('[Auth] Checking profile for user:', userId);
 
@@ -88,6 +88,48 @@ async function initializeUserCredits(userId: string) {
     console.error('[Auth] Error initializing credits:', error);
     // Don't throw - credits initialization failure shouldn't block login
   }
+}
+
+// Starts a real (non-anonymous-looking to the caller) Supabase session with no
+// credentials collected yet, so the paywall/purchase flow has a user id to
+// attach to before the person creates a permanent account.
+export async function signInAnonymouslyAndInit() {
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) throw error;
+
+  if (data.user) {
+    await initializeUserCredits(data.user.id);
+  }
+
+  return data;
+}
+
+// Upgrades the current anonymous session into a permanent email/password
+// account in place (same auth.users.id), so profile/entitlement/purchase
+// data already attached to the anonymous user carries over automatically.
+export async function convertAnonymousToEmail(email: string, password: string, fullName?: string) {
+  const { data, error } = await supabase.auth.updateUser({
+    email,
+    password,
+    ...(fullName ? { data: { full_name: fullName } } : {}),
+  });
+  if (error) throw error;
+
+  // The handle_new_user() trigger that normally copies email onto profiles
+  // only fires on auth.users INSERT, not on this UPDATE — so profiles.email
+  // has to be set here explicitly for converted anonymous accounts.
+  if (data.user) {
+    await supabase
+      .from('profiles')
+      .update({
+        email,
+        normalized_email: email.trim().toLowerCase(),
+        ...(fullName ? { name: fullName } : {}),
+      })
+      .eq('id', data.user.id);
+  }
+
+  return data;
 }
 
 export async function signUpEmail(email: string, password: string, fullName?: string) {
@@ -523,5 +565,159 @@ export async function signInWithGoogle() {
     }
 
     throw new Error(`Google sign-in failed: ${error?.message || 'Unknown error'}. Please try again or contact support.`);
+  }
+}
+
+// Links Apple as an identity on the CURRENT session (anonymous or not),
+// preserving the existing auth.users.id instead of starting a new session.
+export async function linkAppleIdentity() {
+  try {
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+
+    const { identityToken, authorizationCode, fullName } = credential;
+    if (!identityToken) {
+      throw new Error('No identity token returned from Apple');
+    }
+
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'apple',
+      token: identityToken,
+      options: {
+        captchaToken: authorizationCode || undefined,
+      },
+    });
+
+    if (error) throw error;
+
+    // Same trigger gap as convertAnonymousToEmail: linking doesn't INSERT into
+    // auth.users, so profiles.email/normalized_email need an explicit update.
+    if (data.user) {
+      const fullNameString = fullName
+        ? [fullName.givenName, fullName.familyName].filter(Boolean).join(' ')
+        : undefined;
+
+      await supabase
+        .from('profiles')
+        .update({
+          ...(data.user.email ? { email: data.user.email, normalized_email: data.user.email.trim().toLowerCase() } : {}),
+          ...(fullNameString ? { name: fullNameString } : {}),
+        })
+        .eq('id', data.user.id);
+    }
+
+    return data;
+  } catch (error: any) {
+    if (error.code === 'ERR_REQUEST_CANCELED') {
+      throw new Error('Sign in was canceled');
+    }
+    throw error;
+  }
+}
+
+// Same trigger gap as convertAnonymousToEmail/linkAppleIdentity: linking
+// doesn't INSERT into auth.users, so profiles.email needs an explicit sync.
+async function syncProfileEmail(userId: string, email?: string | null) {
+  if (!email) return;
+  await supabase
+    .from('profiles')
+    .update({ email, normalized_email: email.trim().toLowerCase() })
+    .eq('id', userId);
+}
+
+// Links Google as an identity on the CURRENT session (anonymous or not),
+// preserving the existing auth.users.id instead of starting a new session.
+export async function linkGoogleIdentity() {
+  try {
+    WebBrowser.maybeCompleteAuthSession();
+    const Platform = require('react-native').Platform;
+
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'google',
+      options: {
+        redirectTo: redirectTo,
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
+    });
+
+    if (error) throw new Error(`Google link initialization failed: ${error.message}`);
+    if (!data?.url) throw new Error('No OAuth URL returned from Supabase');
+
+    if (Platform.OS === 'android') {
+      const androidResult = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+      if (androidResult.type === 'success' || androidResult.type === 'dismiss' || androidResult.type === 'cancel') {
+        for (let i = 0; i < 30; i++) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            await syncProfileEmail(sessionData.session.user.id, sessionData.session.user.email);
+            return sessionData;
+          }
+        }
+        if (androidResult.type === 'success') {
+          throw new Error('Linking timed out. Please try again.');
+        }
+        throw new Error('Sign in was canceled');
+      }
+      throw new Error('Authentication failed. Please try again.');
+    }
+
+    const iosResult = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+    if (iosResult.type === 'cancel' || iosResult.type === 'dismiss') {
+      for (let i = 0; i < 10; i++) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session) {
+          await syncProfileEmail(sessionData.session.user.id, sessionData.session.user.email);
+          return sessionData;
+        }
+      }
+      throw new Error('Sign in was canceled');
+    }
+
+    if (iosResult.type === 'success' && iosResult.url) {
+      const url = new URL(iosResult.url);
+      const code = url.searchParams.get('code');
+
+      if (code) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+        if (sessionError) throw sessionError;
+        if (sessionData.session) {
+          await syncProfileEmail(sessionData.session.user.id, sessionData.session.user.email);
+        }
+        return sessionData;
+      }
+
+      const hashParams = new URLSearchParams(url.hash.substring(1));
+      const accessToken = hashParams.get('access_token') || url.searchParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token') || url.searchParams.get('refresh_token');
+
+      if (accessToken && refreshToken) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (sessionError) throw sessionError;
+        if (sessionData.session) {
+          await syncProfileEmail(sessionData.session.user.id, sessionData.session.user.email);
+        }
+        return sessionData;
+      }
+
+      throw new Error('No authentication data in callback');
+    }
+
+    throw new Error('Authentication was not completed. The browser did not return a valid response.');
+  } catch (error: any) {
+    if (error?.message?.includes('canceled')) throw error;
+    throw new Error(`Google linking failed: ${error?.message || 'Unknown error'}. Please try again or contact support.`);
   }
 }

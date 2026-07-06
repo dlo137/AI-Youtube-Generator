@@ -2,7 +2,15 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvo
 import { StatusBar } from 'expo-status-bar';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { signUpEmail, signInWithApple, signInWithGoogle } from '../src/features/auth/api';
+import {
+  signUpEmail,
+  signInWithApple,
+  signInWithGoogle,
+  convertAnonymousToEmail,
+  linkAppleIdentity,
+  linkGoogleIdentity,
+} from '../src/features/auth/api';
+import { supabase } from '../lib/supabase';
 import { trackScreenView, trackEvent } from '../lib/posthog';
 
 export default function SignUpScreen() {
@@ -11,11 +19,23 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // If the current session is anonymous (came from the pre-signup paywall),
+  // sign-up should link/upgrade that same account instead of creating a new one.
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     trackScreenView('Sign Up Screen');
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setIsAnonymous(!!user?.is_anonymous);
+    });
   }, []);
+
+  const handleSkip = () => {
+    trackEvent('signup_skipped', { platform: Platform.OS });
+    router.replace('/(tabs)/generate');
+  };
 
   const handleSignUp = async () => {
     if (!name || !email || !password) {
@@ -31,14 +51,17 @@ export default function SignUpScreen() {
     setIsLoading(true);
 
     try {
-      const data = await signUpEmail(email, password, name);
+      const data = isAnonymous
+        ? await convertAnonymousToEmail(email, password, name)
+        : await signUpEmail(email, password, name);
 
       if (data?.user) {
         trackEvent('account_created', {
           method: 'email',
           platform: Platform.OS,
+          converted_from_anonymous: isAnonymous,
         });
-        router.push('/loadingaccount');
+        router.replace('/(tabs)/generate');
       }
 
     } catch (error: any) {
@@ -53,15 +76,17 @@ export default function SignUpScreen() {
     setIsLoading(true);
 
     try {
-      const data = await signInWithApple();
+      const data = isAnonymous
+        ? await linkAppleIdentity()
+        : await signInWithApple();
 
       if (data?.user) {
         trackEvent('account_created', {
           method: 'apple',
           platform: Platform.OS,
+          converted_from_anonymous: isAnonymous,
         });
-        // Successfully signed in, navigate to loading account screen
-        router.push('/loadingaccount');
+        router.replace('/(tabs)/generate');
       }
 
     } catch (error: any) {
@@ -92,15 +117,17 @@ export default function SignUpScreen() {
             setIsLoading(true);
 
             try {
-              const data = await signInWithGoogle();
+              const data = isAnonymous
+                ? await linkGoogleIdentity()
+                : await signInWithGoogle();
 
               if (data && 'user' in data && data.user) {
                 trackEvent('account_created', {
                   method: 'google',
                   platform: Platform.OS,
+                  converted_from_anonymous: isAnonymous,
                 });
-                // Successfully signed in, navigate to loading account screen
-                router.push('/loadingaccount');
+                        router.replace('/(tabs)/generate');
               }
 
             } catch (error: any) {
@@ -126,17 +153,10 @@ export default function SignUpScreen() {
     >
       <StatusBar style="light" />
 
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => router.back()}
-      >
-        <Text style={styles.backButtonText}>← Back</Text>
-      </TouchableOpacity>
-
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Sign up to start creating amazing thumbnails</Text>
+          <Text style={styles.title}>Save Your Thumbnails</Text>
+          <Text style={styles.subtitle}>Create an account to save your thumbnails and access them anywhere</Text>
         </View>
 
         <View style={styles.form}>
@@ -173,6 +193,12 @@ export default function SignUpScreen() {
               </Text>
             </View>
           </TouchableOpacity>
+
+          {isAnonymous && (
+            <TouchableOpacity style={styles.skipButton} onPress={handleSkip} disabled={isLoading}>
+              <Text style={styles.skipButtonText}>Skip for now</Text>
+            </TouchableOpacity>
+          )}
 
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} />
@@ -243,6 +269,7 @@ export default function SignUpScreen() {
               <Text style={styles.loginLink}>Log In</Text>
             </TouchableOpacity>
           </View>
+
 
           <View style={styles.termsContainer}>
             <Text style={styles.termsText}>
@@ -389,18 +416,13 @@ const styles = StyleSheet.create({
     color: '#93c5fd',
     fontWeight: '600',
   },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 24,
-    zIndex: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+  skipButton: {
+    marginTop: 4,
+    alignItems: 'center',
   },
-  backButtonText: {
-    fontSize: 16,
-    color: '#93c5fd',
-    fontWeight: '600',
+  skipButtonText: {
+    fontSize: 15,
+    color: MUTED,
   },
   dividerContainer: {
     flexDirection: 'row',

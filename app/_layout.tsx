@@ -1,12 +1,14 @@
 import '../polyfills';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, AppState, AppStateStatus } from 'react-native';
 import { initPostHog, trackEvent } from '../lib/posthog';
+import { incrementAppSessions } from '../lib/useReviewPrompt';
+import { initializeNotifications, setupNotificationListeners, trackAppOpen, trackNotificationOpen, registerForPushNotifications } from '../lib/notifications';
+import { supabase, initializeAuth } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // RevenueCat removed - not using it for this app
 // import { initializeRevenueCat } from '../lib/revenuecat';
-import { initializeAuth } from '../lib/supabase';
 
 function RootLayoutNav() {
   const router = useRouter();
@@ -15,7 +17,22 @@ function RootLayoutNav() {
     const initializeAnalytics = async () => {
       // Initialize auth first to handle any refresh token errors
       initializeAuth();
-      
+
+      // Count this launch for the review prompt session gate
+      incrementAppSessions();
+
+      // Create the Android notification channel (no-op on iOS)
+      initializeNotifications();
+
+      // Record this open so the re-engagement push eligibility query stays fresh.
+      // Also register for push notifications on cold start if session already exists
+      // (covers returning users who skip the login screen entirely).
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        trackAppOpen(session.user.id);
+        registerForPushNotifications(session.user.id);
+      }
+
       await initPostHog();
 
       // Check if this is first app launch
@@ -45,6 +62,49 @@ function RootLayoutNav() {
   //   };
   //   setupRevenueCat();
   // }, []);
+
+  // Register push token on any new sign-in.
+  // Covers email login, Apple Sign In, and Google OAuth — all of which navigate
+  // directly to /(tabs)/generate and never hit loadingaccount.tsx.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        registerForPushNotifications(session.user.id);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Track last_opened_at when the user foregrounds the app from the background.
+  // Cold-start tracking is handled in the analytics useEffect above.
+  useEffect(() => {
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          trackAppOpen(session.user.id);
+        }
+      }
+    };
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, []);
+
+  // Register foreground + tap notification listeners for the lifetime of the app.
+  // No notifications are sent here — this just wires up the receive/tap handlers.
+  useEffect(() => {
+    const cleanup = setupNotificationListeners(
+      undefined, // foreground receive — no UI action needed yet
+      async () => {
+        // User tapped a push notification — record for open-rate attribution
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          trackNotificationOpen(session.user.id);
+        }
+      },
+    );
+    return cleanup;
+  }, []);
 
   // Listen for deep links
   useEffect(() => {

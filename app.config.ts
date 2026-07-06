@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "AI Thumbnails",
     slug: "youtube-thumbnail-generator",
-    version: "1.1.1",
+    version: "1.1.2",
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
@@ -11,6 +11,13 @@ export default {
       "react-native-iap",
       "./plugins/withIapFlavor",
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "color": "#1e40af",
+          "sounds": []
+        }
+      ],
       [
         "expo-speech-recognition",
         {

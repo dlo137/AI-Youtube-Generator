@@ -11,6 +11,7 @@ config.resolver.alias = {
   'url': 'react-native-url-polyfill',
   'buffer': '@craftzdog/react-native-buffer',
   'events': 'events',
+  'assert': 'assert',
   // Replace ws package with our mock
   'ws': path.resolve(__dirname, 'MockWebSocket.ts'),
   // Add React JSX runtime aliases

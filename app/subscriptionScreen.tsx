@@ -26,6 +26,18 @@ export default function SubscriptionScreen() {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<'yearly' | 'monthly' | 'weekly'>('yearly');
 
+  // After a purchase (or restore), anonymous users get routed to signup so they
+  // can attach a permanent account to the entitlement they just bought; users
+  // who already have a real account just go straight into the app as before.
+  const routeAfterPurchase = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.is_anonymous) {
+      router.replace('/signup');
+    } else {
+      router.replace('/(tabs)/generate');
+    }
+  };
+
   const handlePlanSelect = (plan: 'yearly' | 'monthly' | 'weekly') => {
     setSelectedPlan(plan);
     trackEvent('paywall_plan_selected', { plan, platform: Platform.OS });
@@ -195,7 +207,7 @@ export default function SubscriptionScreen() {
       trackEvent('subscription_completed', { plan: planKey, platform: Platform.OS, test_mode: true });
       console.log(`[SUBSCRIPTION] ✅ Expo Go: Simulated ${planKey} purchase`);
       setCurrentPurchaseAttempt(null);
-      router.replace('/(tabs)/generate');
+      await routeAfterPurchase();
     } catch (error) {
       console.error('[SUBSCRIPTION] Simulation error:', error);
       setCurrentPurchaseAttempt(null);
@@ -245,7 +257,7 @@ export default function SubscriptionScreen() {
       }
 
       setCurrentPurchaseAttempt(null);
-      router.replace('/(tabs)/generate');
+      await routeAfterPurchase();
     } catch (error: any) {
       setCurrentPurchaseAttempt(null);
       const msg = String(error?.message || error);
@@ -272,9 +284,9 @@ export default function SubscriptionScreen() {
       const results = await IAPService.restorePurchases();
       if (results.length > 0) {
         Alert.alert('Success', 'Your purchases have been restored!', [
-          { text: 'Continue', onPress: () => {
+          { text: 'Continue', onPress: async () => {
               isRestoringRef.current = false;
-              router.replace('/(tabs)/generate');
+              await routeAfterPurchase();
             } }
         ]);
       } else {
@@ -389,7 +401,7 @@ export default function SubscriptionScreen() {
       }
 
       setCurrentPurchaseAttempt(null);
-      router.replace('/(tabs)/generate');
+      await routeAfterPurchase();
     } catch (error: any) {
       setCurrentPurchaseAttempt(null);
       console.error('[SUBSCRIPTION] Discount purchase error:', error);

@@ -56,7 +56,20 @@
       "mcp__plugin_supabase_supabase__list_projects",
       "mcp__plugin_supabase_supabase__get_logs",
       "mcp__plugin_supabase_supabase__apply_migration",
-      "mcp__plugin_supabase_supabase__execute_sql"
+      "mcp__plugin_supabase_supabase__execute_sql",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); deps={**d.get\\('dependencies',{}\\), **d.get\\('devDependencies',{}\\)}; [print\\(k,v\\) for k,v in deps.items\\(\\) if any\\(x in k for x in ['store','review','rate','expo-store','store-review']\\)]\")",
+      "Bash(python -c ' *)",
+      "PowerShell(cd \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\"; $secret = [System.Convert]::ToBase64String\\(\\(1..32 | ForEach-Object { [byte]\\(Get-Random -Max 256\\) }\\)\\); supabase secrets set CRON_SECRET=$secret 2>&1; Write-Host \"CRON_SECRET=$secret\")",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\build\" | Where-Object { $_.Name -match \"present|dismiss\" } | Select-Object Name)",
+      "PowerShell($pkg = Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\package.json\" | ConvertFrom-Json; $pkg.exports | ConvertTo-Json -Depth 5 | Select-Object -First 60)",
+      "PowerShell($pkg = Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\package.json\" | ConvertFrom-Json; $pkg.dependencies.\"expo-notifications\"; $pkg.dependencies.expo)",
+      "PowerShell($pkg = Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\package.json\" | ConvertFrom-Json; Write-Output \"main: $\\($pkg.main\\)\"; Write-Output \"source: $\\($pkg.source\\)\"; if \\($pkg.PSObject.Properties['exports']\\) { Write-Output \"has exports field\" } else { Write-Output \"no exports field\" })",
+      "PowerShell(ConvertTo-Json *)",
+      "PowerShell(node -e \"const {getBareExtensions} = require\\('./node_modules/@expo/metro-config/build/paths'\\); console.log\\(getBareExtensions\\([], {isTS:true, isReact:true, isModern:true}\\).join\\(', '\\)\\)\" 2>&1)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\build\" | Where-Object { $_.Name -notmatch \"\\\\.\\(d\\\\.ts|js|map\\)$\" } | Select-Object Name)",
+      "PowerShell(node -e \"const m = require\\('./node_modules/expo/bundledNativeModules.json'\\); console.log\\(m['expo-notifications']\\)\")",
+      "PowerShell($pkg = Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\package.json\" | ConvertFrom-Json; if \\($pkg.resolutions\\) { $pkg.resolutions | ConvertTo-Json } else { \"no resolutions\" }; if \\($pkg.overrides\\) { $pkg.overrides | ConvertTo-Json } else { \"no overrides\" })",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\aidaw\\\\Desktop\\\\Code\\\\ThumbnailGenerator\\\\node_modules\\\\expo-notifications\\\\build\\\\getPresentedNotificationsAsync.js\"\\).Length)"
     ],
     "deny": [],
     "ask": []

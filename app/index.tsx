@@ -1,9 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, ActivityIndicator, Dimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Animated, ActivityIndicator, Dimensions, Platform, Alert } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { signInAnonymouslyAndInit } from '../src/features/auth/api';
 import FloatingParticles from '../src/components/FloatingParticles';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import * as Haptics from 'expo-haptics';
@@ -30,6 +31,7 @@ export default function WelcomeScreen() {
   const [step, setStep] = useState(1);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [selectedStruggles, setSelectedStruggles] = useState<string[]>([]);
+  const [isStartingSession, setIsStartingSession] = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
@@ -113,6 +115,24 @@ export default function WelcomeScreen() {
     }
   };
 
+  const startAnonymousSession = async () => {
+    if (isStartingSession) return;
+    setIsStartingSession(true);
+    try {
+      await signInAnonymouslyAndInit();
+      router.push('/loadingaccount');
+    } catch (error: any) {
+      console.error('Anonymous session error:', error);
+      if (__DEV__) {
+        Alert.alert('Anonymous sign-in failed', String(error?.message || error));
+      }
+      // Fall back to the normal sign-up flow if anonymous sign-in is unavailable
+      router.push('/signup');
+    } finally {
+      setIsStartingSession(false);
+    }
+  };
+
   const handleGetStarted = () => {
     try {
       // Fade out and slide out simultaneously
@@ -135,10 +155,10 @@ export default function WelcomeScreen() {
           } else if (step === 2) {
             setStep(3);
           } else {
-            router.push('/signup');
+            startAnonymousSession();
             return;
           }
-          
+
           // Wait for React to render the new step, then reset position and fade in
           requestAnimationFrame(() => {
             slideAnim.setValue(0);
@@ -154,7 +174,7 @@ export default function WelcomeScreen() {
       });
     } catch (error) {
       // Fallback navigation
-      router.push('/signup');
+      startAnonymousSession();
     }
   };
 
@@ -298,11 +318,12 @@ export default function WelcomeScreen() {
         ) : null}
 
         <TouchableOpacity
-          style={[styles.getStartedButton, step === 3 && { marginTop: 40 }]}
+          style={[styles.getStartedButton, step === 3 && { marginTop: 40 }, isStartingSession && { opacity: 0.6 }]}
           onPress={handleGetStarted}
+          disabled={isStartingSession}
         >
           <Text style={styles.getStartedButtonText}>
-            {step === 1 ? "Get Started" : step === 3 ? "Start Creating" : "Continue"}
+            {isStartingSession ? "Loading..." : step === 1 ? "Get Started" : step === 3 ? "Start Creating" : "Continue"}
           </Text>
         </TouchableOpacity>
 

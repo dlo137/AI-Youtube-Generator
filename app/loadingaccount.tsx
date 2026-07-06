@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import IAPService from '../services/IAPService';
+import { registerForPushNotifications } from '../lib/notifications';
 
 export default function LoadingAccountScreen() {
   const router = useRouter();
@@ -23,6 +24,11 @@ export default function LoadingAccountScreen() {
           destinationRef.current = 'subscriptionScreen';
           return;
         }
+
+        // Register push token now that we have a confirmed session.
+        // Fire-and-forget — never blocks routing or shows errors to the user.
+        registerForPushNotifications(user.id);
+
         const { data: profile } = await supabase
           .from('profiles')
           .select('has_seen_paywall, entitlement, is_trial_version, trial_end_date, is_pro_version')
