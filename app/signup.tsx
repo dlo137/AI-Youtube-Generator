@@ -194,11 +194,11 @@ export default function SignUpScreen() {
             </View>
           </TouchableOpacity>
 
-          {isAnonymous && (
+          {/* {isAnonymous && (
             <TouchableOpacity style={styles.skipButton} onPress={handleSkip} disabled={isLoading}>
               <Text style={styles.skipButtonText}>Skip for now</Text>
             </TouchableOpacity>
-          )}
+          )} */}
 
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} />
