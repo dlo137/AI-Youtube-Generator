@@ -95,18 +95,26 @@ export default function ProfileScreen() {
     {
       id: 'yearly',
       name: 'Yearly',
-      price: '$49.99/year',
-      billingPrice: '$49.99',
+      price: '$39.99/year',
+      billingPrice: '$39.99',
       imageLimit: '100 images per month',
-      description: 'Billed yearly at $49.99.\nCancel anytime'
+      description: 'Billed yearly at $39.99.\nCancel anytime'
+    },
+    {
+      id: 'monthly',
+      name: 'Monthly',
+      price: '$9.99/month',
+      billingPrice: '$9.99',
+      imageLimit: '75 images per month',
+      description: 'Billed monthly at $9.99.\nCancel anytime'
     },
     {
       id: 'weekly',
       name: 'Weekly',
-      price: '$9.99/week',
-      billingPrice: '$9.99',
-      imageLimit: '20 images per week',
-      description: 'Billed weekly at $9.99.\nCancel anytime'
+      price: '$4.99/week',
+      billingPrice: '$4.99',
+      imageLimit: '10 images per week',
+      description: 'Billed weekly at $4.99.\nCancel anytime'
     }
   ];
 
@@ -124,10 +132,10 @@ export default function ProfileScreen() {
         price = '$39.99/year';
         planName = 'Yearly Plan';
       } else if (supabaseSubInfo.subscription_plan === 'monthly') {
-        price = '$5.99/month';
+        price = '$9.99/month';
         planName = 'Monthly Plan';
       } else if (supabaseSubInfo.subscription_plan === 'weekly') {
-        price = '$2.99/week';
+        price = '$4.99/week';
         planName = 'Weekly Plan';
       } else if (supabaseSubInfo.subscription_plan === 'discounted_weekly') {
         price = '$1.99/week';
@@ -158,9 +166,9 @@ export default function ProfileScreen() {
     if (subscriptionInfo.productId === 'thumbnail.yearly') {
       price = '$39.99/year';
     } else if (subscriptionInfo.productId === 'thumbnail.monthly') {
-      price = '$5.99/month';
+      price = '$9.99/month';
     } else if (subscriptionInfo.productId === 'thumbnail.weekly') {
-      price = '$2.99/week';
+      price = '$4.99/week';
     }
 
     return {
@@ -312,10 +320,10 @@ export default function ProfileScreen() {
           price = '$39.99/year';
         } else if (plan === 'monthly') {
           planName = 'Monthly Plan';
-          price = '$5.99/month';
+          price = '$9.99/month';
         } else if (plan === 'weekly') {
           planName = 'Weekly Plan';
-          price = '$2.99/week';
+          price = '$4.99/week';
         } else {
           planName = 'Pro Plan';
           price = '$0.00';
@@ -339,10 +347,10 @@ export default function ProfileScreen() {
           price = '$39.99/year';
         } else if (subInfo.productId === 'thumbnail.monthly') {
           planName = 'Monthly Plan';
-          price = '$5.99/month';
+          price = '$9.99/month';
         } else if (subInfo.productId === 'thumbnail.weekly') {
           planName = 'Weekly Plan';
-          price = '$2.99/week';
+          price = '$4.99/week';
         } else {
           planName = 'Pro Plan';
           price = '$0.00';
@@ -553,8 +561,8 @@ export default function ProfileScreen() {
                                 let credits_max = 0;
                                 switch (planId) {
                                   case 'yearly': credits_max = 100; break;
-                                  case 'monthly': credits_max = 100; break;
-                                  case 'weekly': credits_max = 20; break;
+                                  case 'monthly': credits_max = 75; break;
+                                  case 'weekly': credits_max = 10; break;
                                 }
 
                                 const { error: updateError } = await supabase
@@ -653,8 +661,8 @@ export default function ProfileScreen() {
                       let credits_max = 0;
                       switch (planId) {
                         case 'yearly': credits_max = 100; break;
-                        case 'monthly': credits_max = 100; break;
-                        case 'weekly': credits_max = 20; break;
+                        case 'monthly': credits_max = 75; break;
+                        case 'weekly': credits_max = 10; break;
                       }
 
                       // Update subscription in Supabase with is_pro_version = true

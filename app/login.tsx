@@ -28,7 +28,7 @@ export default function LoginScreen() {
       const data = await signInEmail(email, password);
 
       if (data.user) {
-        router.push('/(tabs)/generate');
+        router.push('/loadingaccount');
       }
 
     } catch (error: any) {
@@ -47,7 +47,7 @@ export default function LoginScreen() {
 
       if (data.user) {
         // Successfully signed in, navigate to main app
-        router.push('/(tabs)/generate');
+        router.push('/loadingaccount');
       }
 
     } catch (error: any) {
@@ -82,7 +82,7 @@ export default function LoginScreen() {
 
               if ('user' in data && data.user) {
                 // Successfully signed in, navigate to main app
-                router.push('/(tabs)/generate');
+                router.push('/loadingaccount');
               }
 
             } catch (error: any) {

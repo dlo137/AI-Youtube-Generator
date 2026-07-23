@@ -34,7 +34,7 @@ export default function SignUpScreen() {
 
   const handleSkip = () => {
     trackEvent('signup_skipped', { platform: Platform.OS });
-    router.replace('/(tabs)/generate');
+    router.replace('/loadingaccount');
   };
 
   const handleSignUp = async () => {
@@ -61,7 +61,7 @@ export default function SignUpScreen() {
           platform: Platform.OS,
           converted_from_anonymous: isAnonymous,
         });
-        router.replace('/(tabs)/generate');
+        router.replace('/loadingaccount');
       }
 
     } catch (error: any) {
@@ -76,17 +76,29 @@ export default function SignUpScreen() {
     setIsLoading(true);
 
     try {
-      const data = isAnonymous
-        ? await linkAppleIdentity()
-        : await signInWithApple();
+      let data;
+      let convertedFromAnonymous = isAnonymous;
+      try {
+        data = isAnonymous ? await linkAppleIdentity() : await signInWithApple();
+      } catch (linkError: any) {
+        // This Apple account already belongs to a real account — the anonymous
+        // session was just a pre-signup placeholder, so log into the real one
+        // instead of surfacing a hard error.
+        if (isAnonymous && /already linked to another account/i.test(linkError?.message || '')) {
+          data = await signInWithApple();
+          convertedFromAnonymous = false;
+        } else {
+          throw linkError;
+        }
+      }
 
       if (data?.user) {
         trackEvent('account_created', {
           method: 'apple',
           platform: Platform.OS,
-          converted_from_anonymous: isAnonymous,
+          converted_from_anonymous: convertedFromAnonymous,
         });
-        router.replace('/(tabs)/generate');
+        router.replace('/loadingaccount');
       }
 
     } catch (error: any) {
@@ -117,17 +129,29 @@ export default function SignUpScreen() {
             setIsLoading(true);
 
             try {
-              const data = isAnonymous
-                ? await linkGoogleIdentity()
-                : await signInWithGoogle();
+              let data;
+              let convertedFromAnonymous = isAnonymous;
+              try {
+                data = isAnonymous ? await linkGoogleIdentity() : await signInWithGoogle();
+              } catch (linkError: any) {
+                // This Google account already belongs to a real account — the
+                // anonymous session was just a pre-signup placeholder, so log
+                // into the real one instead of surfacing a hard error.
+                if (isAnonymous && /already linked to another account/i.test(linkError?.message || '')) {
+                  data = await signInWithGoogle();
+                  convertedFromAnonymous = false;
+                } else {
+                  throw linkError;
+                }
+              }
 
               if (data && 'user' in data && data.user) {
                 trackEvent('account_created', {
                   method: 'google',
                   platform: Platform.OS,
-                  converted_from_anonymous: isAnonymous,
+                  converted_from_anonymous: convertedFromAnonymous,
                 });
-                        router.replace('/(tabs)/generate');
+                        router.replace('/loadingaccount');
               }
 
             } catch (error: any) {

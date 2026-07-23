@@ -95,7 +95,7 @@ export const getNextResetDate = (profile: SubscriptionProfile): string | null =>
 export const getCreditsForPlan = (plan: string | null): number => {
   switch (plan) {
     case 'yearly':
-      return 90;
+      return 100;
     case 'monthly':
       return 75;
     case 'weekly':

@@ -94,9 +94,18 @@ export default function WelcomeScreen() {
         return;
       }
 
-      if (session) {
-        // User is already logged in, redirect to main app
-        router.replace('/(tabs)/generate');
+      if (session && !session.user.is_anonymous) {
+        // Real (converted) account — let loadingaccount decide app vs. paywall
+        // based on current entitlement, same as right after signup.
+        router.replace('/loadingaccount');
+      } else if (session && session.user.is_anonymous) {
+        // Anonymous sessions only exist to bridge onboarding -> paywall -> signup.
+        // Finding one on a fresh launch means a previous attempt was abandoned
+        // before converting to a real account — clear it so the user always
+        // starts at onboarding instead of dropping straight into the app as a
+        // leftover free-credit anonymous user.
+        await supabase.auth.signOut();
+        setIsCheckingAuth(false);
       } else {
         setIsCheckingAuth(false);
       }
@@ -120,7 +129,8 @@ export default function WelcomeScreen() {
     setIsStartingSession(true);
     try {
       await signInAnonymouslyAndInit();
-      router.push('/loadingaccount');
+      // Sign-in/sign-up now comes before the paywall, not after purchase.
+      router.push('/signup');
     } catch (error: any) {
       console.error('Anonymous session error:', error);
       if (__DEV__) {

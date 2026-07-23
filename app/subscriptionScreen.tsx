@@ -174,7 +174,7 @@ export default function SubscriptionScreen() {
   // returns true and the normal purchase flow runs instead.
   const simulatePurchase = async (plan: 'yearly' | 'monthly' | 'weekly' | 'discountedWeekly') => {
     const planKey = plan === 'discountedWeekly' ? 'discounted_weekly' : plan;
-    const credits_max = plan === 'yearly' ? 100 : plan === 'monthly' ? 100 : 20;
+    const credits_max = plan === 'yearly' ? 100 : plan === 'monthly' ? 75 : 10;
     const isTrial = plan === 'weekly' || plan === 'monthly' || plan === 'yearly' || plan === 'discountedWeekly';
     const trialEndDate = isTrial
       ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
@@ -502,8 +502,28 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Yearly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('yearly', '$49.99/year')}</Text>
+              <Text style={styles.planPrice}>{formatPrice('yearly', '$39.99/year')}</Text>
               <Text style={styles.planSubtext}>100 images per month</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Monthly Plan */}
+          <TouchableOpacity
+            style={[
+              styles.planCard,
+              selectedPlan === 'monthly' && styles.selectedPlan,
+            ]}
+            onPress={() => handlePlanSelect('monthly')}
+          >
+            <View style={styles.planRadio}>
+              {selectedPlan === 'monthly' && <View style={styles.planRadioSelected} />}
+            </View>
+            <View style={styles.planContent}>
+              <Text style={styles.planName}>Monthly</Text>
+            </View>
+            <View style={styles.planPricing}>
+              <Text style={styles.planPrice}>{formatPrice('monthly', '$9.99/month')}</Text>
+              <Text style={styles.planSubtext}>75 images per month</Text>
             </View>
           </TouchableOpacity>
 
@@ -522,8 +542,8 @@ export default function SubscriptionScreen() {
               <Text style={styles.planName}>Weekly</Text>
             </View>
             <View style={styles.planPricing}>
-              <Text style={styles.planPrice}>{formatPrice('weekly', '$9.99/week')}</Text>
-              <Text style={styles.planSubtext}>20 images per week</Text>
+              <Text style={styles.planPrice}>{formatPrice('weekly', '$4.99/week')}</Text>
+              <Text style={styles.planSubtext}>10 images per week</Text>
             </View>
           </TouchableOpacity>
         </View>

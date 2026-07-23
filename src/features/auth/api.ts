@@ -592,7 +592,12 @@ export async function linkAppleIdentity() {
       },
     });
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === 'identity_already_exists' || /already linked/i.test(error.message || '')) {
+        throw new Error('This Apple account is already linked to another account. Please sign in with Apple instead, or use a different account.');
+      }
+      throw error;
+    }
 
     // Same trigger gap as convertAnonymousToEmail: linking doesn't INSERT into
     // auth.users, so profiles.email/normalized_email need an explicit update.
@@ -629,6 +634,26 @@ async function syncProfileEmail(userId: string, email?: string | null) {
     .eq('id', userId);
 }
 
+// OAuth callback redirects can carry `error`/`error_description` instead of a
+// code or tokens (e.g. `identity_already_exists` when the Google account is
+// already linked to a different user). Surface that instead of falling
+// through to a generic "no auth data" message that hides the real cause.
+function extractOAuthError(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl);
+    const hashParams = new URLSearchParams(url.hash.startsWith('#') ? url.hash.substring(1) : url.hash);
+    const error = url.searchParams.get('error') || hashParams.get('error');
+    const description = url.searchParams.get('error_description') || hashParams.get('error_description');
+    if (!error) return null;
+    if (error === 'identity_already_exists') {
+      return 'This Google account is already linked to another account. Please sign in with Google instead, or use a different account.';
+    }
+    return description ? decodeURIComponent(description.replace(/\+/g, ' ')) : error;
+  } catch {
+    return null;
+  }
+}
+
 // Links Google as an identity on the CURRENT session (anonymous or not),
 // preserving the existing auth.users.id instead of starting a new session.
 export async function linkGoogleIdentity() {
@@ -646,11 +671,21 @@ export async function linkGoogleIdentity() {
       },
     });
 
-    if (error) throw new Error(`Google link initialization failed: ${error.message}`);
+    if (error) {
+      if (error.code === 'identity_already_exists' || /already linked/i.test(error.message || '')) {
+        throw new Error('This Google account is already linked to another account. Please sign in with Google instead, or use a different account.');
+      }
+      throw new Error(`Google link initialization failed: ${error.message}`);
+    }
     if (!data?.url) throw new Error('No OAuth URL returned from Supabase');
 
     if (Platform.OS === 'android') {
       const androidResult = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+
+      if (androidResult.type === 'success' && 'url' in androidResult) {
+        const oauthError = extractOAuthError(androidResult.url);
+        if (oauthError) throw new Error(oauthError);
+      }
 
       if (androidResult.type === 'success' || androidResult.type === 'dismiss' || androidResult.type === 'cancel') {
         for (let i = 0; i < 30; i++) {
@@ -684,6 +719,9 @@ export async function linkGoogleIdentity() {
     }
 
     if (iosResult.type === 'success' && iosResult.url) {
+      const oauthError = extractOAuthError(iosResult.url);
+      if (oauthError) throw new Error(oauthError);
+
       const url = new URL(iosResult.url);
       const code = url.searchParams.get('code');
 
@@ -718,6 +756,7 @@ export async function linkGoogleIdentity() {
     throw new Error('Authentication was not completed. The browser did not return a valid response.');
   } catch (error: any) {
     if (error?.message?.includes('canceled')) throw error;
+    if (error?.message?.includes('already linked')) throw error;
     throw new Error(`Google linking failed: ${error?.message || 'Unknown error'}. Please try again or contact support.`);
   }
 }

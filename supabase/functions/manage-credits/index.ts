@@ -38,7 +38,7 @@ const shouldResetCredits = (profile: any): boolean => {
 const getCreditsForPlan = (plan: string | null): number => {
   switch (plan) {
     case 'yearly':
-      return 90;
+      return 100;
     case 'monthly':
       return 75;
     case 'weekly':
@@ -126,7 +126,7 @@ serve(async (req) => {
       if (profile.is_pro_version && profile.subscription_plan) {
         switch (profile.subscription_plan) {
           case 'yearly':
-            maxCredits = 90
+            maxCredits = 100
             break
           case 'monthly':
             maxCredits = 75

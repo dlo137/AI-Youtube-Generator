@@ -70,8 +70,8 @@ export async function checkTrialEligibility(): Promise<boolean> {
 
 function getPriceForPlan(plan: SubscriptionPlan): number {
   switch (plan) {
-    case 'weekly':  return 2.99;
-    case 'monthly': return 5.99;
+    case 'weekly':  return 4.99;
+    case 'monthly': return 9.99;
     case 'yearly':  return 39.99;
     default:        return 0;
   }

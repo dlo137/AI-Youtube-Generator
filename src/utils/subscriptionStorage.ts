@@ -189,7 +189,7 @@ export const resetCredits = async (): Promise<void> => {
       const supabaseSubInfo = await getSupabaseSubscriptionInfo();
       if (supabaseSubInfo && supabaseSubInfo.is_pro_version) {
         if (supabaseSubInfo.subscription_plan === 'yearly') {
-          maxCredits = 90;
+          maxCredits = 100;
         } else if (supabaseSubInfo.subscription_plan === 'monthly') {
           maxCredits = 75;
         } else if (supabaseSubInfo.subscription_plan === 'weekly') {
@@ -207,7 +207,7 @@ export const resetCredits = async (): Promise<void> => {
       const subscriptionInfo = await getSubscriptionInfo();
       if (subscriptionInfo && subscriptionInfo.isActive) {
         if (subscriptionInfo.productId === 'thumbnail.yearly') {
-          maxCredits = 90;
+          maxCredits = 100;
         } else if (subscriptionInfo.productId === 'thumbnail.monthly') {
           maxCredits = 75;
         } else if (subscriptionInfo.productId === 'thumbnail.weekly') {
